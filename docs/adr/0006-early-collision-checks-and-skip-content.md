@@ -1,0 +1,3 @@
+# Early interactive collision checks and lean core download
+
+Interactive website creation performs directory and database collision checks immediately upon confirming the Website Slug in the terminal wizard, preventing users from filling in subsequent administrator credentials for an already taken site. In addition, WordPress core downloads pass the `--skip-content` flag to omit default bundled themes and plugins for faster and leaner local development installations. Defensive preflight collision validation in the core Provisioning orchestrator is preserved to guarantee atomic safety across programmatic consumers.

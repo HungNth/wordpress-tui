@@ -12,7 +12,7 @@ The user needs one terminal application, invoked as `wptui`, that stores local-d
 
 Build a Go terminal application called `wptui`. On first launch it creates a user config through an interactive wizard. Later launches load and validate that config, then present a menu containing `create`, `config`, `delete`, `backup`, `restore`, and `settings`. In v1, only `create` is enabled.
 
-The create flow gathers a Website Name, a separately confirmed Website Slug, optional administrator overrides, tweak preferences, and Package selections. It performs all non-mutating validation and resolves every selected Package into a verified local archive before mutating Website resources. It then downloads WordPress core, generates `wp-config.php`, creates the database, runs `wp core install`, configures Herd TLS when applicable, applies selected tweaks, and installs selected plugins and themes.
+The create flow gathers a Website Name, a separately confirmed Website Slug, optional administrator overrides, tweak preferences, and Package selections. It performs all non-mutating validation and resolves every selected Package into a verified local archive before mutating Website resources. It then downloads WordPress core, generates `wp-config.php`, creates the database, runs `wp core install`, applies selected tweaks, installs selected plugins and themes, queries the active theme, and finally secures the Website with Herd TLS when applicable.
 
 Critical Provisioning is atomic. Failure or cancellation in core, database, Herd, Package, or theme steps removes only the Website resources created by that run. Individual WordPress tweak failures are non-fatal: WPTUI reports them, continues remaining eligible tweaks, and keeps the Website. Verified Package Cache artifacts are shared prerequisites and remain available for future runs; incomplete downloads are always removed.
 
@@ -31,10 +31,10 @@ The Package Cache keeps one verified archive per Package type and slug in the op
 9. As a v1 user, I want unfinished menu options visibly disabled, so that I cannot enter incomplete workflows.
 10. As a developer, I want to enter a human-readable Website Name, so that WordPress receives an appropriate title.
 11. As a developer, I want WPTUI to suggest a Website Slug from the Website Name, so that common names require little typing.
-12. As a developer, I want to edit and explicitly confirm the Website Slug, so that directory, database, and hostname identifiers are predictable.
-13. As a developer, I want invalid, empty, overlong, or Windows-reserved Website Slugs rejected before mutation, so that provisioning does not fail midway.
-14. As a developer, I want WPTUI to check both the destination directory and database before mutation, so that existing Websites are never reused or overwritten.
-15. As a developer, I want collisions to return me to the Website identity step, so that I can choose a different Slug safely.
+12. As a developer, I want WPTUI to check directory and database collisions immediately after entering the Website Slug, so that I do not spend time filling in administrator credentials for a site that already exists.
+13. As a developer, I want core download to use `--skip-content`, so that default bundled themes and plugins are omitted for a lean installation.
+14. As a developer, I want to edit the suggested Website Slug separately, so that the URL/directory/database name can differ from the Website title when desired.
+15. As a developer, I want collisions to keep me on the Website Slug input step, so that I can immediately choose a different Slug safely.
 16. As a developer, I want administrator fields prefilled from config, so that repeated local Websites use consistent credentials.
 17. As a developer, I want to override the administrator username, password, and email per Website, so that exceptional Websites remain possible.
 18. As a Herd user, I want Websites created under the configured websites path and secured with Herd, so that they are available at `https://<slug>.test`.
@@ -152,7 +152,7 @@ The Package Cache keeps one verified archive per Package type and slug in the op
 - Install and activate selected plugins.
 - Install and activate the configured default theme when Package integration is enabled.
 - Install additional selected themes without activating them.
-- When Package integration is disabled, retain the bundled WordPress theme and explicitly report that the configured default theme was skipped.
+- When Package integration is disabled, core download omits default bundled themes via `--skip-content`, and WPTUI explicitly reports that the configured default theme was skipped with no active theme installed.
 - Locate the Package Cache under the operating system's native user cache directory in a WPTUI Packages subdirectory.
 - Protect cache mutation with one cross-process global file lock using `github.com/gofrs/flock`. Lock acquisition must observe cancellation through the active context.
 - Store a manifest with schema version and one Cache Entry per Package identity. Each entry stores type, slug, exact version, cache-root-relative file path, byte size, locally computed SHA-256, and UTC RFC 3339 download time.
