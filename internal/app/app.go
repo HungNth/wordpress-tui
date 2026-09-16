@@ -1,0 +1,344 @@
+package app
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"strings"
+
+	"charm.land/huh/v2"
+	"wptui/internal/config"
+	"wptui/internal/create"
+	"wptui/internal/packages"
+	"wptui/internal/tui"
+	"wptui/internal/wpcli"
+)
+
+type Options struct {
+	HomeDir  string
+	WizardFn func(homeDir string) (*config.Config, error)
+	MenuFn   func() (string, error)
+	CreateFn func(ctx context.Context, cfg *config.Config) error
+}
+
+type App struct {
+	homeDir  string
+	cfgPath  string
+	config   *config.Config
+	wizardFn func(homeDir string) (*config.Config, error)
+	menuFn   func() (string, error)
+	createFn func(ctx context.Context, cfg *config.Config) error
+}
+
+func New(opts Options) *App {
+	home := opts.HomeDir
+	if home == "" {
+		h, err := os.UserHomeDir()
+		if err == nil {
+			home = h
+		}
+	}
+
+	cfgPath, _ := config.ConfigPath(home)
+
+	wFn := opts.WizardFn
+	if wFn == nil {
+		wFn = tui.RunConfigWizard
+	}
+
+	mFn := opts.MenuFn
+	if mFn == nil {
+		mFn = tui.RunMainMenu
+	}
+
+	cFn := opts.CreateFn
+	if cFn == nil {
+		cFn = RunDefaultCreateFlow
+	}
+
+	return &App{
+		homeDir:  home,
+		cfgPath:  cfgPath,
+		wizardFn: wFn,
+		menuFn:   mFn,
+		createFn: cFn,
+	}
+}
+
+func (a *App) Config() *config.Config {
+	return a.config
+}
+
+func (a *App) ConfigPath() string {
+	return a.cfgPath
+}
+
+// InitConfig checks whether config.json exists. If missing, it runs the wizard and saves it.
+// If it exists, it loads and validates it.
+func (a *App) InitConfig(interactive bool) (*config.Config, error) {
+	if _, err := os.Stat(a.cfgPath); errors.Is(err, os.ErrNotExist) {
+		if !interactive && a.wizardFn == nil {
+			return nil, fmt.Errorf("config file not found at %s", a.cfgPath)
+		}
+
+		fmt.Println("No existing configuration found. Starting setup wizard...")
+		cfg, err := a.wizardFn(a.homeDir)
+		if err != nil {
+			return nil, fmt.Errorf("wizard failed or cancelled: %w", err)
+		}
+
+		if err := config.Save(a.cfgPath, cfg); err != nil {
+			return nil, fmt.Errorf("failed to save config: %w", err)
+		}
+
+		fmt.Printf("Configuration saved successfully to %s\n", a.cfgPath)
+		a.config = cfg
+		return cfg, nil
+	}
+
+	cfg, err := config.Load(a.cfgPath)
+	if err != nil {
+		return nil, fmt.Errorf("configuration error at %s: %w", a.cfgPath, err)
+	}
+
+	a.config = cfg
+	return cfg, nil
+}
+
+type PackageResolver interface {
+	ResolvePackage(ctx context.Context, ref packages.PackageRef, stageDir string) (*packages.Artifact, error)
+	ResolveAll(ctx context.Context, refs []packages.PackageRef, stageDir string) ([]packages.Artifact, error)
+}
+
+type CreateFlowDependencies struct {
+	Runner         wpcli.Runner
+	Resolver       PackageResolver
+	Catalog        []packages.CatalogItem
+	PromptCreate   func(*config.Config) (*tui.CreateInputs, error)
+	PromptPackages func(context.Context, *config.Config, []packages.CatalogItem) ([]string, []string, error)
+}
+
+func RunCreateFlowWithDeps(ctx context.Context, cfg *config.Config, deps CreateFlowDependencies) error {
+	var client *wpcli.Client
+	if deps.Runner != nil {
+		client = wpcli.NewClientWithRunner(deps.Runner)
+	} else {
+		client = wpcli.NewClient()
+	}
+
+	dbConn := wpcli.DBConnection{
+		Host:   cfg.DatabaseHost,
+		Port:   cfg.DatabasePort,
+		User:   cfg.DBUsername,
+		Pass:   cfg.DBPassword,
+		Socket: cfg.DBSocket,
+	}
+	dbChecker := func(c context.Context, dbName string) (bool, error) {
+		return client.CheckDatabaseExists(c, dbConn, dbName)
+	}
+	creator := create.NewCreator(cfg, client, dbChecker)
+
+	promptCreate := deps.PromptCreate
+	if promptCreate == nil {
+		promptCreate = tui.PromptCreateInputs
+	}
+	promptPackages := deps.PromptPackages
+	if promptPackages == nil {
+		promptPackages = tui.PromptPackageSelections
+	}
+
+	for {
+		inputs, err := promptCreate(cfg)
+		if err != nil {
+			if errors.Is(err, huh.ErrUserAborted) {
+				return nil
+			}
+			return err
+		}
+
+		// Fetch catalog if package API is configured
+		catalog := deps.Catalog
+		if len(catalog) == 0 && strings.TrimSpace(cfg.PackagesAPIURL) != "" {
+			cat, err := packages.FetchCatalog(ctx, nil, cfg.PackagesAPIURL, cfg.PackagesAPIKey)
+			if err == nil {
+				catalog = cat
+			}
+		}
+
+		plugins, themes, err := promptPackages(ctx, cfg, catalog)
+		if err != nil {
+			if errors.Is(err, huh.ErrUserAborted) {
+				return nil
+			}
+			return err
+		}
+
+		// Pre-mutation: resolve package artifacts before creating website or database
+		stageDir, err := os.MkdirTemp("", "wptui-stage-*")
+		if err != nil {
+			return fmt.Errorf("failed to create package staging directory: %w", err)
+		}
+		defer os.RemoveAll(stageDir)
+
+		var defaultThemeArt *packages.Artifact
+		defaultThemeSkipped := false
+		if cfg.DefaultThemeSlug != "" {
+			if strings.TrimSpace(cfg.PackagesAPIURL) != "" && deps.Resolver != nil {
+				fmt.Printf("→ Resolving default theme %s...\n", cfg.DefaultThemeSlug)
+				art, err := deps.Resolver.ResolvePackage(ctx, packages.PackageRef{Type: "theme", Slug: cfg.DefaultThemeSlug}, stageDir)
+				if err != nil {
+					return fmt.Errorf("failed to resolve default theme %q: %w", cfg.DefaultThemeSlug, err)
+				}
+				defaultThemeArt = art
+			} else {
+				defaultThemeSkipped = true
+			}
+		}
+
+		var pluginArts []packages.Artifact
+		if deps.Resolver != nil && len(plugins) > 0 {
+			for _, p := range plugins {
+				fmt.Printf("→ Resolving plugin %s...\n", p)
+				art, err := deps.Resolver.ResolvePackage(ctx, packages.PackageRef{Type: "plugin", Slug: p}, stageDir)
+				if err != nil {
+					return fmt.Errorf("failed to resolve plugin %q: %w", p, err)
+				}
+				pluginArts = append(pluginArts, *art)
+			}
+		}
+
+		var themeArts []packages.Artifact
+		if deps.Resolver != nil && len(themes) > 0 {
+			for _, th := range themes {
+				fmt.Printf("→ Resolving theme %s...\n", th)
+				art, err := deps.Resolver.ResolvePackage(ctx, packages.PackageRef{Type: "theme", Slug: th}, stageDir)
+				if err != nil {
+					return fmt.Errorf("failed to resolve theme %q: %w", th, err)
+				}
+				themeArts = append(themeArts, *art)
+			}
+		}
+
+		req := create.Request{
+			WebsiteName:         inputs.WebsiteName,
+			WebsiteSlug:         inputs.WebsiteSlug,
+			AdminUsername:       inputs.AdminUsername,
+			AdminPassword:       inputs.AdminPassword,
+			AdminEmail:          inputs.AdminEmail,
+			ApplyTweaks:         inputs.ApplyTweaks,
+			DefaultTheme:        defaultThemeArt,
+			DefaultThemeSkipped: defaultThemeSkipped,
+			PluginArtifacts:     pluginArts,
+			ThemeArtifacts:      themeArts,
+		}
+
+		var currentStep string
+		progress := func(step, detail string) {
+			currentStep = detail
+			fmt.Printf("→ %s\n", detail)
+		}
+
+		result, createErr := creator.Create(ctx, req, progress)
+
+		if createErr != nil {
+			_ = os.RemoveAll(stageDir)
+			if create.IsCollisionError(createErr) {
+				fmt.Printf("\nCollision: %v\nPlease choose a different website name or slug.\n\n", createErr)
+				continue
+			}
+			return fmt.Errorf("creation failed at step %q: %w", currentStep, createErr)
+		}
+		_ = os.RemoveAll(stageDir)
+		fmt.Println("\n=== Website Provisioned Successfully! ===")
+		fmt.Printf("Path: %s\n", result.WebsitePath)
+		fmt.Printf("URL:  %s\n", result.WebsiteURL)
+		fmt.Printf("Active Theme: %s\n", result.ActiveTheme)
+		if result.DefaultThemeSkipped {
+			fmt.Printf("Notice: Default theme (%s) skipped — Package API disabled.\n", cfg.DefaultThemeSlug)
+		}
+		if len(result.PackageStatuses) > 0 {
+			fmt.Println("\nPackage Installation Statuses:")
+			for _, ps := range result.PackageStatuses {
+				if ps.Status == "stale" {
+					fmt.Printf("  - %s %s (v%s): stale fallback (%s)\n", ps.Type, ps.Slug, ps.Version, ps.Reason)
+				} else {
+					fmt.Printf("  - %s %s (v%s): %s\n", ps.Type, ps.Slug, ps.Version, ps.Status)
+				}
+			}
+		}
+		if len(result.InstalledPlugins) > 0 {
+			fmt.Printf("Plugins: %s\n", strings.Join(result.InstalledPlugins, ", "))
+		}
+		if len(result.InstalledThemes) > 0 {
+			fmt.Printf("Themes:  %s\n", strings.Join(result.InstalledThemes, ", "))
+		}
+		if len(result.FailedTweaks) > 0 {
+			fmt.Println("\nTweak Warnings:")
+			for _, twErr := range result.FailedTweaks {
+				fmt.Printf("  - %s\n", twErr)
+			}
+		}
+		if len(result.SkippedTweaks) > 0 {
+			fmt.Println("\nSkipped Tweaks:")
+			for _, sk := range result.SkippedTweaks {
+				fmt.Printf("  - %s\n", sk)
+			}
+		}
+		fmt.Println()
+		return nil
+	}
+}
+
+func RunDefaultCreateFlow(ctx context.Context, cfg *config.Config) error {
+	var pkgResolver PackageResolver
+	if strings.TrimSpace(cfg.PackagesAPIURL) != "" {
+		pkgCache, err := packages.NewCacheWithContext(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to initialize package cache: %w", err)
+		}
+		pkgResolver = packages.NewResolver(cfg, pkgCache)
+	}
+	return RunCreateFlowWithDeps(ctx, cfg, CreateFlowDependencies{
+		Resolver: pkgResolver,
+	})
+}
+
+// Run is the main application loop using context.Background.
+func (a *App) Run() error {
+	return a.RunWithContext(context.Background())
+}
+
+// RunWithContext runs the main application loop with the supplied context for cancellation and signal handling.
+func (a *App) RunWithContext(ctx context.Context) error {
+	cfg, err := a.InitConfig(true)
+	if err != nil {
+		return err
+	}
+	a.config = cfg
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		action, err := a.menuFn()
+		if err != nil {
+			return fmt.Errorf("menu error: %w", err)
+		}
+
+		switch action {
+		case "exit":
+			fmt.Println("Goodbye!")
+			return nil
+		case "create":
+			if err := a.createFn(ctx, a.config); err != nil {
+				fmt.Printf("Error creating website: %v\n", err)
+			}
+		default:
+			fmt.Printf("Option %q is coming soon.\n", action)
+		}
+	}
+}

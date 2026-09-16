@@ -1,0 +1,3 @@
+# Keep critical Website provisioning atomic
+
+Website Provisioning resolves every selected Package into a verified local artifact before mutating Website resources. Core, database, Herd TLS, Package, and theme steps are critical: if one fails or the user cancels, the run removes its newly created directory, database, and certificate. WordPress tweaks are best-effort post-install operations: independent tweaks may run concurrently under resource/dependency constraints, each failure is reported, and remaining eligible tweaks continue without removing the Website. Completed Package Cache artifacts survive rollback because they are shared prerequisites, while partial downloads are always removed.

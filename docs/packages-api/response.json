@@ -1,0 +1,41 @@
+{
+    "total": 4,
+    "data": [
+        {
+            "name": "66Uptime",
+            "slug": "66uptime",
+            "version": "1.0.0",
+            "homepage": "",
+            "author": "",
+            "type": "generic",
+            "last_updated": "2026-06-16 11:03:43"
+        },
+        {
+            "name": "Admin and Site Enhancements (ASE) Pro",
+            "slug": "admin-site-enhancements-pro",
+            "version": "9.1.1.1",
+            "homepage": "https://www.wpase.com/",
+            "author": "wpase.com",
+            "type": "plugin",
+            "last_updated": "2026-09-11 12:02:30"
+        },
+        {
+            "name": "Advanced Custom Fields PRO",
+            "slug": "advanced-custom-fields-pro",
+            "version": "6.8.10",
+            "homepage": "https://www.advancedcustomfields.com",
+            "author": "WP Engine",
+            "type": "plugin",
+            "last_updated": "2026-09-14 08:42:42"
+        },
+        {
+            "name": "Xstore",
+            "slug": "xstore",
+            "version": "9.7.8",
+            "homepage": "https://xstore.8theme.com",
+            "author": "8theme",
+            "type": "theme",
+            "last_updated": "2026-09-11 11:57:01"
+        }
+    ]
+}
