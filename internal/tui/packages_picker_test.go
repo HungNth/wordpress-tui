@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"charm.land/huh/v2"
 	"wptui/internal/config"
 	"wptui/internal/packages"
 	"wptui/internal/tui"
@@ -43,16 +44,26 @@ func TestCatalogFilteringLogic(t *testing.T) {
 }
 
 func TestInlineSearchOptionAndExtraction(t *testing.T) {
-	// 1. When catalog is absent, no search option is appended
-	optsWithoutCat := tui.BuildPackageOptions(nil, false)
-	if len(optsWithoutCat) != 0 {
-		t.Errorf("expected 0 options when catalog absent, got %d", len(optsWithoutCat))
+	// 1. When catalog is absent, no search option is appended and defaults remain intact
+	defaultOpts := []huh.Option[string]{
+		huh.NewOption("Plugin A", "plugin-a"),
+		huh.NewOption("Plugin B", "plugin-b"),
+	}
+	optsWithoutCat := tui.BuildPackageOptions(defaultOpts, false)
+	if len(optsWithoutCat) != 2 || optsWithoutCat[0].Value != "plugin-a" || optsWithoutCat[1].Value != "plugin-b" {
+		t.Errorf("expected defaults preserved without search option, got %+v", optsWithoutCat)
 	}
 
-	// 2. When catalog is present, search option is appended
-	optsWithCat := tui.BuildPackageOptions(nil, true)
-	if len(optsWithCat) != 1 || optsWithCat[0].Value != tui.SearchOptionKey {
-		t.Errorf("expected search option value %q, got %+v", tui.SearchOptionKey, optsWithCat)
+	// 2. When catalog is present, defaults remain in order and search option is appended last
+	optsWithCat := tui.BuildPackageOptions(defaultOpts, true)
+	if len(optsWithCat) != 3 {
+		t.Fatalf("expected 3 options, got %d", len(optsWithCat))
+	}
+	if optsWithCat[0].Value != "plugin-a" || optsWithCat[1].Value != "plugin-b" {
+		t.Errorf("expected defaults preserved in order, got %+v", optsWithCat)
+	}
+	if optsWithCat[2].Value != tui.SearchOptionKey {
+		t.Errorf("expected terminal option value %q, got %q", tui.SearchOptionKey, optsWithCat[2].Value)
 	}
 
 	// 3. ExtractSelectedPackages filters search trigger and reports wantsSearch

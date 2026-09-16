@@ -36,10 +36,10 @@ Users of WPTUI face three friction points in the interactive experience:
    - In `internal/tui/create_wizard.go`, combine Website Name and Website Slug into the initial group.
    - The slug validator accepts an empty value as valid during form interaction; when submitted, if the slug is empty, it derives `Slugify(WebsiteName)` and validates availability.
 2. **WPTUI Theme Styling**:
-   - In `internal/tui/theme.go`, define `AppTheme() *huh.Styles` configuring:
+   - In `internal/tui/theme.go`, define `AppTheme() *huh.Styles` and `CustomTheme() huh.Theme`:
      `theme := huh.ThemeBase(true)`
-     `theme.Focused.Base = theme.Focused.Base.BorderForeground(lipgloss.Color("#00FFFF"))`
-   - Apply `form.WithTheme(AppTheme())` across all WPTUI interactive forms.
+     `theme.Focused.Base = theme.Focused.Base.Border(lipgloss.ThickBorder(), false, false, false, true).BorderLeftForeground(lipgloss.Color("#00FFFF"))`
+   - Apply `form.WithTheme(CustomTheme())` across all WPTUI interactive forms, where `CustomTheme()` delegates to `AppTheme()`.
 3. **Inline Search in Package Picker**:
    - In `internal/tui/packages_picker.go`, if `catalog` is available, append `huh.NewOption("🔍 Type to search catalog...", "__search__")` to options.
    - When submitted, filter out `__search__` from the selected package list; if `__search__` was selected, immediately prompt for the search query and present matching items.
@@ -50,7 +50,7 @@ Users of WPTUI face three friction points in the interactive experience:
 1. **`internal/tui` Seam**:
    - Test `BuildCreateForm` with unified inputs, empty slug auto-derivation, and custom slug overrides.
    - Test `AppTheme` verifies that the focused border foreground is configured to cyan.
-   - Test `SelectPackagesFlow` with and without `__search__` selection.
+   - Test inline package option construction and selection extraction via `BuildPackageOptions` and `ExtractSelectedPackages`.
 
 ## Out of Scope
 
