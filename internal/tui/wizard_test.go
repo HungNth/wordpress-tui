@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"wptui/internal/config"
 	"wptui/internal/tui"
 )
 
@@ -111,5 +112,72 @@ func TestValidateSlugWithChecker(t *testing.T) {
 	}
 	if !checkerCalled {
 		t.Fatal("checker was not called on valid slug")
+	}
+}
+
+func TestBuildCreateForm_UnifiedInputs(t *testing.T) {
+	tempHome := t.TempDir()
+	cfg := config.DefaultConfig(tempHome)
+
+	inputs := &tui.CreateInputs{
+		WebsiteName: "My Unified Site",
+		WebsiteSlug: "", // blank to auto-derive
+	}
+
+	form := tui.BuildCreateForm(inputs, cfg)
+	if form == nil {
+		t.Fatal("expected non-nil form from BuildCreateForm")
+	}
+}
+
+func TestResolveAndValidateSlug(t *testing.T) {
+	var checkedSlug string
+	checker := func(slug string) error {
+		checkedSlug = slug
+		if slug == "colliding-slug" {
+			return errors.New("already exists")
+		}
+		return nil
+	}
+
+	// 1. Blank slug automatically derives from name and calls checker with derived slug
+	derived, err := tui.ResolveAndValidateSlug("Cool New Site", "", checker)
+	if err != nil {
+		t.Fatalf("expected blank slug to succeed, got %v", err)
+	}
+	if derived != "cool-new-site" {
+		t.Errorf("expected derived slug 'cool-new-site', got %q", derived)
+	}
+	if checkedSlug != "cool-new-site" {
+		t.Errorf("expected checker called with 'cool-new-site', got %q", checkedSlug)
+	}
+
+	// 2. Explicit slug overrides name and calls checker
+	checkedSlug = ""
+	custom, err := tui.ResolveAndValidateSlug("Cool New Site", "  custom-slug  ", checker)
+	if err != nil {
+		t.Fatalf("expected trimmed custom slug to succeed, got %v", err)
+	}
+	if custom != "custom-slug" {
+		t.Errorf("expected trimmed custom slug 'custom-slug', got %q", custom)
+	}
+	if checkedSlug != "custom-slug" {
+		t.Errorf("expected checker called with 'custom-slug', got %q", checkedSlug)
+	}
+
+	// 3. Collision on derived slug returns error
+	_, err = tui.ResolveAndValidateSlug("Colliding Slug", "", checker)
+	if err == nil || err.Error() != "already exists" {
+		t.Fatalf("expected collision error on derived slug, got %v", err)
+	}
+
+	// 4. Invalid explicit slug rejects on syntax without calling checker
+	checkedSlug = ""
+	_, err = tui.ResolveAndValidateSlug("Cool New Site", "-invalid-edge-hyphen-", checker)
+	if err == nil {
+		t.Fatal("expected syntax error on invalid explicit slug")
+	}
+	if checkedSlug != "" {
+		t.Fatalf("checker should not be called on invalid slug, called with %q", checkedSlug)
 	}
 }

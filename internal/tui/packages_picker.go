@@ -10,6 +10,30 @@ import (
 	"wptui/internal/packages"
 )
 
+const SearchOptionKey = "__search__"
+
+// BuildPackageOptions builds the initial option list, appending inline search when catalog is available.
+func BuildPackageOptions(defaultOptions []huh.Option[string], hasCatalog bool) []huh.Option[string] {
+	opts := make([]huh.Option[string], len(defaultOptions))
+	copy(opts, defaultOptions)
+	if hasCatalog {
+		opts = append(opts, huh.NewOption("🔍 Type to search catalog...", SearchOptionKey))
+	}
+	return opts
+}
+
+// ExtractSelectedPackages separates normal package slugs from the inline search trigger.
+func ExtractSelectedPackages(choices []string) (selected []string, wantsSearch bool) {
+	for _, ch := range choices {
+		if ch == SearchOptionKey {
+			wantsSearch = true
+		} else {
+			selected = append(selected, ch)
+		}
+	}
+	return selected, wantsSearch
+}
+
 func SelectPackagesFlow(
 	ctx context.Context,
 	itemType packages.PackageType,
@@ -18,57 +42,45 @@ func SelectPackagesFlow(
 ) ([]string, error) {
 	var selected []string
 
-	// Initial default selection
-	if len(defaultOptions) > 0 {
-		var initialChoices []string
+	hasCatalog := len(catalog) > 0
+	opts := BuildPackageOptions(defaultOptions, hasCatalog)
+
+	var initialChoices []string
+	if len(opts) > 0 {
 		form := huh.NewForm(
 			huh.NewGroup(
 				huh.NewMultiSelect[string]().
-					Title(fmt.Sprintf("Select %ss from defaults (or continue to search)", itemType)).
+					Title(fmt.Sprintf("Select %ss from defaults (or search)", itemType)).
 					Description("Space to select, Enter to confirm").
-					Options(defaultOptions...).
+					Options(opts...).
 					Value(&initialChoices),
 			),
-		)
+		).WithTheme(CustomTheme())
 
 		if err := form.Run(); err != nil {
 			return nil, err
 		}
-		selected = append(selected, initialChoices...)
 	}
 
-	// Search loop
-	if len(catalog) == 0 {
+	normSelected, wantsSearch := ExtractSelectedPackages(initialChoices)
+	selected = append(selected, normSelected...)
+
+	// If user did not select search, finish immediately
+	if !wantsSearch || !hasCatalog {
 		return deduplicateStrings(selected), nil
 	}
 
+	// Interactive search loop
 	for {
-		var wantSearch bool
-		confirmForm := huh.NewForm(
-			huh.NewGroup(
-				huh.NewConfirm().
-					Title(fmt.Sprintf("Search %s catalog?", itemType)).
-					Description(fmt.Sprintf("Currently selected: %d %ss", len(selected), itemType)).
-					Value(&wantSearch),
-			),
-		)
-
-		if err := confirmForm.Run(); err != nil {
-			return nil, err
-		}
-
-		if !wantSearch {
-			break
-		}
-
 		var query string
 		queryForm := huh.NewForm(
 			huh.NewGroup(
 				huh.NewInput().
 					Title(fmt.Sprintf("Search %s name or slug", itemType)).
+					Description(fmt.Sprintf("Currently selected: %d %ss", len(selected), itemType)).
 					Value(&query),
 			),
-		)
+		).WithTheme(CustomTheme())
 
 		if err := queryForm.Run(); err != nil {
 			return nil, err
@@ -77,29 +89,34 @@ func SelectPackagesFlow(
 		matches := packages.FilterCatalog(catalog, itemType, query)
 		if len(matches) == 0 {
 			fmt.Printf("No matching %ss found for %q.\n", itemType, query)
-			continue
 		}
 
-		opts := make([]huh.Option[string], 0, len(matches))
+		resultOpts := make([]huh.Option[string], 0, len(matches)+1)
 		for _, m := range matches {
-			opts = append(opts, huh.NewOption(fmt.Sprintf("%s (%s v%s)", m.Name, m.Slug, m.Version), m.Slug))
+			resultOpts = append(resultOpts, huh.NewOption(fmt.Sprintf("%s (%s v%s)", m.Name, m.Slug, m.Version), m.Slug))
 		}
+		resultOpts = append(resultOpts, huh.NewOption("🔍 Search again...", SearchOptionKey))
 
 		var searchChoices []string
 		resultsForm := huh.NewForm(
 			huh.NewGroup(
 				huh.NewMultiSelect[string]().
 					Title(fmt.Sprintf("Matching %ss for %q", itemType, query)).
-					Options(opts...).
+					Options(resultOpts...).
 					Value(&searchChoices),
 			),
-		)
+		).WithTheme(CustomTheme())
 
 		if err := resultsForm.Run(); err != nil {
 			return nil, err
 		}
 
-		selected = append(selected, searchChoices...)
+		searchSelected, searchAgain := ExtractSelectedPackages(searchChoices)
+		selected = append(selected, searchSelected...)
+
+		if !searchAgain {
+			break
+		}
 	}
 
 	return deduplicateStrings(selected), nil
@@ -138,7 +155,7 @@ func PromptPackageSelections(ctx context.Context, cfg *config.Config, catalog []
 				Description(fmt.Sprintf("Default theme is %q. Install extra themes?", cfg.DefaultThemeSlug)).
 				Value(&wantThemes),
 		),
-	)
+	).WithTheme(CustomTheme())
 
 	if err := form.Run(); err != nil {
 		return nil, nil, err

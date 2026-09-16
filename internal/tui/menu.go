@@ -47,7 +47,7 @@ func BuildMainMenuForm(choice *string) *huh.Form {
 				Options(opts...).
 				Value(choice),
 		),
-	)
+	).WithTheme(CustomTheme())
 }
 
 // RunMainMenu displays the interactive main menu and returns the selected action key.

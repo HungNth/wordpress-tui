@@ -2,7 +2,6 @@ package tui
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 
 	"charm.land/huh/v2"
@@ -33,7 +32,23 @@ func ValidateSlugWithChecker(slug string, checker SlugAvailabilityChecker) error
 	return nil
 }
 
-// BuildCreateForm creates the Huh form for collecting website creation parameters.
+// ResolveAndValidateSlug normalizes slug input: if empty, it derives the slug from websiteName;
+// it then validates syntax and executes the availability checker.
+func ResolveAndValidateSlug(websiteName, websiteSlug string, checker SlugAvailabilityChecker) (string, error) {
+	slug := strings.TrimSpace(websiteSlug)
+	if slug == "" {
+		slug = create.Slugify(websiteName)
+		if slug == "" {
+			return "", errors.New("website slug cannot be generated from empty website name")
+		}
+	}
+
+	if err := ValidateSlugWithChecker(slug, checker); err != nil {
+		return "", err
+	}
+	return slug, nil
+}
+// BuildCreateForm creates the unified Huh form collecting website parameters.
 func BuildCreateForm(inputs *CreateInputs, cfg *config.Config, checker ...SlugAvailabilityChecker) *huh.Form {
 	if inputs.AdminUsername == "" {
 		inputs.AdminUsername = cfg.DefaultAdminUsername
@@ -53,17 +68,33 @@ func BuildCreateForm(inputs *CreateInputs, cfg *config.Config, checker ...SlugAv
 	return huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().
-				Title(fmt.Sprintf("Website Slug for %q", inputs.WebsiteName)).
-				Description("Identifier for folder, database, and .test domain (1-63 chars)").
+				Title("Website Name").
+				Description("Human-readable title for your WordPress website").
+				Value(&inputs.WebsiteName).
+				Validate(func(s string) error {
+					if strings.TrimSpace(s) == "" {
+						return errors.New("website name cannot be empty")
+					}
+					return nil
+				}),
+
+			huh.NewInput().
+				Title("Website Slug").
+				Description("Folder, database, and .test domain (1-63 chars; leave blank to auto-generate from name)").
 				Value(&inputs.WebsiteSlug).
 				Validate(func(s string) error {
-					return ValidateSlugWithChecker(s, check)
+					resolved, err := ResolveAndValidateSlug(inputs.WebsiteName, s, check)
+					if err != nil {
+						return err
+					}
+					inputs.WebsiteSlug = resolved
+					return nil
 				}),
 		),
 		huh.NewGroup(
 			huh.NewInput().
 				Title("Admin Username").
-				Description(fmt.Sprintf("WordPress administrator username (default: %s)", cfg.DefaultAdminUsername)).
+				Description("WordPress administrator username (default: " + cfg.DefaultAdminUsername + ")").
 				Value(&inputs.AdminUsername),
 
 			huh.NewInput().
@@ -74,7 +105,7 @@ func BuildCreateForm(inputs *CreateInputs, cfg *config.Config, checker ...SlugAv
 
 			huh.NewInput().
 				Title("Admin Email").
-				Description(fmt.Sprintf("WordPress administrator email (default: %s)", cfg.DefaultAdminEmail)).
+				Description("WordPress administrator email (default: " + cfg.DefaultAdminEmail + ")").
 				Value(&inputs.AdminEmail).
 				Validate(func(s string) error {
 					if strings.TrimSpace(s) == "" {
@@ -88,39 +119,22 @@ func BuildCreateForm(inputs *CreateInputs, cfg *config.Config, checker ...SlugAv
 				Description("Apply debug settings, custom permalinks, VN timezone, and locale").
 				Value(&inputs.ApplyTweaks),
 		),
-	)
+	).WithTheme(CustomTheme())
 }
 
-// PromptCreateInputs prompts the user for create options, pre-filling slug from name.
+// PromptCreateInputs prompts the user with the unified create form.
 func PromptCreateInputs(cfg *config.Config, checker ...SlugAvailabilityChecker) (*CreateInputs, error) {
 	inputs := &CreateInputs{}
 
-	// First ask for Website Name
-	nameForm := huh.NewForm(
-		huh.NewGroup(
-			huh.NewInput().
-				Title("Website Name").
-				Description("Human-readable title for your WordPress website").
-				Value(&inputs.WebsiteName).
-				Validate(func(s string) error {
-					if strings.TrimSpace(s) == "" {
-						return errors.New("website name cannot be empty")
-					}
-					return nil
-				}),
-		),
-	)
-
-	if err := nameForm.Run(); err != nil {
+	form := BuildCreateForm(inputs, cfg, checker...)
+	if err := form.Run(); err != nil {
 		return nil, err
 	}
 
-	// Suggest slug from name
-	inputs.WebsiteSlug = create.Slugify(inputs.WebsiteName)
-
-	mainForm := BuildCreateForm(inputs, cfg, checker...)
-	if err := mainForm.Run(); err != nil {
-		return nil, err
+	// If slug was left blank, derive automatically from confirmed Website Name
+	resolvedSlug, err := ResolveAndValidateSlug(inputs.WebsiteName, inputs.WebsiteSlug, nil)
+	if err == nil {
+		inputs.WebsiteSlug = resolvedSlug
 	}
 
 	return inputs, nil

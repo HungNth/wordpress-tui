@@ -187,7 +187,10 @@ func TestTicket08_ComposedCreateFlowSmoke(t *testing.T) {
 
 	// Verify clean lean core: no default bundled themes or plugins in wp-content
 	themesDir := filepath.Join(siteOneDir, "wp-content", "themes")
-	themeEntries, _ := os.ReadDir(themesDir)
+	themeEntries, err := os.ReadDir(themesDir)
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatalf("unexpected error reading themes dir %s: %v", themesDir, err)
+	}
 	for _, te := range themeEntries {
 		if strings.HasPrefix(strings.ToLower(te.Name()), "twentytwenty") {
 			t.Errorf("expected bundled theme %s to be absent under --skip-content", te.Name())

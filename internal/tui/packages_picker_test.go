@@ -41,3 +41,37 @@ func TestCatalogFilteringLogic(t *testing.T) {
 		t.Errorf("expected 1 theme, got %v", themes)
 	}
 }
+
+func TestInlineSearchOptionAndExtraction(t *testing.T) {
+	// 1. When catalog is absent, no search option is appended
+	optsWithoutCat := tui.BuildPackageOptions(nil, false)
+	if len(optsWithoutCat) != 0 {
+		t.Errorf("expected 0 options when catalog absent, got %d", len(optsWithoutCat))
+	}
+
+	// 2. When catalog is present, search option is appended
+	optsWithCat := tui.BuildPackageOptions(nil, true)
+	if len(optsWithCat) != 1 || optsWithCat[0].Value != tui.SearchOptionKey {
+		t.Errorf("expected search option value %q, got %+v", tui.SearchOptionKey, optsWithCat)
+	}
+
+	// 3. ExtractSelectedPackages filters search trigger and reports wantsSearch
+	choicesWithSearch := []string{"plugin-one", tui.SearchOptionKey, "plugin-two"}
+	selected, wantsSearch := tui.ExtractSelectedPackages(choicesWithSearch)
+	if !wantsSearch {
+		t.Errorf("expected wantsSearch to be true")
+	}
+	if len(selected) != 2 || selected[0] != "plugin-one" || selected[1] != "plugin-two" {
+		t.Errorf("unexpected selected packages: %v", selected)
+	}
+
+	// 4. ExtractSelectedPackages without search trigger
+	choicesWithoutSearch := []string{"plugin-one"}
+	selected, wantsSearch = tui.ExtractSelectedPackages(choicesWithoutSearch)
+	if wantsSearch {
+		t.Errorf("expected wantsSearch to be false")
+	}
+	if len(selected) != 1 || selected[0] != "plugin-one" {
+		t.Errorf("unexpected selected packages: %v", selected)
+	}
+}

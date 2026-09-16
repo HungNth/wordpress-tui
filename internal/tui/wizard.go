@@ -37,7 +37,7 @@ func BuildEnvironmentForm(inputs *WizardInputs) *huh.Form {
 				Description("Do you use Laravel Herd for local web serving?").
 				Value(&inputs.UsedHerd),
 		),
-	)
+	).WithTheme(CustomTheme())
 }
 
 // BuildMainWizardForm creates the remaining groups once Herd preference is chosen.
@@ -168,7 +168,7 @@ func BuildMainWizardForm(inputs *WizardInputs, homeDir string) *huh.Form {
 				Description("Unix socket path if connecting via socket instead of TCP").
 				Value(&inputs.DBSocket),
 		),
-	)
+	).WithTheme(CustomTheme())
 }
 
 // ConvertInputsToConfig merges collected inputs into a full default config.
