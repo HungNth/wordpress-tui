@@ -99,7 +99,7 @@ func TestSafeDownload_SuccessAndValidation(t *testing.T) {
 		RootCAs:    rootCAs,
 	}
 
-	err := packages.SafeDownload(context.Background(), server.URL+"/download?license_key=secret&sig=123", int64(len(zipData)), destFile, opts)
+	err := packages.SafeDownload(context.Background(), server.URL+"/download?license_key=secret&sig=123", destFile, opts)
 	if err != nil {
 		t.Fatalf("SafeDownload failed: %v", err)
 	}
@@ -153,7 +153,7 @@ func TestSafeDownload_SSRFRejectionWithCustomResolver(t *testing.T) {
 		},
 	}
 
-	err := packages.SafeDownload(context.Background(), "https://malicious.example.com/package.zip", 1024, "/tmp/unused.zip", opts)
+	err := packages.SafeDownload(context.Background(), "https://malicious.example.com/package.zip", "/tmp/unused.zip", opts)
 	if err == nil {
 		t.Fatal("expected SSRF error on private IP, got nil")
 	}
@@ -197,7 +197,7 @@ func TestSafeDownload_RedirectStripsRefererAndKeepsLocationOnly(t *testing.T) {
 	}
 
 	initialURL := server1.URL + "/start?license_key=original_secret"
-	err := packages.SafeDownload(context.Background(), initialURL, int64(len(zipData)), destFile, opts)
+	err := packages.SafeDownload(context.Background(), initialURL, destFile, opts)
 	if err != nil {
 		t.Fatalf("SafeDownload failed on redirect: %v", err)
 	}
@@ -230,7 +230,7 @@ func TestSafeDownload_WrappedErrorSanitization(t *testing.T) {
 	opts := packages.DownloadOptions{
 		AllowedIPs: []net.IP{net.ParseIP("127.0.0.1")},
 	}
-	err := packages.SafeDownload(context.Background(), secretURL, 1024, filepath.Join(t.TempDir(), "f.zip"), opts)
+	err := packages.SafeDownload(context.Background(), secretURL, filepath.Join(t.TempDir(), "f.zip"), opts)
 	if err == nil {
 		t.Fatal("expected download error, got nil")
 	}

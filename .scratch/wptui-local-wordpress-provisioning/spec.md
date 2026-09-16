@@ -79,7 +79,7 @@ The Package Cache keeps one verified archive per Package type and slug in the op
 57. As a user, I want cached archives checked for regular-file status, expected size, locally recorded SHA-256, and readable ZIP structure, so that local corruption is detected before installation.
 58. As a user, I want WPTUI to make clear that the locally recorded SHA-256 detects later local changes but does not authenticate the publisher, so that cache integrity is not confused with supply-chain authenticity.
 59. As a user, I want Package downloads capped at 1 GiB, so that a bad response cannot consume unbounded disk space.
-60. As a user, I want metadata size parsed and enforced even when `Content-Length` is absent, so that chunked responses cannot bypass size validation.
+60. As a user, I want dynamic package downloads capped at 1 GiB and verified by ZIP structure and Content-Length, so that vendor server-side license stamping does not fail valid package installations.
 61. As a user, I want signed `download_url` values used exactly as returned by metadata, so that `license_key`, expiry, and signature parameters remain valid.
 62. As a user, I want WPTUI to avoid stripping, appending, or separately authenticating signed download URLs, so that it does not invalidate vendor signatures.
 63. As a user, I want signed URL query strings redacted from output, so that API keys and signatures are not leaked.
@@ -146,7 +146,7 @@ The Package Cache keeps one verified archive per Package type and slug in the op
 - The Package Catalog response contains the complete catalog in one response in v1; pagination is out of scope.
 - Filter catalog search case-insensitively by Package name and slug. Exclude generic entries and filter plugin/theme pickers by exact Package type.
 - Resolve metadata with the relative path `package/{escaped-slug}/metadata` against the same normalized trailing-slash base URL, preserving its configured path prefix. Path-escape the slug and query-encode the optional key instead of concatenating untrusted values.
-- Validate metadata name-independent identity fields: type must be plugin or theme, slug must match the requested Package, version must be non-empty, size must be a positive base-10 byte count, and download URL must be a valid HTTPS URL.
+- Validate metadata name-independent identity fields: type must be plugin or theme, slug must match the requested Package, version must be non-empty, and download URL must be a valid HTTPS URL. If size is present, it must be numeric and not exceed 1 GiB.
 - Use the signed `download_url` exactly as metadata returns it. Do not strip or append `license_key`, expiry, signature, headers, or other authentication data. Do not store the signed URL in cache metadata.
 - Redact the entire signed URL query from progress, logs, and errors.
 - Install and activate selected plugins.
@@ -160,21 +160,21 @@ The Package Cache keeps one verified archive per Package type and slug in the op
 - Use exact version-string equality. Metadata is authoritative latest; do not semantically order vendor versions.
 - Validate remote type and slug before deriving any path. Type is limited to plugin or theme. Slug must be a single safe path segment with no separators, control characters, `.` or `..`. After joining, confirm the result remains below the cache root.
 - Revalidate every manifest `file_path` as relative and below the cache root. Reject symlinks and non-regular files.
-- Validate a cache hit by file existence, regular-file status, manifest size, locally recorded SHA-256, and readable ZIP central directory. When current metadata is available, its declared size must also match.
+- Validate a cache hit by file existence, regular-file status, manifest size, locally recorded SHA-256, and readable ZIP central directory. Cache matching is based on package identity and version equality; static metadata size matching is omitted because vendor distribution dynamically stamps license keys.
 - Treat the local SHA-256 as local corruption/tamper detection only. It is not publisher authentication because the metadata contract does not provide a trusted checksum.
 - If a cached artifact fails validation, remove its entry and managed file, then attempt a fresh download. Never use a corrupt archive as stale fallback.
 - If the manifest cannot be parsed, rename it to a timestamped corrupt-manifest name, begin with an empty manifest, and leave unrecognized archives untouched.
-- Parse metadata `size` from its string form. Reject missing, malformed, zero, negative, or greater-than-1-GiB values.
-- The temporary file must never grow beyond the accepted 1-GiB artifact cap. Enforce the declared metadata size while streaming even when `Content-Length` is absent; a present `Content-Length` must match metadata size.
+- Parse metadata `size` as an advisory value when present; reject non-numeric values or sizes greater than the 1-GiB cap.
+- The temporary file must never grow beyond the accepted 1-GiB artifact cap. When `Content-Length` is present, enforce that received bytes match `Content-Length`; do not enforce static metadata size against the stream, as server-side license injection alters package byte length.
 - Accept at most five redirects. At each hop, resolve the new request solely from the server's `Location`; never copy the source query, API key, authorization data, or other credentials, and suppress `Referer` so a different origin cannot receive the signed source URL.
 - For the initial URL and every redirect, require HTTPS, resolve every address for the hostname, reject the target if any resolved address is disallowed, and bind the actual connection to a validated resolved address while preserving the original hostname for TLS. The HTTP transport must not perform a second unvalidated DNS resolution.
 - Block loopback, private, link-local, unspecified, and cloud/local metadata-service addresses for initial and redirected download targets.
-- Stream downloads into a cache-local partial file, compute SHA-256 during the stream, verify exact size, and verify ZIP structure before publishing the archive.
+- Stream downloads into a cache-local partial file, compute SHA-256 during the stream, enforce the 1-GiB ceiling, verify `Content-Length` completion when declared, and verify ZIP structure before publishing the archive.
 - Remove partial files on success, error, cancellation, and later stale-part cleanup.
 - Publish a new archive with an atomic rename, then atomically replace the manifest, then delete the previous version. Until both archive and manifest publication succeed, preserve the prior valid Cache Entry and artifact.
 - Completed verified cache artifacts are not Website-owned resources. They survive later Provisioning rollback.
 - Use stale cache only for transient failures: DNS/connection interruption, timeout, HTTP 408, HTTP 429, HTTP 5xx, or interrupted download.
-- Do not use stale cache for authentication/authorization errors, other contract-level 4xx responses, invalid metadata, identity mismatch, size/integrity failure, or security-policy rejection.
+- Do not use stale cache for authentication/authorization errors, other contract-level 4xx responses, invalid metadata, identity mismatch, archive integrity failure, or security-policy rejection.
 - Resolve every selected Package into a verified local artifact before creating the Website directory or database.
 - Provisioning tracks ownership of the Website directory, database, and Herd TLS state. Rollback affects only resources created by the current run.
 - If Herd TLS was newly created by the run, rollback unsecures it. Pre-existing external state must not be removed.

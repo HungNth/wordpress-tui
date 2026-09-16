@@ -12,7 +12,7 @@ Keep local Website creation moving when Package metadata or download infrastruct
 
 - [x] A valid cached artifact may be used after DNS/connection interruption, timeout, HTTP 408, HTTP 429, HTTP 5xx, or an interrupted download.
 - [x] If metadata identifies a newer version but downloading it fails transiently, the previous valid cached version may be used.
-- [x] Authentication/authorization errors, other contract-level 4xx responses, invalid metadata, identity mismatch, size/integrity failure, and security-policy rejection never use stale fallback.
+- [x] Authentication/authorization errors, other contract-level 4xx responses, invalid metadata, identity mismatch, archive integrity failure, and security-policy rejection never use stale fallback.
 - [x] A corrupt or missing cached artifact cannot be used as fallback.
 - [x] Stale fallback is available only when Package integration is configured; an empty Package API base URL still disables Package features.
 - [x] Progress and completion results identify the actual stale version and the transient reason without exposing signed URL queries or credentials.

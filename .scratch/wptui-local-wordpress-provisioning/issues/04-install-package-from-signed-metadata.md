@@ -12,10 +12,10 @@ Let a user select one configured plugin or the configured default theme and rece
 
 - [x] Package API base URLs preserve configured path prefixes for metadata requests, including trailing-slash variations.
 - [x] Optional license keys are query-encoded when present and omitted entirely when empty.
-- [x] Metadata type, slug, version, decimal-string size, and HTTPS download URL are validated before download.
+- [x] Metadata type, slug, version, advisory size, and HTTPS download URL are validated before download.
 - [x] The signed download URL is requested exactly as returned; WPTUI neither strips nor appends query/authentication data and never stores the signed URL.
 - [x] Signed URL queries are redacted from progress and errors.
-- [x] Downloads enforce the accepted 1-GiB artifact cap, exact metadata size, optional Content-Length agreement, readable ZIP structure, and cleanup of every partial file.
+- [x] Downloads enforce the accepted 1-GiB artifact cap, Content-Length agreement when declared, readable ZIP structure, and cleanup of every partial file.
 - [x] Redirects are capped at five, use only the server Location for the next URL, do not copy source credentials, and suppress Referer.
 - [x] Every resolved address at the initial URL and each redirect is checked; mixed public/private results are rejected, and the connection is pinned to a validated address without a second DNS resolution.
 - [x] Remote type and slug cannot escape the managed download location through separators, control characters, dot segments, or unsafe joins.

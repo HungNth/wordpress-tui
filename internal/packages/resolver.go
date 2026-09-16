@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"wptui/internal/config"
@@ -94,13 +93,8 @@ func (r *Resolver) ResolvePackage(ctx context.Context, ref PackageRef, stageDir 
 		return nil, fmt.Errorf("failed to fetch metadata for %s %q: %w", ref.Type, ref.Slug, err)
 	}
 
-	size, err := strconv.ParseInt(strings.TrimSpace(meta.Size), 10, 64)
-	if err != nil || size <= 0 {
-		return nil, fmt.Errorf("invalid metadata size: %q", meta.Size)
-	}
-
-	// Exact-version cache hit: version and metadata size must both match
-	if hasCache && cachedEntry.Version == meta.Version && cachedEntry.Size == size {
+	// Exact-version cache hit: version must match
+	if hasCache && cachedEntry.Version == meta.Version {
 		stagedEntry, staged, stageErr := r.cache.StageTo(ctx, ref, destPath)
 		if stageErr == nil && staged {
 			return &Artifact{
@@ -115,12 +109,8 @@ func (r *Resolver) ResolvePackage(ctx context.Context, ref PackageRef, stageDir 
 		}
 	}
 
-	if err := SafeDownload(ctx, meta.DownloadURL, size, destPath, r.opts); err != nil {
+	if err := SafeDownload(ctx, meta.DownloadURL, destPath, r.opts); err != nil {
 		if hasCache && IsTransientError(err) {
-			// Reject metadata-size-mismatched artifacts on stale fallback when version matches
-			if cachedEntry.Version == meta.Version && cachedEntry.Size != size {
-				return nil, fmt.Errorf("cached artifact size %d does not match metadata size %d for version %s", cachedEntry.Size, size, meta.Version)
-			}
 			stagedEntry, staged, stageErr := r.cache.StageTo(ctx, ref, destPath)
 			if stageErr == nil && staged {
 				return &Artifact{
@@ -158,6 +148,11 @@ func (r *Resolver) ResolvePackage(ctx context.Context, ref PackageRef, stageDir 
 	}
 	defer f.Close()
 
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("failed to stat downloaded archive: %w", err)
+	}
+
 	hasher := sha256.New()
 	if _, err := io.Copy(hasher, f); err != nil {
 		return nil, fmt.Errorf("failed to compute hash: %w", err)
@@ -168,7 +163,7 @@ func (r *Resolver) ResolvePackage(ctx context.Context, ref PackageRef, stageDir 
 		Ref:     ref,
 		Version: meta.Version,
 		Path:    destPath,
-		Size:    size,
+		Size:    fi.Size(),
 		SHA256:  shaHex,
 		IsStale: false,
 	}, nil

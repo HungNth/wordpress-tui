@@ -55,7 +55,7 @@ func (e *InterruptedDownloadError) Error() string {
 }
 
 // SafeDownload streams a remote HTTPS package into destPath enforcing size bounds, SSRF checks, and ZIP integrity.
-func SafeDownload(ctx context.Context, downloadURL string, expectedSize int64, destPath string, optList ...DownloadOptions) error {
+func SafeDownload(ctx context.Context, downloadURL string, destPath string, optList ...DownloadOptions) error {
 	var opt DownloadOptions
 	if len(optList) > 0 {
 		opt = optList[0]
@@ -68,8 +68,8 @@ func SafeDownload(ctx context.Context, downloadURL string, expectedSize int64, d
 	if u.Scheme != "https" {
 		return fmt.Errorf("download URL must use HTTPS, got scheme %q", u.Scheme)
 	}
-	if expectedSize <= 0 || expectedSize > MaxArtifactCap {
-		return fmt.Errorf("invalid download size %d (must be between 1 and 1 GiB)", expectedSize)
+	if u.Hostname() == "" {
+		return fmt.Errorf("download URL must have a valid hostname: %s", SanitizeURL(downloadURL))
 	}
 
 	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
@@ -178,21 +178,21 @@ func SafeDownload(ctx context.Context, downloadURL string, expectedSize int64, d
 		return &HTTPError{StatusCode: resp.StatusCode, Message: fmt.Sprintf("download returned HTTP status %d for %s", resp.StatusCode, SanitizeURL(downloadURL))}
 	}
 
-	if resp.ContentLength > 0 && resp.ContentLength != expectedSize {
-		return fmt.Errorf("server declared Content-Length %d does not match expected size %d", resp.ContentLength, expectedSize)
+	if resp.ContentLength > MaxArtifactCap {
+		return fmt.Errorf("server declared Content-Length %d exceeds 1 GiB limit", resp.ContentLength)
 	}
 
-	limitReader := io.LimitReader(resp.Body, expectedSize+1)
+	limitReader := io.LimitReader(resp.Body, MaxArtifactCap+1)
 	written, err := io.Copy(partFile, limitReader)
 	if err != nil {
 		return fmt.Errorf("download streaming failed: %w", err)
 	}
 
-	if written > expectedSize {
-		return fmt.Errorf("downloaded content exceeded expected size %d", expectedSize)
+	if written > MaxArtifactCap {
+		return fmt.Errorf("downloaded content exceeded 1 GiB limit")
 	}
-	if written < expectedSize {
-		return &InterruptedDownloadError{Received: written, Expected: expectedSize}
+	if resp.ContentLength > 0 && written < resp.ContentLength {
+		return &InterruptedDownloadError{Received: written, Expected: resp.ContentLength}
 	}
 
 	_ = partFile.Close()

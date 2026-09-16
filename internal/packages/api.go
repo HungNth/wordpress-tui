@@ -153,12 +153,14 @@ func FetchMetadata(ctx context.Context, client *http.Client, baseURL string, exp
 		return nil, &MetadataContractError{Err: errors.New("metadata version is empty")}
 	}
 
-	sizeInt, err := strconv.ParseInt(strings.TrimSpace(meta.Size), 10, 64)
-	if err != nil || sizeInt <= 0 {
-		return nil, &MetadataContractError{Err: fmt.Errorf("invalid metadata size: %q", meta.Size)}
-	}
-	if sizeInt > MaxArtifactCap {
-		return nil, &MetadataContractError{Err: fmt.Errorf("metadata size %d exceeds 1 GiB limit", sizeInt)}
+	if strings.TrimSpace(meta.Size) != "" {
+		sizeInt, err := strconv.ParseInt(strings.TrimSpace(meta.Size), 10, 64)
+		if err != nil || sizeInt < 0 {
+			return nil, &MetadataContractError{Err: fmt.Errorf("invalid metadata size: %q", meta.Size)}
+		}
+		if sizeInt > MaxArtifactCap {
+			return nil, &MetadataContractError{Err: fmt.Errorf("metadata size %d exceeds 1 GiB limit", sizeInt)}
+		}
 	}
 
 	downURL, err := url.Parse(meta.DownloadURL)
