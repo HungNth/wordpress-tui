@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"charm.land/huh/v2"
@@ -115,7 +116,7 @@ type CreateFlowDependencies struct {
 	Runner         wpcli.Runner
 	Resolver       PackageResolver
 	Catalog        []packages.CatalogItem
-	PromptCreate   func(*config.Config) (*tui.CreateInputs, error)
+	PromptCreate   func(*config.Config, ...tui.SlugAvailabilityChecker) (*tui.CreateInputs, error)
 	PromptPackages func(context.Context, *config.Config, []packages.CatalogItem) ([]string, []string, error)
 }
 
@@ -137,6 +138,24 @@ func RunCreateFlowWithDeps(ctx context.Context, cfg *config.Config, deps CreateF
 	dbChecker := func(c context.Context, dbName string) (bool, error) {
 		return client.CheckDatabaseExists(c, dbConn, dbName)
 	}
+	availabilityChecker := func(slug string) error {
+		targetPath := filepath.Join(cfg.WebsitesPath, slug)
+		if fi, err := os.Stat(targetPath); err == nil && fi != nil {
+			return fmt.Errorf("directory %s already exists", targetPath)
+		} else if err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("failed to check directory %s: %w", targetPath, err)
+		}
+
+		exists, err := dbChecker(ctx, slug)
+		if err != nil {
+			return fmt.Errorf("database check failed: %w", err)
+		}
+		if exists {
+			return fmt.Errorf("database %s already exists", slug)
+		}
+		return nil
+	}
+
 	creator := create.NewCreator(cfg, client, dbChecker)
 
 	promptCreate := deps.PromptCreate
@@ -157,7 +176,7 @@ func RunCreateFlowWithDeps(ctx context.Context, cfg *config.Config, deps CreateF
 	}
 
 	for {
-		inputs, err := promptCreate(cfg)
+		inputs, err := promptCreate(cfg, availabilityChecker)
 		if err != nil {
 			if errors.Is(err, huh.ErrUserAborted) {
 				return nil

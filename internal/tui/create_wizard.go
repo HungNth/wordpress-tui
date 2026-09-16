@@ -19,8 +19,22 @@ type CreateInputs struct {
 	ApplyTweaks   bool
 }
 
+// SlugAvailabilityChecker checks whether a website slug collides with an existing directory or database.
+type SlugAvailabilityChecker func(slug string) error
+
+// ValidateSlugWithChecker validates slug syntax first; only syntactically valid slugs invoke the availability checker.
+func ValidateSlugWithChecker(slug string, checker SlugAvailabilityChecker) error {
+	if err := create.ValidateSlug(slug); err != nil {
+		return err
+	}
+	if checker != nil {
+		return checker(slug)
+	}
+	return nil
+}
+
 // BuildCreateForm creates the Huh form for collecting website creation parameters.
-func BuildCreateForm(inputs *CreateInputs, cfg *config.Config) *huh.Form {
+func BuildCreateForm(inputs *CreateInputs, cfg *config.Config, checker ...SlugAvailabilityChecker) *huh.Form {
 	if inputs.AdminUsername == "" {
 		inputs.AdminUsername = cfg.DefaultAdminUsername
 	}
@@ -31,13 +45,20 @@ func BuildCreateForm(inputs *CreateInputs, cfg *config.Config) *huh.Form {
 		inputs.AdminEmail = cfg.DefaultAdminEmail
 	}
 
+	var check SlugAvailabilityChecker
+	if len(checker) > 0 && checker[0] != nil {
+		check = checker[0]
+	}
+
 	return huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().
 				Title(fmt.Sprintf("Website Slug for %q", inputs.WebsiteName)).
 				Description("Identifier for folder, database, and .test domain (1-63 chars)").
 				Value(&inputs.WebsiteSlug).
-				Validate(create.ValidateSlug),
+				Validate(func(s string) error {
+					return ValidateSlugWithChecker(s, check)
+				}),
 		),
 		huh.NewGroup(
 			huh.NewInput().
@@ -71,7 +92,7 @@ func BuildCreateForm(inputs *CreateInputs, cfg *config.Config) *huh.Form {
 }
 
 // PromptCreateInputs prompts the user for create options, pre-filling slug from name.
-func PromptCreateInputs(cfg *config.Config) (*CreateInputs, error) {
+func PromptCreateInputs(cfg *config.Config, checker ...SlugAvailabilityChecker) (*CreateInputs, error) {
 	inputs := &CreateInputs{}
 
 	// First ask for Website Name
@@ -97,7 +118,7 @@ func PromptCreateInputs(cfg *config.Config) (*CreateInputs, error) {
 	// Suggest slug from name
 	inputs.WebsiteSlug = create.Slugify(inputs.WebsiteName)
 
-	mainForm := BuildCreateForm(inputs, cfg)
+	mainForm := BuildCreateForm(inputs, cfg, checker...)
 	if err := mainForm.Run(); err != nil {
 		return nil, err
 	}

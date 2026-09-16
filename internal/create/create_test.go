@@ -98,6 +98,18 @@ func TestCreator_SuccessFlow(t *testing.T) {
 	if len(progressSteps) > 0 && progressSteps[len(progressSteps)-1] != "herd_secure" {
 		t.Errorf("expected herd_secure to be final progress step, got %s", progressSteps[len(progressSteps)-1])
 	}
+
+	// Verify core download runs with --skip-content
+	var foundSkipContent bool
+	for _, call := range runner.calls {
+		if strings.Contains(call, "wp core download") && strings.Contains(call, "--skip-content") {
+			foundSkipContent = true
+			break
+		}
+	}
+	if !foundSkipContent {
+		t.Errorf("expected core download to execute with --skip-content, calls: %v", runner.calls)
+	}
 }
 
 func TestCreator_PackageInstallAndDeduplication(t *testing.T) {

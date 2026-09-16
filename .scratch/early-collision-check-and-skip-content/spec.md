@@ -15,8 +15,7 @@ When creating a new WordPress website in WPTUI:
    - If a collision is detected, an inline error is displayed on the Slug field immediately, keeping the user in the field to choose an available slug before proceeding to administrator credential inputs.
 
 2. **Omit Default Themes and Plugins with `--skip-content`**:
-   - `wp core download` includes the `--skip-content` flag:
-     `wp core download https://wordpress.org/latest.zip --skip-content`
+     `wp core download --skip-content` (with optional `--locale`)
    - Default bundled themes and plugins are skipped, resulting in a cleaner, faster core installation.
 
 ## User Stories
@@ -45,7 +44,7 @@ When creating a new WordPress website in WPTUI:
    - In `internal/wpcli/wpcli.go`, update `CoreDownload`:
      `args := []string{"core", "download", downloadURL, "--skip-content"}`
    - The command executed will be:
-     `wp core download https://wordpress.org/latest.zip --skip-content`
+     `wp core download --skip-content --locale=en_US`
    - When Package integration is disabled and a default theme is configured, no bundled default themes are retained: `DefaultThemeSkipped` is reported as true, and active-theme reporting correctly reflects that no default theme was activated. If no default theme is configured, `DefaultThemeSkipped` remains false.
    - All tests in `internal/wpcli` and `internal/create` expecting `wp core download` calls will reflect the `--skip-content` argument.
 

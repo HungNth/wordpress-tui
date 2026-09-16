@@ -41,6 +41,18 @@ func (m *e2eMockRunner) Run(ctx context.Context, dir string, name string, args [
 	if m.failOnSubstr != "" && strings.Contains(call, m.failOnSubstr) {
 		return "", "mock failure on: " + call, errors.New("simulated critical failure")
 	}
+	if strings.Contains(call, "core download") {
+		// Materialize core base files
+		_ = os.MkdirAll(filepath.Join(dir, "wp-content"), 0755)
+		_ = os.WriteFile(filepath.Join(dir, "wp-load.php"), []byte("<?php // wp core"), 0600)
+		// If --skip-content is absent, simulate standard bundle containing twentytwentyfour & hello.php
+		if !strings.Contains(call, "--skip-content") {
+			_ = os.MkdirAll(filepath.Join(dir, "wp-content", "themes", "twentytwentyfour"), 0755)
+			_ = os.MkdirAll(filepath.Join(dir, "wp-content", "plugins", "akismet"), 0755)
+			_ = os.WriteFile(filepath.Join(dir, "wp-content", "plugins", "akismet", "akismet.php"), []byte("<?php // akismet"), 0600)
+			_ = os.WriteFile(filepath.Join(dir, "wp-content", "plugins", "hello.php"), []byte("<?php // hello"), 0600)
+		}
+	}
 
 	if strings.Contains(call, "herd paths") || strings.Contains(call, "herd parked") {
 		return m.parkedPath + "\n", "", nil
@@ -154,7 +166,7 @@ func TestTicket08_ComposedCreateFlowSmoke(t *testing.T) {
 			return app.RunCreateFlowWithDeps(ctx, c, app.CreateFlowDependencies{
 				Runner:   runner,
 				Resolver: resolver,
-				PromptCreate: func(cfg *config.Config) (*tui.CreateInputs, error) {
+				PromptCreate: func(cfg *config.Config, checker ...tui.SlugAvailabilityChecker) (*tui.CreateInputs, error) {
 					return &scriptedInputsA, nil
 				},
 				PromptPackages: func(ctx context.Context, cfg *config.Config, catalog []packages.CatalogItem) ([]string, []string, error) {
@@ -171,6 +183,20 @@ func TestTicket08_ComposedCreateFlowSmoke(t *testing.T) {
 	siteOneDir := filepath.Join(cfg.WebsitesPath, "site-one")
 	if _, err := os.Stat(siteOneDir); os.IsNotExist(err) {
 		t.Errorf("expected site-one directory to exist at %s", siteOneDir)
+	}
+
+	// Verify clean lean core: no default bundled themes or plugins in wp-content
+	bundledThemeDir := filepath.Join(siteOneDir, "wp-content", "themes", "twentytwentyfour")
+	if _, err := os.Stat(bundledThemeDir); !os.IsNotExist(err) {
+		t.Errorf("expected bundled theme twentytwentyfour to be absent under --skip-content, found at %s", bundledThemeDir)
+	}
+	helloDollyPlugin := filepath.Join(siteOneDir, "wp-content", "plugins", "hello.php")
+	if _, err := os.Stat(helloDollyPlugin); !os.IsNotExist(err) {
+		t.Errorf("expected bundled plugin hello.php to be absent under --skip-content, found at %s", helloDollyPlugin)
+	}
+	akismetPlugin := filepath.Join(siteOneDir, "wp-content", "plugins", "akismet")
+	if _, err := os.Stat(akismetPlugin); !os.IsNotExist(err) {
+		t.Errorf("expected bundled plugin akismet to be absent under --skip-content, found at %s", akismetPlugin)
 	}
 	if atomic.LoadInt32(&downloadCount) != 2 {
 		t.Errorf("expected 2 download hits after site one, got %d", atomic.LoadInt32(&downloadCount))
@@ -200,7 +226,7 @@ func TestTicket08_ComposedCreateFlowSmoke(t *testing.T) {
 			return app.RunCreateFlowWithDeps(ctx, c, app.CreateFlowDependencies{
 				Runner:   runner,
 				Resolver: resolver,
-				PromptCreate: func(cfg *config.Config) (*tui.CreateInputs, error) {
+				PromptCreate: func(cfg *config.Config, checker ...tui.SlugAvailabilityChecker) (*tui.CreateInputs, error) {
 					return &scriptedInputsB, nil
 				},
 				PromptPackages: func(ctx context.Context, cfg *config.Config, catalog []packages.CatalogItem) ([]string, []string, error) {
@@ -251,7 +277,7 @@ func TestTicket08_ComposedCreateFlowSmoke(t *testing.T) {
 			return app.RunCreateFlowWithDeps(ctx, c, app.CreateFlowDependencies{
 				Runner:   failingRunner,
 				Resolver: resolver,
-				PromptCreate: func(cfg *config.Config) (*tui.CreateInputs, error) {
+				PromptCreate: func(cfg *config.Config, checker ...tui.SlugAvailabilityChecker) (*tui.CreateInputs, error) {
 					return &scriptedInputsC, nil
 				},
 				PromptPackages: func(ctx context.Context, cfg *config.Config, catalog []packages.CatalogItem) ([]string, []string, error) {

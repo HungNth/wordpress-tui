@@ -62,7 +62,7 @@ func TestWPCLIClient_Flow(t *testing.T) {
 	}
 
 	expectedCalls := []string{
-		"wp core download https://wordpress.org/latest.zip",
+		"wp core download --skip-content --locale=en_US",
 		"wp config create --dbname=test-db --dbuser=root --dbhost=localhost:3306 --prompt=dbpass --skip-check",
 		"wp db create",
 		"wp core install --url=http://test-site.test --title=Test Site --admin_user=admin --admin_email=admin@admin.com --skip-email --prompt=admin_password",
