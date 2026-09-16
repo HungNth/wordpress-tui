@@ -58,12 +58,12 @@ func TestFilterCatalog(t *testing.T) {
 		{Name: "Xstore", Slug: "xstore", Type: "theme"},
 	}
 
-	plugins := packages.FilterCatalog(items, "plugin", "admin")
+	plugins := packages.FilterCatalog(items, packages.PackageTypePlugin, "admin")
 	if len(plugins) != 1 || plugins[0].Slug != "admin-site-enhancements-pro" {
 		t.Errorf("expected 1 admin plugin, got %v", plugins)
 	}
 
-	themes := packages.FilterCatalog(items, "theme", "XSTORE")
+	themes := packages.FilterCatalog(items, packages.PackageTypeTheme, "XSTORE")
 	if len(themes) != 1 || themes[0].Slug != "xstore" {
 		t.Errorf("expected 1 theme case-insensitive match, got %v", themes)
 	}
@@ -71,10 +71,10 @@ func TestFilterCatalog(t *testing.T) {
 
 func TestDeduplicatePackages(t *testing.T) {
 	refs := []packages.PackageRef{
-		{Type: "plugin", Slug: "acf"},
-		{Type: "plugin", Slug: "rank-math"},
-		{Type: "plugin", Slug: "acf"}, // duplicate
-		{Type: "theme", Slug: "acf"},  // different type
+		{Type: packages.PackageTypePlugin, Slug: "acf"},
+		{Type: packages.PackageTypePlugin, Slug: "rank-math"},
+		{Type: packages.PackageTypePlugin, Slug: "acf"},
+		{Type: packages.PackageTypeTheme, Slug: "acf"},
 	}
 
 	deduped := packages.DeduplicatePackages(refs)

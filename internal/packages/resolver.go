@@ -35,7 +35,7 @@ func NewResolver(cfg *config.Config, cache *Cache, opts ...DownloadOptions) *Res
 
 // ValidatePackageRef ensures type is plugin or theme and slug contains no path traversal or control codes.
 func ValidatePackageRef(ref PackageRef) error {
-	if ref.Type != "plugin" && ref.Type != "theme" {
+	if ref.Type != PackageTypePlugin && ref.Type != PackageTypeTheme {
 		return fmt.Errorf("invalid package type %q (must be plugin or theme)", ref.Type)
 	}
 	if strings.TrimSpace(ref.Slug) == "" {
@@ -59,7 +59,7 @@ func (r *Resolver) ResolvePackage(ctx context.Context, ref PackageRef, stageDir 
 		return nil, errors.New("packages API is disabled: packages_api_url is empty")
 	}
 
-	destPath := filepath.Join(stageDir, ref.Type, ref.Slug, "package.zip")
+	destPath := filepath.Join(stageDir, string(ref.Type), ref.Slug, "package.zip")
 	destPath = filepath.Clean(destPath)
 	rel, err := filepath.Rel(stageDir, destPath)
 	if err != nil || strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {

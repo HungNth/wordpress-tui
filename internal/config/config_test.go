@@ -90,9 +90,30 @@ func TestValidateConfig(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "invalid admin email",
+			name: "invalid admin email missing domain",
+			modify: func(c *config.Config) {
+				c.DefaultAdminEmail = "admin@"
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid admin email not an email",
 			modify: func(c *config.Config) {
 				c.DefaultAdminEmail = "not-an-email"
+			},
+			wantErr: true,
+		},
+		{
+			name: "empty default theme slug",
+			modify: func(c *config.Config) {
+				c.DefaultThemeSlug = ""
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid packages api url",
+			modify: func(c *config.Config) {
+				c.PackagesAPIURL = "ftp://invalid-scheme.com"
 			},
 			wantErr: true,
 		},

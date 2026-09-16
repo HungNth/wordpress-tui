@@ -128,12 +128,7 @@ func BuildMainWizardForm(inputs *WizardInputs, homeDir string) *huh.Form {
 				Title("Default Administrator Email").
 				Description("Email for initial WordPress administrator account").
 				Value(&inputs.DefaultAdminEmail).
-				Validate(func(s string) error {
-					if !strings.Contains(s, "@") || strings.TrimSpace(s) == "" {
-						return errors.New("must be a valid email address")
-					}
-					return nil
-				}),
+				Validate(config.ValidateEmail),
 		),
 
 		huh.NewGroup(

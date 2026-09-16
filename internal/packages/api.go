@@ -97,7 +97,7 @@ func SanitizeError(err error) error {
 }
 
 // FetchMetadata retrieves and validates package metadata without leaking secrets in error bodies.
-func FetchMetadata(ctx context.Context, client *http.Client, baseURL, expectedType, slug, licenseKey string) (*Metadata, error) {
+func FetchMetadata(ctx context.Context, client *http.Client, baseURL string, expectedType PackageType, slug, licenseKey string) (*Metadata, error) {
 	u, err := BuildMetadataURL(baseURL, slug, licenseKey)
 	if err != nil {
 		return nil, err

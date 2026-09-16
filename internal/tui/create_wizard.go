@@ -56,10 +56,10 @@ func BuildCreateForm(inputs *CreateInputs, cfg *config.Config) *huh.Form {
 				Description(fmt.Sprintf("WordPress administrator email (default: %s)", cfg.DefaultAdminEmail)).
 				Value(&inputs.AdminEmail).
 				Validate(func(s string) error {
-					if strings.TrimSpace(s) != "" && !strings.Contains(s, "@") {
-						return errors.New("must be a valid email address")
+					if strings.TrimSpace(s) == "" {
+						return nil
 					}
-					return nil
+					return config.ValidateEmail(s)
 				}),
 
 			huh.NewConfirm().

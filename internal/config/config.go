@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/mail"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -149,6 +150,21 @@ func DefaultConfig(homeDir string) *Config {
 		},
 	}
 }
+func ValidateEmail(email string) error {
+	trimmed := strings.TrimSpace(email)
+	if trimmed == "" {
+		return errors.New("email cannot be empty")
+	}
+	addr, err := mail.ParseAddress(trimmed)
+	if err != nil || addr.Address == "" || !strings.Contains(addr.Address, "@") {
+		return errors.New("must be a valid email address")
+	}
+	parts := strings.Split(addr.Address, "@")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" || !strings.Contains(parts[1], ".") {
+		return errors.New("must be a valid email address with a domain")
+	}
+	return nil
+}
 
 func Validate(c *Config) error {
 	if c == nil {
@@ -171,8 +187,11 @@ func Validate(c *Config) error {
 	if strings.TrimSpace(c.DefaultAdminPassword) == "" {
 		return errors.New("default_admin_password is required")
 	}
-	if !strings.Contains(c.DefaultAdminEmail, "@") || strings.TrimSpace(c.DefaultAdminEmail) == "" {
-		return errors.New("default_admin_email must be a valid email address")
+	if err := ValidateEmail(c.DefaultAdminEmail); err != nil {
+		return fmt.Errorf("invalid default_admin_email: %w", err)
+	}
+	if strings.TrimSpace(c.DefaultThemeSlug) == "" {
+		return errors.New("default_theme_slug is required")
 	}
 	if strings.TrimSpace(c.PackagesAPIURL) != "" {
 		u, err := url.Parse(c.PackagesAPIURL)

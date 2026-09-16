@@ -31,12 +31,12 @@ func TestCatalogFilteringLogic(t *testing.T) {
 		{Name: "Generic Tool", Slug: "generic-tool", Type: "generic"},
 	}
 
-	plugins := packages.FilterCatalog(catalog, "plugin", "admin")
+	plugins := packages.FilterCatalog(catalog, packages.PackageTypePlugin, "admin")
 	if len(plugins) != 1 || plugins[0].Slug != "admin-site-enhancements-pro" {
 		t.Errorf("expected admin-site-enhancements-pro, got %v", plugins)
 	}
 
-	themes := packages.FilterCatalog(catalog, "theme", "")
+	themes := packages.FilterCatalog(catalog, packages.PackageTypeTheme, "")
 	if len(themes) != 1 || themes[0].Slug != "xstore" {
 		t.Errorf("expected 1 theme, got %v", themes)
 	}

@@ -18,21 +18,6 @@ import (
 	"github.com/gofrs/flock"
 )
 
-type CacheEntry struct {
-	Type         string `json:"type"`
-	Slug         string `json:"slug"`
-	Version      string `json:"version"`
-	FilePath     string `json:"file_path"`
-	Size         int64  `json:"size"`
-	SHA256       string `json:"sha256"`
-	DownloadedAt string `json:"downloaded_at"`
-}
-
-type Manifest struct {
-	SchemaVersion int          `json:"schema_version"`
-	Packages      []CacheEntry `json:"packages"`
-}
-
 type Cache struct {
 	rootDir  string
 	lockPath string
@@ -385,7 +370,7 @@ func (c *Cache) Put(ctx context.Context, ref PackageRef, version, srcFile string
 	safeVersion = strings.ReplaceAll(safeVersion, "/", "_")
 	safeVersion = strings.ReplaceAll(safeVersion, `\`, "_")
 
-	relPath := filepath.Join("files", ref.Type, ref.Slug, fmt.Sprintf("%s-%s.zip", safeVersion, shaHex[:12]))
+	relPath := filepath.Join("files", string(ref.Type), ref.Slug, fmt.Sprintf("%s-%s.zip", safeVersion, shaHex[:12]))
 	destPath, err := c.safeRelativePath(relPath)
 	if err != nil {
 		return nil, fmt.Errorf("invalid destination path: %w", err)

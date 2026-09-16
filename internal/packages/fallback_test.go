@@ -55,7 +55,7 @@ func TestResolver_FallbackToStaleCacheOnTransientMetadataFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ref := packages.PackageRef{Type: "plugin", Slug: "fallback-plugin"}
+	ref := packages.PackageRef{Type: packages.PackageTypePlugin, Slug: "fallback-plugin"}
 
 	// Seed cache with v1.0.0
 	stageFile := filepath.Join(tempDir, "seed.zip")
@@ -128,7 +128,7 @@ func TestResolver_FallbackToStaleCacheOnNewVersionDownloadFailure(t *testing.T) 
 		t.Fatal(err)
 	}
 
-	ref := packages.PackageRef{Type: "plugin", Slug: "known-plugin"}
+	ref := packages.PackageRef{Type: packages.PackageTypePlugin, Slug: "known-plugin"}
 
 	// Seed cache with v1.0.0
 	stageFile := filepath.Join(tempDir, "seed.zip")

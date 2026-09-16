@@ -147,6 +147,14 @@ func RunCreateFlowWithDeps(ctx context.Context, cfg *config.Config, deps CreateF
 	if promptPackages == nil {
 		promptPackages = tui.PromptPackageSelections
 	}
+	// Fetch catalog once if package API is configured and reuse across collision retries
+	catalog := deps.Catalog
+	if len(catalog) == 0 && strings.TrimSpace(cfg.PackagesAPIURL) != "" {
+		cat, err := packages.FetchCatalog(ctx, nil, cfg.PackagesAPIURL, cfg.PackagesAPIKey)
+		if err == nil {
+			catalog = cat
+		}
+	}
 
 	for {
 		inputs, err := promptCreate(cfg)
@@ -156,16 +164,6 @@ func RunCreateFlowWithDeps(ctx context.Context, cfg *config.Config, deps CreateF
 			}
 			return err
 		}
-
-		// Fetch catalog if package API is configured
-		catalog := deps.Catalog
-		if len(catalog) == 0 && strings.TrimSpace(cfg.PackagesAPIURL) != "" {
-			cat, err := packages.FetchCatalog(ctx, nil, cfg.PackagesAPIURL, cfg.PackagesAPIKey)
-			if err == nil {
-				catalog = cat
-			}
-		}
-
 		plugins, themes, err := promptPackages(ctx, cfg, catalog)
 		if err != nil {
 			if errors.Is(err, huh.ErrUserAborted) {
@@ -186,7 +184,7 @@ func RunCreateFlowWithDeps(ctx context.Context, cfg *config.Config, deps CreateF
 		if cfg.DefaultThemeSlug != "" {
 			if strings.TrimSpace(cfg.PackagesAPIURL) != "" && deps.Resolver != nil {
 				fmt.Printf("→ Resolving default theme %s...\n", cfg.DefaultThemeSlug)
-				art, err := deps.Resolver.ResolvePackage(ctx, packages.PackageRef{Type: "theme", Slug: cfg.DefaultThemeSlug}, stageDir)
+				art, err := deps.Resolver.ResolvePackage(ctx, packages.PackageRef{Type: packages.PackageTypeTheme, Slug: cfg.DefaultThemeSlug}, stageDir)
 				if err != nil {
 					return fmt.Errorf("failed to resolve default theme %q: %w", cfg.DefaultThemeSlug, err)
 				}
@@ -200,7 +198,7 @@ func RunCreateFlowWithDeps(ctx context.Context, cfg *config.Config, deps CreateF
 		if deps.Resolver != nil && len(plugins) > 0 {
 			for _, p := range plugins {
 				fmt.Printf("→ Resolving plugin %s...\n", p)
-				art, err := deps.Resolver.ResolvePackage(ctx, packages.PackageRef{Type: "plugin", Slug: p}, stageDir)
+				art, err := deps.Resolver.ResolvePackage(ctx, packages.PackageRef{Type: packages.PackageTypePlugin, Slug: p}, stageDir)
 				if err != nil {
 					return fmt.Errorf("failed to resolve plugin %q: %w", p, err)
 				}
@@ -212,7 +210,7 @@ func RunCreateFlowWithDeps(ctx context.Context, cfg *config.Config, deps CreateF
 		if deps.Resolver != nil && len(themes) > 0 {
 			for _, th := range themes {
 				fmt.Printf("→ Resolving theme %s...\n", th)
-				art, err := deps.Resolver.ResolvePackage(ctx, packages.PackageRef{Type: "theme", Slug: th}, stageDir)
+				art, err := deps.Resolver.ResolvePackage(ctx, packages.PackageRef{Type: packages.PackageTypeTheme, Slug: th}, stageDir)
 				if err != nil {
 					return fmt.Errorf("failed to resolve theme %q: %w", th, err)
 				}

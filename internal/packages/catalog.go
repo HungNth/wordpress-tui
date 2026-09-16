@@ -72,11 +72,11 @@ func FetchCatalog(ctx context.Context, client *http.Client, baseURL, licenseKey 
 }
 
 // FilterCatalog filters catalog items in memory by type and search query (case-insensitive).
-func FilterCatalog(items []CatalogItem, expectedType, query string) []CatalogItem {
+func FilterCatalog(items []CatalogItem, expectedType PackageType, query string) []CatalogItem {
 	q := strings.ToLower(strings.TrimSpace(query))
 	var out []CatalogItem
 	for _, it := range items {
-		if it.Type != expectedType {
+		if it.Type != string(expectedType) {
 			continue
 		}
 		if q == "" || strings.Contains(strings.ToLower(it.Name), q) || strings.Contains(strings.ToLower(it.Slug), q) {
@@ -91,7 +91,7 @@ func DeduplicatePackages(refs []PackageRef) []PackageRef {
 	seen := make(map[string]bool)
 	var out []PackageRef
 	for _, r := range refs {
-		key := r.Type + ":" + r.Slug
+		key := string(r.Type) + ":" + r.Slug
 		if !seen[key] {
 			seen[key] = true
 			out = append(out, r)

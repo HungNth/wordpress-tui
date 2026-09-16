@@ -67,7 +67,7 @@ func TestFetchMetadata_DoesNotLeakSecretInErrors(t *testing.T) {
 	}))
 	defer server.Close()
 
-	_, err := packages.FetchMetadata(context.Background(), server.Client(), server.URL, "plugin", "test-plugin", secretKey)
+	_, err := packages.FetchMetadata(context.Background(), server.Client(), server.URL, packages.PackageTypePlugin, "test-plugin", secretKey)
 	if err == nil {
 		t.Fatal("expected error on 401 status, got nil")
 	}
@@ -257,8 +257,7 @@ func TestFetchMetadata_RejectsHostlessURL(t *testing.T) {
 		}`))
 	}))
 	defer server.Close()
-
-	_, err := packages.FetchMetadata(context.Background(), server.Client(), server.URL, "plugin", "hostless-test", "")
+	_, err := packages.FetchMetadata(context.Background(), server.Client(), server.URL, packages.PackageTypePlugin, "hostless-test", "")
 	if err == nil {
 		t.Fatal("expected error on hostless download_url, got nil")
 	}

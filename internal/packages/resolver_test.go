@@ -65,7 +65,7 @@ func TestResolver_ResolvePackage_CacheHitOnSecondCall(t *testing.T) {
 	resolver := packages.NewResolver(cfg, cache, opts)
 	stageDir := filepath.Join(tempDir, "stage")
 
-	ref := packages.PackageRef{Type: "plugin", Slug: "test-plugin"}
+	ref := packages.PackageRef{Type: packages.PackageTypePlugin, Slug: "test-plugin"}
 
 	// First resolution: downloads and populates cache
 	art1, err := resolver.ResolvePackage(context.Background(), ref, stageDir)
@@ -141,7 +141,7 @@ func TestResolver_StagedArtifactIsImmuneToSubsequentCacheReplacement(t *testing.
 
 	resolver := packages.NewResolver(cfg, cache, opts)
 	stageDir := filepath.Join(tempDir, "stage")
-	ref := packages.PackageRef{Type: "plugin", Slug: "immutable-plugin"}
+	ref := packages.PackageRef{Type: packages.PackageTypePlugin, Slug: "immutable-plugin"}
 
 	// Resolve package (populates cache and stages copy into stageDir)
 	art, err := resolver.ResolvePackage(context.Background(), ref, stageDir)

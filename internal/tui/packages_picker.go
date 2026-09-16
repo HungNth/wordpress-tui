@@ -10,10 +10,9 @@ import (
 	"wptui/internal/packages"
 )
 
-// SelectPackagesFlow runs the interactive prompt and search loop for selecting plugins or themes.
 func SelectPackagesFlow(
 	ctx context.Context,
-	itemType string, // "plugin" or "theme"
+	itemType packages.PackageType,
 	defaultOptions []huh.Option[string],
 	catalog []packages.CatalogItem,
 ) ([]string, error) {
@@ -151,7 +150,7 @@ func PromptPackageSelections(ctx context.Context, cfg *config.Config, catalog []
 		for _, p := range cfg.Plugins {
 			pluginOpts = append(pluginOpts, huh.NewOption(p.Name, p.Slug))
 		}
-		pList, err := SelectPackagesFlow(ctx, "plugin", pluginOpts, catalog)
+		pList, err := SelectPackagesFlow(ctx, packages.PackageTypePlugin, pluginOpts, catalog)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -166,7 +165,7 @@ func PromptPackageSelections(ctx context.Context, cfg *config.Config, catalog []
 				themeOpts = append(themeOpts, huh.NewOption(th.Name, th.Slug))
 			}
 		}
-		thList, err := SelectPackagesFlow(ctx, "theme", themeOpts, catalog)
+		thList, err := SelectPackagesFlow(ctx, packages.PackageTypeTheme, themeOpts, catalog)
 		if err != nil {
 			return nil, nil, err
 		}

@@ -268,6 +268,14 @@ func (c *Client) ThemeInstall(ctx context.Context, dir, pathOrSlug string, activ
 	return nil
 }
 
+func (c *Client) ThemeGetActive(ctx context.Context, dir string) (string, error) {
+	stdout, stderr, err := c.runner.Run(ctx, dir, "wp", []string{"theme", "list", "--status=active", "--field=name"}, "")
+	if err != nil {
+		return "", fmt.Errorf("failed to get active theme: %w (output: %s)", err, strings.TrimSpace(stderr))
+	}
+	return strings.TrimSpace(stdout), nil
+}
+
 func (c *Client) CheckDatabaseExists(ctx context.Context, conn DBConnection, dbName string) (bool, error) {
 	tmpFile, err := os.CreateTemp("", "wptui-mysql-*.cnf")
 	if err != nil {

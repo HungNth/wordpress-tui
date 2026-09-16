@@ -81,11 +81,17 @@ func TestTicket08_ComposedCreateFlowSmoke(t *testing.T) {
 	defer downloadServer.Close()
 
 	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		slug := "test-plugin"
+		typ := packages.PackageTypePlugin
+		if strings.Contains(r.URL.Path, "flatsome") {
+			slug = "flatsome"
+			typ = packages.PackageTypeTheme
+		}
 		meta := packages.Metadata{
-			Name:        "Test Plugin",
+			Name:        "Test Package",
 			Version:     "1.0.0",
-			Slug:        "test-plugin",
-			Type:        "plugin",
+			Slug:        slug,
+			Type:        typ,
 			Size:        fmt.Sprintf("%d", len(zipBytes)),
 			DownloadURL: downloadServer.URL + "/download.zip?license_key=secret_key&signature=sig123",
 		}
@@ -99,7 +105,7 @@ func TestTicket08_ComposedCreateFlowSmoke(t *testing.T) {
 	cfg := config.DefaultConfig(tempHome)
 	cfg.PackagesAPIURL = apiServer.URL
 	cfg.PackagesAPIKey = "secret_key"
-	cfg.DefaultThemeSlug = "" // skip default theme to focus test on selected plugin
+	cfg.DefaultThemeSlug = "flatsome"
 	if err := config.Save(cfgPath, cfg); err != nil {
 		t.Fatal(err)
 	}
@@ -166,8 +172,8 @@ func TestTicket08_ComposedCreateFlowSmoke(t *testing.T) {
 	if _, err := os.Stat(siteOneDir); os.IsNotExist(err) {
 		t.Errorf("expected site-one directory to exist at %s", siteOneDir)
 	}
-	if atomic.LoadInt32(&downloadCount) != 1 {
-		t.Errorf("expected 1 download hit after site one, got %d", atomic.LoadInt32(&downloadCount))
+	if atomic.LoadInt32(&downloadCount) != 2 {
+		t.Errorf("expected 2 download hits after site one, got %d", atomic.LoadInt32(&downloadCount))
 	}
 
 	// Scenario B: Second site creation through app.New and application.Run() reuses cache
@@ -213,8 +219,8 @@ func TestTicket08_ComposedCreateFlowSmoke(t *testing.T) {
 		t.Errorf("expected site-two directory to exist at %s", siteTwoDir)
 	}
 	// Verify download count remained 1 because cache was reused!
-	if atomic.LoadInt32(&downloadCount) != 1 {
-		t.Errorf("expected download count to remain 1 on cache hit, got %d", atomic.LoadInt32(&downloadCount))
+	if atomic.LoadInt32(&downloadCount) != 2 {
+		t.Errorf("expected download count to remain 2 on cache hit, got %d", atomic.LoadInt32(&downloadCount))
 	}
 
 	// Scenario C: Third site creation with critical failure triggers rollback through app

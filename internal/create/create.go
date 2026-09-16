@@ -26,20 +26,14 @@ type Request struct {
 	ThemeArtifacts      []packages.Artifact
 }
 
-type StalePackageInfo struct {
-	Type    string
+type PackageStatusInfo struct {
+	Type    packages.PackageType
 	Slug    string
 	Version string
-	Reason  string
+	Status  string // "cached", "downloaded", "stale"
+	Reason  string // set when Status is "stale"
 }
 
-type PackageStatusInfo struct {
-	Type    string
-	Slug    string
-	Version string
-	Status  string
-	Reason  string
-}
 type Result struct {
 	WebsitePath         string
 	WebsiteURL          string
@@ -47,8 +41,6 @@ type Result struct {
 	InstalledThemes     []string
 	ActiveTheme         string
 	DefaultThemeSkipped bool
-	StaleCacheUsed      bool
-	StalePackages       []StalePackageInfo
 	PackageStatuses     []PackageStatusInfo
 	FailedTweaks        []string
 	SkippedTweaks       []string
@@ -90,12 +82,15 @@ func NewCreator(cfg *config.Config, client *wpcli.Client, checkDB DBExistsFunc) 
 }
 
 type ownershipTracker struct {
-	createdDir bool
-	createdDB  bool
-	createdTLS bool
-	siteDir    string
-	siteSlug   string
-	wpClient   *wpcli.Client
+	createdDir        bool
+	createdDB         bool
+	createdTLS        bool
+	dbCreateStarted   bool
+	dbPreflightPassed bool
+	siteDir           string
+	siteSlug          string
+	wpClient          *wpcli.Client
+	checkDBExist      DBExistsFunc
 }
 
 func (o *ownershipTracker) Rollback(ctx context.Context) {
@@ -104,6 +99,10 @@ func (o *ownershipTracker) Rollback(ctx context.Context) {
 	}
 	if o.createdDB {
 		_ = o.wpClient.DBDrop(ctx, o.siteDir)
+	} else if o.dbCreateStarted && o.dbPreflightPassed && o.checkDBExist != nil {
+		if exists, err := o.checkDBExist(ctx, o.siteSlug); err == nil && exists {
+			_ = o.wpClient.DBDrop(ctx, o.siteDir)
+		}
 	}
 	if o.createdDir && o.siteDir != "" {
 		_ = os.RemoveAll(o.siteDir)
@@ -153,12 +152,14 @@ func (c *Creator) Create(ctx context.Context, req Request, progress ProgressFunc
 			return nil, fmt.Errorf("websites_path %s is not parked in Laravel Herd; please run 'herd park %s' first", c.cfg.WebsitesPath, c.cfg.WebsitesPath)
 		}
 	}
+
 	// Preflight 3: Directory collision
 	if fi, err := os.Stat(websitePath); err == nil && fi != nil {
 		return nil, &CollisionError{Resource: "Directory", Path: websitePath}
 	}
 
 	// Preflight 4: Database collision
+	dbPreflightPassed := false
 	if c.checkDBExist != nil {
 		exists, err := c.checkDBExist(ctx, req.WebsiteSlug)
 		if err != nil {
@@ -167,13 +168,17 @@ func (c *Creator) Create(ctx context.Context, req Request, progress ProgressFunc
 		if exists {
 			return nil, &CollisionError{Resource: "Database", Path: req.WebsiteSlug}
 		}
+		dbPreflightPassed = true
 	}
 
 	owner := &ownershipTracker{
-		siteDir:  websitePath,
-		siteSlug: req.WebsiteSlug,
-		wpClient: c.wpClient,
+		siteDir:           websitePath,
+		siteSlug:          req.WebsiteSlug,
+		wpClient:          c.wpClient,
+		dbPreflightPassed: dbPreflightPassed,
+		checkDBExist:      c.checkDBExist,
 	}
+
 	success := false
 	defer func() {
 		if !success {
@@ -223,6 +228,7 @@ func (c *Creator) Create(ctx context.Context, req Request, progress ProgressFunc
 
 	// Step 4: Create database
 	progress("db_create", "Creating database...")
+	owner.dbCreateStarted = true
 	created, err := c.wpClient.DBCreate(ctx, websitePath)
 	if err != nil {
 		return nil, err
@@ -264,6 +270,7 @@ func (c *Creator) Create(ctx context.Context, req Request, progress ProgressFunc
 			owner.createdTLS = true
 		}
 	}
+
 	// Step 7: Apply tweaks if opted in
 	var failedTweaks []string
 	var skippedTweaks []string
@@ -299,41 +306,6 @@ func (c *Creator) Create(ctx context.Context, req Request, progress ProgressFunc
 	}
 
 	// Step 8: Install verified local package artifacts
-	staleCacheUsed := false
-	var stalePackages []StalePackageInfo
-
-	if req.DefaultTheme != nil && req.DefaultTheme.IsStale {
-		staleCacheUsed = true
-		stalePackages = append(stalePackages, StalePackageInfo{
-			Type:    req.DefaultTheme.Ref.Type,
-			Slug:    req.DefaultTheme.Ref.Slug,
-			Version: req.DefaultTheme.Version,
-			Reason:  req.DefaultTheme.StaleReason,
-		})
-	}
-	for _, art := range req.PluginArtifacts {
-		if art.IsStale {
-			staleCacheUsed = true
-			stalePackages = append(stalePackages, StalePackageInfo{
-				Type:    art.Ref.Type,
-				Slug:    art.Ref.Slug,
-				Version: art.Version,
-				Reason:  art.StaleReason,
-			})
-		}
-	}
-	for _, art := range req.ThemeArtifacts {
-		if art.IsStale {
-			staleCacheUsed = true
-			stalePackages = append(stalePackages, StalePackageInfo{
-				Type:    art.Ref.Type,
-				Slug:    art.Ref.Slug,
-				Version: art.Version,
-				Reason:  art.StaleReason,
-			})
-		}
-	}
-
 	var packageStatuses []PackageStatusInfo
 	recordStatus := func(art *packages.Artifact) {
 		if art == nil {
@@ -353,6 +325,7 @@ func (c *Creator) Create(ctx context.Context, req Request, progress ProgressFunc
 			Reason:  art.StaleReason,
 		})
 	}
+
 	if req.DefaultTheme != nil {
 		recordStatus(req.DefaultTheme)
 	}
@@ -370,6 +343,10 @@ func (c *Creator) Create(ctx context.Context, req Request, progress ProgressFunc
 			return nil, fmt.Errorf("failed to install default theme: %w", err)
 		}
 		activeTheme = req.DefaultTheme.Ref.Slug
+	} else {
+		if actualActive, err := c.wpClient.ThemeGetActive(ctx, websitePath); err == nil && actualActive != "" {
+			activeTheme = actualActive
+		}
 	}
 
 	var installedPlugins []string
@@ -406,8 +383,6 @@ func (c *Creator) Create(ctx context.Context, req Request, progress ProgressFunc
 		InstalledThemes:     installedThemes,
 		ActiveTheme:         activeTheme,
 		DefaultThemeSkipped: req.DefaultThemeSkipped,
-		StaleCacheUsed:      staleCacheUsed,
-		StalePackages:       stalePackages,
 		PackageStatuses:     packageStatuses,
 		FailedTweaks:        failedTweaks,
 		SkippedTweaks:       skippedTweaks,
