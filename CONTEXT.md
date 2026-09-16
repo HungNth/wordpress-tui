@@ -32,6 +32,15 @@ _Avoid_: Download folder, temporary files
 The manifest record that associates a Package type and slug with its cached version, verified archive, size, checksum, and download time.
 _Avoid_: Download record, package metadata
 
+**Core Archive**:
+The verified, content-stripped WordPress core zip archive retained in the Core Cache for Website Provisioning.
+_Avoid_: Core zip, WordPress bundle, WordPress installer
+
+**Core Cache**:
+The local storage containing the verified Core Archive and its manifest record to provision Websites without repeated network downloads.
+_Avoid_: Core folder, WordPress cache, temporary core
+
 **Provisioning**:
 The operation that creates a Website atomically through its critical core, database, Herd, and Package steps, then applies WordPress tweaks on a best-effort basis. Individual tweak failures are reported without removing the Website.
 _Avoid_: Setup, scaffolding
+

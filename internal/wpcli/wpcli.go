@@ -81,6 +81,7 @@ func (c *Client) CheckDependencies(usedHerd bool) error {
 	return nil
 }
 
+// Deprecated: WordPress core is now acquired and extracted natively via internal/core.
 func (c *Client) CoreDownload(ctx context.Context, dir, locale string) error {
 	// Passing --skip-content instructs WP-CLI to download the core zip archive
 	// directly from WordPress.org without default bundled themes or plugins,

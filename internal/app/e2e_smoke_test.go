@@ -69,6 +69,19 @@ func (m *e2eMockRunner) LookPath(file string) (string, error) {
 	return "/usr/bin/" + file, nil
 }
 
+type mockSmokeCoreResolver struct{}
+
+func (m *mockSmokeCoreResolver) Resolve(ctx context.Context) (string, string, error) {
+	return "/dummy-core.zip", "7.1", nil
+}
+
+func mockSmokeCoreExtractor(archivePath, destDir string) error {
+	_ = os.MkdirAll(filepath.Join(destDir, "wp-content", "themes"), 0755)
+	_ = os.MkdirAll(filepath.Join(destDir, "wp-content", "plugins"), 0755)
+	_ = os.WriteFile(filepath.Join(destDir, "wp-load.php"), []byte("<?php // wp core"), 0600)
+	return nil
+}
+
 func createTestZip() []byte {
 	buf := new(bytes.Buffer)
 	w := zip.NewWriter(buf)
@@ -164,8 +177,10 @@ func TestTicket08_ComposedCreateFlowSmoke(t *testing.T) {
 		},
 		CreateFn: func(ctx context.Context, c *config.Config) error {
 			return app.RunCreateFlowWithDeps(ctx, c, app.CreateFlowDependencies{
-				Runner:   runner,
-				Resolver: resolver,
+				Runner:        runner,
+				Resolver:      resolver,
+				CoreResolver:  &mockSmokeCoreResolver{},
+				CoreExtractor: mockSmokeCoreExtractor,
 				PromptCreate: func(cfg *config.Config, checker ...tui.SlugAvailabilityChecker) (*tui.CreateInputs, error) {
 					return &scriptedInputsA, nil
 				},
@@ -230,8 +245,10 @@ func TestTicket08_ComposedCreateFlowSmoke(t *testing.T) {
 		},
 		CreateFn: func(ctx context.Context, c *config.Config) error {
 			return app.RunCreateFlowWithDeps(ctx, c, app.CreateFlowDependencies{
-				Runner:   runner,
-				Resolver: resolver,
+				Runner:        runner,
+				Resolver:      resolver,
+				CoreResolver:  &mockSmokeCoreResolver{},
+				CoreExtractor: mockSmokeCoreExtractor,
 				PromptCreate: func(cfg *config.Config, checker ...tui.SlugAvailabilityChecker) (*tui.CreateInputs, error) {
 					return &scriptedInputsB, nil
 				},
@@ -281,8 +298,10 @@ func TestTicket08_ComposedCreateFlowSmoke(t *testing.T) {
 		},
 		CreateFn: func(ctx context.Context, c *config.Config) error {
 			return app.RunCreateFlowWithDeps(ctx, c, app.CreateFlowDependencies{
-				Runner:   failingRunner,
-				Resolver: resolver,
+				Runner:        failingRunner,
+				Resolver:      resolver,
+				CoreResolver:  &mockSmokeCoreResolver{},
+				CoreExtractor: mockSmokeCoreExtractor,
 				PromptCreate: func(cfg *config.Config, checker ...tui.SlugAvailabilityChecker) (*tui.CreateInputs, error) {
 					return &scriptedInputsC, nil
 				},

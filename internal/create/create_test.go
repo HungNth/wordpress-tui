@@ -47,6 +47,36 @@ func (m *mockRunner) LookPath(file string) (string, error) {
 	return "/bin/" + file, nil
 }
 
+type mockCoreResolver struct {
+	path    string
+	version string
+	err     error
+}
+
+func (m *mockCoreResolver) Resolve(ctx context.Context) (string, string, error) {
+	if m.err != nil {
+		return "", "", m.err
+	}
+	return m.path, m.version, nil
+}
+
+func mockCoreExtractor(archivePath, destDir string) error {
+	_ = os.MkdirAll(filepath.Join(destDir, "wp-content", "themes"), 0755)
+	_ = os.MkdirAll(filepath.Join(destDir, "wp-content", "plugins"), 0755)
+	_ = os.WriteFile(filepath.Join(destDir, "wp-load.php"), []byte("<?php // core"), 0600)
+	_ = os.WriteFile(filepath.Join(destDir, "index.php"), []byte("<?php // core"), 0600)
+	return nil
+}
+
+func newTestCreator(cfg *config.Config, client *wpcli.Client, checkDB create.DBExistsFunc, opts ...create.CreatorOption) *create.Creator {
+	defaultOpts := []create.CreatorOption{
+		create.WithCoreResolver(&mockCoreResolver{path: "/test/core.zip", version: "7.1"}),
+		create.WithCoreExtractor(mockCoreExtractor),
+	}
+	combined := append(defaultOpts, opts...)
+	return create.NewCreator(cfg, client, checkDB, combined...)
+}
+
 func TestCreator_SuccessFlow(t *testing.T) {
 	tempDir := t.TempDir()
 	cfg := config.DefaultConfig(tempDir)
@@ -57,7 +87,7 @@ func TestCreator_SuccessFlow(t *testing.T) {
 	runner := &mockRunner{}
 	wpClient := wpcli.NewClientWithRunner(runner)
 
-	creator := create.NewCreator(cfg, wpClient, func(ctx context.Context, dbName string) (bool, error) {
+	creator := newTestCreator(cfg, wpClient, func(ctx context.Context, dbName string) (bool, error) {
 		return false, nil // no DB collision
 	})
 
@@ -99,16 +129,35 @@ func TestCreator_SuccessFlow(t *testing.T) {
 		t.Errorf("expected herd_secure to be final progress step, got %s", progressSteps[len(progressSteps)-1])
 	}
 
-	// Verify core download runs with --skip-content
-	var foundSkipContent bool
-	for _, call := range runner.calls {
-		if strings.Contains(call, "wp core download") && strings.Contains(call, "--skip-content") {
-			foundSkipContent = true
-			break
+	// Verify progress steps include core_resolve and core_extract
+	var foundResolve, foundExtract bool
+	for _, s := range progressSteps {
+		if s == "core_resolve" {
+			foundResolve = true
+		}
+		if s == "core_extract" {
+			foundExtract = true
 		}
 	}
-	if !foundSkipContent {
-		t.Errorf("expected core download to execute with --skip-content, calls: %v", runner.calls)
+	if !foundResolve || !foundExtract {
+		t.Errorf("expected core_resolve and core_extract progress steps, got: %v", progressSteps)
+	}
+
+	// Verify wp core download was NOT called
+	for _, call := range runner.calls {
+		if strings.Contains(call, "core download") {
+			t.Errorf("expected no wp core download to be called, got call: %s", call)
+		}
+	}
+
+	// Verify standard WordPress directories scaffolded
+	themesDir := filepath.Join(expectedPath, "wp-content", "themes")
+	pluginsDir := filepath.Join(expectedPath, "wp-content", "plugins")
+	if _, err := os.Stat(themesDir); err != nil {
+		t.Errorf("expected themes directory %s to exist: %v", themesDir, err)
+	}
+	if _, err := os.Stat(pluginsDir); err != nil {
+		t.Errorf("expected plugins directory %s to exist: %v", pluginsDir, err)
 	}
 }
 
@@ -119,7 +168,7 @@ func TestCreator_PackageInstallAndDeduplication(t *testing.T) {
 	runner := &mockRunner{}
 	wpClient := wpcli.NewClientWithRunner(runner)
 
-	creator := create.NewCreator(cfg, wpClient, func(ctx context.Context, dbName string) (bool, error) {
+	creator := newTestCreator(cfg, wpClient, func(ctx context.Context, dbName string) (bool, error) {
 		return false, nil
 	})
 
@@ -194,7 +243,7 @@ func TestCreator_ApplyTweaksBestEffort(t *testing.T) {
 	}
 	wpClient := wpcli.NewClientWithRunner(runner)
 
-	creator := create.NewCreator(cfg, wpClient, func(ctx context.Context, dbName string) (bool, error) {
+	creator := newTestCreator(cfg, wpClient, func(ctx context.Context, dbName string) (bool, error) {
 		return false, nil
 	})
 
@@ -234,7 +283,7 @@ func TestCreator_RollbackOnCoreInstallFailure(t *testing.T) {
 	}
 	wpClient := wpcli.NewClientWithRunner(runner)
 
-	creator := create.NewCreator(cfg, wpClient, func(ctx context.Context, dbName string) (bool, error) {
+	creator := newTestCreator(cfg, wpClient, func(ctx context.Context, dbName string) (bool, error) {
 		return false, nil
 	})
 
@@ -280,7 +329,7 @@ func TestCreator_DBCreateFailureDoesNotDropExternalDB(t *testing.T) {
 	}
 	wpClient := wpcli.NewClientWithRunner(runner)
 
-	creator := create.NewCreator(cfg, wpClient, func(ctx context.Context, dbName string) (bool, error) {
+	creator := newTestCreator(cfg, wpClient, func(ctx context.Context, dbName string) (bool, error) {
 		return false, nil
 	})
 
@@ -321,7 +370,7 @@ func TestCreator_DBPreflightErrorHaltsBeforeMutation(t *testing.T) {
 	wpClient := wpcli.NewClientWithRunner(runner)
 
 	expectedErr := errors.New("connection refused to mysql")
-	creator := create.NewCreator(cfg, wpClient, func(ctx context.Context, dbName string) (bool, error) {
+	creator := newTestCreator(cfg, wpClient, func(ctx context.Context, dbName string) (bool, error) {
 		return false, expectedErr
 	})
 
@@ -365,7 +414,7 @@ func TestCreator_HerdPathTrustSucceedsWithoutParkedInspection(t *testing.T) {
 	runner := &mockRunner{}
 	wpClient := wpcli.NewClientWithRunner(runner)
 
-	creator := create.NewCreator(cfg, wpClient, func(ctx context.Context, dbName string) (bool, error) {
+	creator := newTestCreator(cfg, wpClient, func(ctx context.Context, dbName string) (bool, error) {
 		return false, nil
 	})
 
@@ -402,7 +451,7 @@ func TestCreator_CollisionPreflight(t *testing.T) {
 	runner := &mockRunner{}
 	wpClient := wpcli.NewClientWithRunner(runner)
 
-	creator := create.NewCreator(cfg, wpClient, func(ctx context.Context, dbName string) (bool, error) {
+	creator := newTestCreator(cfg, wpClient, func(ctx context.Context, dbName string) (bool, error) {
 		return false, nil
 	})
 
@@ -441,7 +490,7 @@ func TestCreator_PreExistingTLSRollbackDoesNotUnsecure(t *testing.T) {
 	}
 	wpClient := wpcli.NewClientWithRunner(runner)
 
-	creator := create.NewCreator(cfg, wpClient, func(ctx context.Context, dbName string) (bool, error) {
+	creator := newTestCreator(cfg, wpClient, func(ctx context.Context, dbName string) (bool, error) {
 		return false, nil
 	})
 
@@ -487,7 +536,7 @@ func TestCreator_HerdProbeFailureHalts(t *testing.T) {
 	}
 	wpClient := wpcli.NewClientWithRunner(runner)
 
-	creator := create.NewCreator(cfg, wpClient, func(ctx context.Context, dbName string) (bool, error) {
+	creator := newTestCreator(cfg, wpClient, func(ctx context.Context, dbName string) (bool, error) {
 		return false, nil
 	})
 
@@ -507,3 +556,43 @@ func TestCreator_HerdProbeFailureHalts(t *testing.T) {
 		t.Errorf("expected probe failure error message, got %v", err)
 	}
 }
+
+func TestCreator_RollbackOnCoreExtractionFailure(t *testing.T) {
+	tempDir := t.TempDir()
+	cfg := config.DefaultConfig(tempDir)
+	cfg.WebsitesPath = filepath.Join(tempDir, "sites")
+
+	runner := &mockRunner{}
+	wpClient := wpcli.NewClientWithRunner(runner)
+
+	failingExtractor := func(archivePath, destDir string) error {
+		return errors.New("simulated extraction failure: corrupted zip entry")
+	}
+
+	creator := create.NewCreator(cfg, wpClient, func(ctx context.Context, dbName string) (bool, error) {
+		return false, nil
+	}, create.WithCoreResolver(&mockCoreResolver{path: "/test.zip", version: "7.1"}), create.WithCoreExtractor(failingExtractor))
+
+	req := create.Request{
+		WebsiteName:   "Doomed Extract Site",
+		WebsiteSlug:   "doomed-extract",
+		AdminUsername: "admin",
+		AdminPassword: "password",
+		AdminEmail:    "admin@fail.test",
+	}
+
+	_, err := creator.Create(context.Background(), req, nil)
+	if err == nil {
+		t.Fatal("expected error on failing core extraction, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to extract WordPress core") {
+		t.Errorf("expected extraction error, got: %v", err)
+	}
+
+	// Verify website directory was rolled back
+	siteDir := filepath.Join(cfg.WebsitesPath, "doomed-extract")
+	if _, err := os.Stat(siteDir); !os.IsNotExist(err) {
+		t.Errorf("expected website directory to be rolled back on extraction failure, but it exists at %s", siteDir)
+	}
+}
+

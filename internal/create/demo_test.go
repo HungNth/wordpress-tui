@@ -12,6 +12,19 @@ import (
 	"wptui/internal/wpcli"
 )
 
+type demoCoreResolver struct{}
+
+func (d *demoCoreResolver) Resolve(ctx context.Context) (string, string, error) {
+	return "/dummy.zip", "7.1", nil
+}
+
+func demoCoreExtractor(archivePath, destDir string) error {
+	_ = os.MkdirAll(filepath.Join(destDir, "wp-content", "themes"), 0755)
+	_ = os.MkdirAll(filepath.Join(destDir, "wp-content", "plugins"), 0755)
+	_ = os.WriteFile(filepath.Join(destDir, "wp-load.php"), []byte("<?php // mock"), 0600)
+	return nil
+}
+
 func TestTicket02_DemoBasicProvisioningAndRollback(t *testing.T) {
 	tempDir := t.TempDir()
 	cfg := config.DefaultConfig(tempDir)
@@ -29,7 +42,7 @@ func TestTicket02_DemoBasicProvisioningAndRollback(t *testing.T) {
 			Socket: cfg.DBSocket,
 		}
 		return client.CheckDatabaseExists(ctx, conn, dbName)
-	})
+	}, create.WithCoreResolver(&demoCoreResolver{}), create.WithCoreExtractor(demoCoreExtractor))
 
 	req := create.Request{
 		WebsiteName:   "Coffee Shop",
@@ -60,7 +73,7 @@ func TestTicket02_DemoBasicProvisioningAndRollback(t *testing.T) {
 	failingClient := wpcli.NewClientWithRunner(failingRunner)
 	failingCreator := create.NewCreator(cfg, failingClient, func(ctx context.Context, dbName string) (bool, error) {
 		return false, nil
-	})
+	}, create.WithCoreResolver(&demoCoreResolver{}), create.WithCoreExtractor(demoCoreExtractor))
 
 	reqFail := create.Request{
 		WebsiteName:   "Doomed Site",
@@ -100,7 +113,7 @@ func TestTicket02_DemoBasicProvisioningAndRollback(t *testing.T) {
 			return true, nil
 		}
 		return false, nil
-	})
+	}, create.WithCoreResolver(&demoCoreResolver{}), create.WithCoreExtractor(demoCoreExtractor))
 
 	reqCollided := create.Request{
 		WebsiteName:   "Existing DB Site",

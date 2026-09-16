@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"wptui/internal/config"
+	"wptui/internal/core"
 	"wptui/internal/packages"
 	"wptui/internal/wpcli"
 )
@@ -63,22 +64,52 @@ func IsCollisionError(err error) bool {
 }
 
 type DBExistsFunc func(ctx context.Context, dbName string) (bool, error)
+type CoreResolver interface {
+	Resolve(ctx context.Context) (archivePath string, version string, err error)
+}
+type CoreExtractor func(archivePath, destDir string) error
 
-type Creator struct {
-	cfg          *config.Config
-	wpClient     *wpcli.Client
-	checkDBExist DBExistsFunc
+type CreatorOption func(*Creator)
+
+func WithCoreResolver(r CoreResolver) CreatorOption {
+	return func(c *Creator) {
+		c.coreResolver = r
+	}
 }
 
-func NewCreator(cfg *config.Config, client *wpcli.Client, checkDB DBExistsFunc) *Creator {
+func WithCoreExtractor(e CoreExtractor) CreatorOption {
+	return func(c *Creator) {
+		c.coreExtractor = e
+	}
+}
+
+type Creator struct {
+	cfg           *config.Config
+	wpClient      *wpcli.Client
+	checkDBExist  DBExistsFunc
+	coreResolver  CoreResolver
+	coreExtractor CoreExtractor
+}
+
+func NewCreator(cfg *config.Config, client *wpcli.Client, checkDB DBExistsFunc, opts ...CreatorOption) *Creator {
 	if client == nil {
 		client = wpcli.NewClient()
 	}
-	return &Creator{
-		cfg:          cfg,
-		wpClient:     client,
-		checkDBExist: checkDB,
+	var resolver CoreResolver
+	if cache, err := core.NewCache(); err == nil && cache != nil {
+		resolver = core.NewResolver(cache)
 	}
+	c := &Creator{
+		cfg:           cfg,
+		wpClient:      client,
+		checkDBExist:  checkDB,
+		coreResolver:  resolver,
+		coreExtractor: core.ExtractCoreArchive,
+	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
 }
 
 type ownershipTracker struct {
@@ -178,10 +209,23 @@ func (c *Creator) Create(ctx context.Context, req Request, progress ProgressFunc
 	}
 	owner.createdDir = true
 
-	// Step 2: Download core
-	progress("core_download", "Downloading WordPress core...")
-	if err := c.wpClient.CoreDownload(ctx, websitePath, "en_US"); err != nil {
-		return nil, err
+	// Step 2: Resolve and extract WordPress core
+	if c.coreResolver == nil {
+		return nil, errors.New("core resolver is not configured")
+	}
+	if c.coreExtractor == nil {
+		return nil, errors.New("core extractor is not configured")
+	}
+
+	progress("core_resolve", "Checking WordPress core...")
+	archivePath, _, err := c.coreResolver.Resolve(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve WordPress core: %w", err)
+	}
+
+	progress("core_extract", "Extracting WordPress core...")
+	if err := c.coreExtractor(archivePath, websitePath); err != nil {
+		return nil, fmt.Errorf("failed to extract WordPress core: %w", err)
 	}
 
 	// Step 3: Generate wp-config.php with skip-check

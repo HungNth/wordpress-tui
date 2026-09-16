@@ -115,6 +115,8 @@ type PackageResolver interface {
 type CreateFlowDependencies struct {
 	Runner         wpcli.Runner
 	Resolver       PackageResolver
+	CoreResolver   create.CoreResolver
+	CoreExtractor  create.CoreExtractor
 	Catalog        []packages.CatalogItem
 	PromptCreate   func(*config.Config, ...tui.SlugAvailabilityChecker) (*tui.CreateInputs, error)
 	PromptPackages func(context.Context, *config.Config, []packages.CatalogItem) ([]string, []string, error)
@@ -156,7 +158,14 @@ func RunCreateFlowWithDeps(ctx context.Context, cfg *config.Config, deps CreateF
 		return nil
 	}
 
-	creator := create.NewCreator(cfg, client, dbChecker)
+	var creatorOpts []create.CreatorOption
+	if deps.CoreResolver != nil {
+		creatorOpts = append(creatorOpts, create.WithCoreResolver(deps.CoreResolver))
+	}
+	if deps.CoreExtractor != nil {
+		creatorOpts = append(creatorOpts, create.WithCoreExtractor(deps.CoreExtractor))
+	}
+	creator := create.NewCreator(cfg, client, dbChecker, creatorOpts...)
 
 	promptCreate := deps.PromptCreate
 	if promptCreate == nil {
