@@ -7,8 +7,6 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 )
@@ -84,8 +82,13 @@ func (c *Client) CheckDependencies(usedHerd bool) error {
 }
 
 func (c *Client) CoreDownload(ctx context.Context, dir, locale string) error {
-	args := []string{"core", "download"}
-	if locale != "" {
+	// On Windows or environments using WP-CLI under PHP PharData, tarball (.tar.gz) extraction
+	// frequently fails due to Windows filesystem path limitations and trailing dot issues in bundled packages.
+	// Pointing directly to https://wordpress.org/latest.zip instructs WP-CLI to download and extract
+	// the standard ZIP archive via PHP ZipArchive which succeeds reliably across Windows and Herd.
+	downloadURL := "https://wordpress.org/latest.zip"
+	args := []string{"core", "download", downloadURL}
+	if locale != "" && locale != "en_US" {
 		args = append(args, "--locale="+locale)
 	}
 	_, stderr, err := c.runner.Run(ctx, dir, "wp", args, "")
@@ -181,36 +184,6 @@ func (c *Client) HerdUnsecure(ctx context.Context, dir, slug string) error {
 	}
 	return nil
 }
-func (c *Client) IsPathParked(ctx context.Context, targetPath string) (bool, error) {
-	stdout, stderr, err := c.runner.Run(ctx, "", "herd", []string{"paths"}, "")
-	if err != nil {
-		var errParked error
-		stdout, stderr, errParked = c.runner.Run(ctx, "", "herd", []string{"parked"}, "")
-		if errParked != nil {
-			return false, fmt.Errorf("failed to check herd parked paths: %w (output: %s)", err, strings.TrimSpace(stderr))
-		}
-	}
-	cleanTarget := filepath.Clean(targetPath)
-	lines := strings.Split(stdout, "\n")
-	for _, l := range lines {
-		trimmed := strings.Trim(l, "|\r\n\t ")
-		if strings.HasPrefix(trimmed, "+-") || strings.EqualFold(trimmed, "path") {
-			continue
-		}
-		cleanL := filepath.Clean(trimmed)
-		if runtime.GOOS == "windows" {
-			if strings.EqualFold(cleanL, cleanTarget) {
-				return true, nil
-			}
-		} else {
-			if cleanL == cleanTarget {
-				return true, nil
-			}
-		}
-	}
-	return false, nil
-}
-
 func (c *Client) IsSiteSecured(ctx context.Context, slug string) (bool, error) {
 	stdout, stderr, err := c.runner.Run(ctx, "", "herd", []string{"secured"}, "")
 	if err != nil {

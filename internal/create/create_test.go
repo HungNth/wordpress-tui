@@ -18,7 +18,6 @@ type mockRunner struct {
 	mu           sync.Mutex
 	calls        []string
 	failOnSubstr string
-	parkedPath   string
 	securedSites string
 	activeTheme  string
 }
@@ -30,9 +29,6 @@ func (m *mockRunner) Run(ctx context.Context, dir string, name string, args []st
 	m.mu.Unlock()
 	if m.failOnSubstr != "" && strings.Contains(full, m.failOnSubstr) {
 		return "", "mock error for " + full, errors.New("simulated error")
-	}
-	if strings.Contains(full, "herd paths") || strings.Contains(full, "herd parked") {
-		return m.parkedPath + "\n", "", nil
 	}
 	if strings.Contains(full, "herd secured") {
 		return m.securedSites + "\n", "", nil
@@ -58,10 +54,7 @@ func TestCreator_SuccessFlow(t *testing.T) {
 	if err := os.MkdirAll(cfg.WebsitesPath, 0755); err != nil {
 		t.Fatal(err)
 	}
-
-	runner := &mockRunner{
-		parkedPath: cfg.WebsitesPath,
-	}
+	runner := &mockRunner{}
 	wpClient := wpcli.NewClientWithRunner(runner)
 
 	creator := create.NewCreator(cfg, wpClient, func(ctx context.Context, dbName string) (bool, error) {
@@ -111,10 +104,7 @@ func TestCreator_PackageInstallAndDeduplication(t *testing.T) {
 	tempDir := t.TempDir()
 	cfg := config.DefaultConfig(tempDir)
 	cfg.WebsitesPath = filepath.Join(tempDir, "sites")
-
-	runner := &mockRunner{
-		parkedPath: cfg.WebsitesPath,
-	}
+	runner := &mockRunner{}
 	wpClient := wpcli.NewClientWithRunner(runner)
 
 	creator := create.NewCreator(cfg, wpClient, func(ctx context.Context, dbName string) (bool, error) {
@@ -189,7 +179,6 @@ func TestCreator_ApplyTweaksBestEffort(t *testing.T) {
 
 	runner := &mockRunner{
 		failOnSubstr: "wp rewrite structure",
-		parkedPath:   cfg.WebsitesPath,
 	}
 	wpClient := wpcli.NewClientWithRunner(runner)
 
@@ -230,7 +219,6 @@ func TestCreator_RollbackOnCoreInstallFailure(t *testing.T) {
 
 	runner := &mockRunner{
 		failOnSubstr: "wp core install",
-		parkedPath:   cfg.WebsitesPath,
 	}
 	wpClient := wpcli.NewClientWithRunner(runner)
 
@@ -277,7 +265,6 @@ func TestCreator_DBCreateFailureDoesNotDropExternalDB(t *testing.T) {
 
 	runner := &mockRunner{
 		failOnSubstr: "wp db create",
-		parkedPath:   cfg.WebsitesPath,
 	}
 	wpClient := wpcli.NewClientWithRunner(runner)
 
@@ -318,9 +305,7 @@ func TestCreator_DBPreflightErrorHaltsBeforeMutation(t *testing.T) {
 	cfg := config.DefaultConfig(tempDir)
 	cfg.WebsitesPath = filepath.Join(tempDir, "sites")
 
-	runner := &mockRunner{
-		parkedPath: cfg.WebsitesPath,
-	}
+	runner := &mockRunner{}
 	wpClient := wpcli.NewClientWithRunner(runner)
 
 	expectedErr := errors.New("connection refused to mysql")
@@ -365,9 +350,7 @@ func TestCreator_HerdPathTrustSucceedsWithoutParkedInspection(t *testing.T) {
 	cfg.UsedHerd = true
 	cfg.WebsitesPath = filepath.Join(tempDir, "sites")
 
-	runner := &mockRunner{
-		parkedPath: "/completely/unrelated/path", // should be ignored
-	}
+	runner := &mockRunner{}
 	wpClient := wpcli.NewClientWithRunner(runner)
 
 	creator := create.NewCreator(cfg, wpClient, func(ctx context.Context, dbName string) (bool, error) {
@@ -404,9 +387,7 @@ func TestCreator_CollisionPreflight(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	runner := &mockRunner{
-		parkedPath: cfg.WebsitesPath,
-	}
+	runner := &mockRunner{}
 	wpClient := wpcli.NewClientWithRunner(runner)
 
 	creator := create.NewCreator(cfg, wpClient, func(ctx context.Context, dbName string) (bool, error) {
@@ -443,7 +424,6 @@ func TestCreator_PreExistingTLSRollbackDoesNotUnsecure(t *testing.T) {
 
 	// Site was already secured prior to this run
 	runner := &mockRunner{
-		parkedPath:   cfg.WebsitesPath,
 		securedSites: "existing-secure.test",
 		failOnSubstr: "wp plugin install", // fail later to trigger rollback
 	}
@@ -491,7 +471,6 @@ func TestCreator_HerdProbeFailureHalts(t *testing.T) {
 
 	// Probe failure on herd secured
 	runner := &mockRunner{
-		parkedPath:   cfg.WebsitesPath,
 		failOnSubstr: "herd secured",
 	}
 	wpClient := wpcli.NewClientWithRunner(runner)

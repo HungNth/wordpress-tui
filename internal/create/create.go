@@ -134,14 +134,12 @@ func (c *Creator) Create(ctx context.Context, req Request, progress ProgressFunc
 	if err := c.wpClient.CheckDependencies(c.cfg.UsedHerd); err != nil {
 		return nil, fmt.Errorf("dependency preflight failed: %w", err)
 	}
-
-
-	// Preflight 3: Directory collision
+	// Preflight 2: Directory collision
 	if fi, err := os.Stat(websitePath); err == nil && fi != nil {
 		return nil, &CollisionError{Resource: "Directory", Path: websitePath}
 	}
 
-	// Preflight 4: Database collision
+	// Preflight 3: Database collision
 	if c.checkDBExist != nil {
 		exists, err := c.checkDBExist(ctx, req.WebsiteSlug)
 		if err != nil {

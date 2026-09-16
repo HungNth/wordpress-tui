@@ -19,7 +19,6 @@ func TestTicket02_DemoBasicProvisioningAndRollback(t *testing.T) {
 
 	// 1. Success Demo
 	runner := &mockRunner{
-		parkedPath: cfg.WebsitesPath,
 	}
 	client := wpcli.NewClientWithRunner(runner)
 	creator := create.NewCreator(cfg, client, func(ctx context.Context, dbName string) (bool, error) {
@@ -58,7 +57,6 @@ func TestTicket02_DemoBasicProvisioningAndRollback(t *testing.T) {
 	// 2. Rollback Demo on Install Failure
 	failingRunner := &mockRunner{
 		failOnSubstr: "wp core install",
-		parkedPath:   cfg.WebsitesPath,
 	}
 	failingClient := wpcli.NewClientWithRunner(failingRunner)
 	failingCreator := create.NewCreator(cfg, failingClient, func(ctx context.Context, dbName string) (bool, error) {
@@ -97,7 +95,6 @@ func TestTicket02_DemoBasicProvisioningAndRollback(t *testing.T) {
 
 	// 3. Database collision demo using CheckDatabaseExists
 	collisionRunner := &mockRunner{
-		parkedPath: cfg.WebsitesPath,
 	}
 	collisionClient := wpcli.NewClientWithRunner(collisionRunner)
 	collisionCreator := create.NewCreator(cfg, collisionClient, func(ctx context.Context, dbName string) (bool, error) {

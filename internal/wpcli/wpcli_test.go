@@ -62,7 +62,7 @@ func TestWPCLIClient_Flow(t *testing.T) {
 	}
 
 	expectedCalls := []string{
-		"wp core download --locale=en_US",
+		"wp core download https://wordpress.org/latest.zip",
 		"wp config create --dbname=test-db --dbuser=root --dbhost=localhost:3306 --prompt=dbpass --skip-check",
 		"wp db create",
 		"wp core install --url=http://test-site.test --title=Test Site --admin_user=admin --admin_email=admin@admin.com --skip-email --prompt=admin_password",
@@ -125,20 +125,10 @@ func TestWPCLIClient_CheckDatabaseExists(t *testing.T) {
 	}
 }
 
-func TestWPCLIClient_IsPathParkedAndSecured(t *testing.T) {
+func TestWPCLIClient_IsSiteSecured(t *testing.T) {
 	runner := &mockRunner{}
 	client := wpcli.NewClientWithRunner(runner)
 	ctx := context.Background()
-
-	parked, err := client.IsPathParked(ctx, "/var/www/sites")
-	if err != nil || !parked {
-		t.Errorf("expected /var/www/sites to be parked, got %v, err: %v", parked, err)
-	}
-
-	parked, err = client.IsPathParked(ctx, "/var/www/sites-other")
-	if err != nil || parked {
-		t.Errorf("expected /var/www/sites-other to NOT be parked, got %v", parked)
-	}
 
 	secured, err := client.IsSiteSecured(ctx, "existing-secure")
 	if err != nil || !secured {
