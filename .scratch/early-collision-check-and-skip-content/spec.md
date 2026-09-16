@@ -46,8 +46,7 @@ When creating a new WordPress website in WPTUI:
      `args := []string{"core", "download", downloadURL, "--skip-content"}`
    - The command executed will be:
      `wp core download https://wordpress.org/latest.zip --skip-content`
-   - When Package integration is disabled or no theme is selected, no bundled default themes are retained: `DefaultThemeSkipped` is reported as true, and active-theme reporting correctly reflects that no default theme was activated.
-   - All tests in `internal/wpcli` and `internal/create` expecting `wp core download` calls will reflect the `--skip-content` argument.
+   - When Package integration is disabled and a default theme is configured, no bundled default themes are retained: `DefaultThemeSkipped` is reported as true, and active-theme reporting correctly reflects that no default theme was activated. If no default theme is configured, `DefaultThemeSkipped` remains false.
    - All tests in `internal/wpcli` and `internal/create` expecting `wp core download` calls will reflect the `--skip-content` argument.
 
 3. **Defense-in-Depth Preflights**:
