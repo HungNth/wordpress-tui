@@ -183,6 +183,15 @@ func RunCreateFlowWithDeps(ctx context.Context, cfg *config.Config, deps CreateF
 			}
 			return err
 		}
+
+		// Explicit defense: re-verify slug availability if custom or bypassed prompt returned a colliding slug
+		if err := availabilityChecker(inputs.WebsiteSlug); err != nil {
+			if deps.PromptCreate != nil {
+				return err
+			}
+			fmt.Printf("\nCollision: %v\nPlease choose a different website name or slug.\n\n", err)
+			continue
+		}
 		plugins, themes, err := promptPackages(ctx, cfg, catalog)
 		if err != nil {
 			if errors.Is(err, huh.ErrUserAborted) {

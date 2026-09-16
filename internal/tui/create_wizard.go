@@ -133,9 +133,10 @@ func PromptCreateInputs(cfg *config.Config, checker ...SlugAvailabilityChecker) 
 
 	// If slug was left blank, derive automatically from confirmed Website Name
 	resolvedSlug, err := ResolveAndValidateSlug(inputs.WebsiteName, inputs.WebsiteSlug, nil)
-	if err == nil {
-		inputs.WebsiteSlug = resolvedSlug
+	if err != nil {
+		return nil, err
 	}
+	inputs.WebsiteSlug = resolvedSlug
 
 	return inputs, nil
 }

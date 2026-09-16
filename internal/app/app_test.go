@@ -95,3 +95,38 @@ func TestRunCreateFlow_CollisionCheckRejectsBeforePackageSelection(t *testing.T)
 		t.Fatal("PromptPackages should not have been called when slug collided")
 	}
 }
+
+func TestRunCreateFlow_CustomPromptBypassCaughtBeforePackages(t *testing.T) {
+	tempDir := t.TempDir()
+	cfg := config.DefaultConfig(tempDir)
+	cfg.WebsitesPath = filepath.Join(tempDir, "sites")
+
+	// Pre-create directory to trigger collision
+	collidedDir := filepath.Join(cfg.WebsitesPath, "bypassed-slug")
+	if err := os.MkdirAll(collidedDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	var packagePromptCalled bool
+	deps := app.CreateFlowDependencies{
+		// Custom prompt callback that completely ignores the injected checker and returns a colliding slug
+		PromptCreate: func(c *config.Config, checker ...tui.SlugAvailabilityChecker) (*tui.CreateInputs, error) {
+			return &tui.CreateInputs{
+				WebsiteName: "Bypassed Site",
+				WebsiteSlug: "bypassed-slug",
+			}, nil
+		},
+		PromptPackages: func(ctx context.Context, c *config.Config, items []packages.CatalogItem) ([]string, []string, error) {
+			packagePromptCalled = true
+			return nil, nil, nil
+		},
+	}
+
+	err := app.RunCreateFlowWithDeps(context.Background(), cfg, deps)
+	if err == nil {
+		t.Fatal("expected collision error when custom prompt bypasses checker, got nil")
+	}
+	if packagePromptCalled {
+		t.Fatal("PromptPackages should not have been called when custom prompt returned colliding slug")
+	}
+}
