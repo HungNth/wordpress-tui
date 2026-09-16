@@ -181,6 +181,9 @@ func Validate(c *Config) error {
 			return fmt.Errorf("invalid database_port: %d (must be between 1 and 65535)", c.DatabasePort)
 		}
 	}
+	if strings.TrimSpace(c.DBUsername) == "" {
+		return errors.New("db_username is required")
+	}
 	if strings.TrimSpace(c.DefaultAdminUsername) == "" {
 		return errors.New("default_admin_username is required")
 	}

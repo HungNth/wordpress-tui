@@ -76,6 +76,13 @@ func TestValidateConfig(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "empty db username",
+			modify: func(c *config.Config) {
+				c.DBUsername = ""
+			},
+			wantErr: true,
+		},
+		{
 			name: "empty admin username",
 			modify: func(c *config.Config) {
 				c.DefaultAdminUsername = ""

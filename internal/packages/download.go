@@ -45,6 +45,15 @@ type DownloadOptions struct {
 	AllowedIPs []net.IP // Strictly for local test fixtures: only these exact IPs are exempted from SSRF filtering
 }
 
+type InterruptedDownloadError struct {
+	Received int64
+	Expected int64
+}
+
+func (e *InterruptedDownloadError) Error() string {
+	return fmt.Sprintf("download ended prematurely: received %d bytes, expected %d", e.Received, e.Expected)
+}
+
 // SafeDownload streams a remote HTTPS package into destPath enforcing size bounds, SSRF checks, and ZIP integrity.
 func SafeDownload(ctx context.Context, downloadURL string, expectedSize int64, destPath string, optList ...DownloadOptions) error {
 	var opt DownloadOptions
@@ -183,7 +192,7 @@ func SafeDownload(ctx context.Context, downloadURL string, expectedSize int64, d
 		return fmt.Errorf("downloaded content exceeded expected size %d", expectedSize)
 	}
 	if written < expectedSize {
-		return fmt.Errorf("download ended prematurely: received %d bytes, expected %d", written, expectedSize)
+		return &InterruptedDownloadError{Received: written, Expected: expectedSize}
 	}
 
 	_ = partFile.Close()

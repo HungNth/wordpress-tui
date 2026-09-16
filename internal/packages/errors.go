@@ -50,13 +50,20 @@ func IsTransientError(err error) bool {
 		return true
 	}
 
+	var interruptedErr *InterruptedDownloadError
+	if errors.As(err, &interruptedErr) {
+		return true
+	}
+
 	var dnsErr *net.DNSError
 	if errors.As(err, &dnsErr) {
-		if dnsErr.IsTemporary || dnsErr.Timeout() || dnsErr.IsNotFound {
+		if dnsErr.IsNotFound {
+			return false
+		}
+		if dnsErr.IsTemporary || dnsErr.Timeout() {
 			return true
 		}
 	}
-
 	var netErr net.Error
 	if errors.As(err, &netErr) {
 		if netErr.Timeout() {

@@ -31,10 +31,11 @@ func TestIsTransientError(t *testing.T) {
 		{"http 401 unauthorized", &packages.HTTPError{StatusCode: 401}, false},
 		{"http 403 forbidden", &packages.HTTPError{StatusCode: 403}, false},
 		{"http 404 not found", &packages.HTTPError{StatusCode: 404}, false},
+		{"dns not found nxdomain", &net.DNSError{IsNotFound: true}, false},
+		{"dns temporary error", &net.DNSError{IsTemporary: true}, true},
 		{"ssrf rejection", errors.New("SSRF protection: disallowed IP"), false},
 		{"invalid zip", errors.New("not a valid ZIP archive"), false},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := packages.IsTransientError(tt.err)
