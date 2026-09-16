@@ -82,15 +82,12 @@ func (c *Client) CheckDependencies(usedHerd bool) error {
 }
 
 func (c *Client) CoreDownload(ctx context.Context, dir, locale string) error {
-	// On Windows or environments using WP-CLI under PHP PharData, tarball (.tar.gz) extraction
-	// frequently fails due to Windows filesystem path limitations and trailing dot issues in bundled packages.
-	// Pointing directly to https://wordpress.org/latest.zip instructs WP-CLI to download and extract
-	// the standard ZIP archive via PHP ZipArchive which succeeds reliably across Windows and Herd.
+	// On Windows under PHP PharData, tarball (.tar.gz) extraction fails due to
+	// filesystem path limitations and trailing dot issues in bundled packages.
+	// Pointing directly to the official release ZIP instructs WP-CLI to extract
+	// via PHP ZipArchive which succeeds reliably across Windows and Herd.
 	downloadURL := "https://wordpress.org/latest.zip"
 	args := []string{"core", "download", downloadURL}
-	if locale != "" && locale != "en_US" {
-		args = append(args, "--locale="+locale)
-	}
 	_, stderr, err := c.runner.Run(ctx, dir, "wp", args, "")
 	if err != nil {
 		return fmt.Errorf("wp core download failed: %w (output: %s)", err, strings.TrimSpace(stderr))

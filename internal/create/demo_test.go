@@ -18,8 +18,7 @@ func TestTicket02_DemoBasicProvisioningAndRollback(t *testing.T) {
 	cfg.WebsitesPath = filepath.Join(tempDir, "sites")
 
 	// 1. Success Demo
-	runner := &mockRunner{
-	}
+	runner := &mockRunner{}
 	client := wpcli.NewClientWithRunner(runner)
 	creator := create.NewCreator(cfg, client, func(ctx context.Context, dbName string) (bool, error) {
 		conn := wpcli.DBConnection{
@@ -94,8 +93,7 @@ func TestTicket02_DemoBasicProvisioningAndRollback(t *testing.T) {
 	}
 
 	// 3. Database collision demo using CheckDatabaseExists
-	collisionRunner := &mockRunner{
-	}
+	collisionRunner := &mockRunner{}
 	collisionClient := wpcli.NewClientWithRunner(collisionRunner)
 	collisionCreator := create.NewCreator(cfg, collisionClient, func(ctx context.Context, dbName string) (bool, error) {
 		if dbName == "existing-db" {
