@@ -2,13 +2,17 @@ BINARY_NAME := wptui
 CMD_DIR := ./cmd/wptui
 BUILD_DIR := bin
 
-# Detect OS
+# Detect OS and set OS-specific commands
 ifeq ($(OS),Windows_NT)
     DETECTED_OS := Windows
     BINARY_EXT := .exe
+    MKDIR_CMD := cmd //c "if not exist $(BUILD_DIR) mkdir $(BUILD_DIR)"
+    CLEAN_CMD := cmd //c "if exist $(BUILD_DIR) rmdir /s /q $(BUILD_DIR)"
 else
     DETECTED_OS := $(shell uname -s)
     BINARY_EXT :=
+    MKDIR_CMD := mkdir -p $(BUILD_DIR)
+    CLEAN_CMD := rm -rf $(BUILD_DIR)
 endif
 
 TARGET := $(BUILD_DIR)/$(BINARY_NAME)$(BINARY_EXT)
@@ -18,7 +22,7 @@ TARGET := $(BUILD_DIR)/$(BINARY_NAME)$(BINARY_EXT)
 all: build
 
 $(BUILD_DIR):
-	@mkdir -p $(BUILD_DIR)
+	@$(MKDIR_CMD)
 
 ## build: Biên dịch binary cho hệ điều hành hiện tại
 build: $(BUILD_DIR)
@@ -45,10 +49,10 @@ vet:
 fmt:
 	go fmt ./...
 
-## clean: Dọn dẹp binary được tạo trong thư mục build
+## clean: Dọn dẹp thư mục build theo từng hệ điều hành
 clean:
-	rm -f $(BUILD_DIR)/*
-	@echo Cleaned $(BUILD_DIR)
+	@$(CLEAN_CMD)
+	@echo Cleaned $(BUILD_DIR) for $(DETECTED_OS)
 
 ## help: Hướng dẫn sử dụng
 help:
@@ -61,4 +65,4 @@ help:
 	@echo "  test-race   Chạy go test với -race"
 	@echo "  vet         Chạy go vet"
 	@echo "  fmt         Chạy go fmt"
-	@echo "  clean       Xóa các file binary trong thư mục build ($(BUILD_DIR))"
+	@echo "  clean       Xóa thư mục build ($(BUILD_DIR)) phù hợp $(DETECTED_OS)"
