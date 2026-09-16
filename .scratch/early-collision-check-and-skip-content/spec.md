@@ -42,7 +42,7 @@ When creating a new WordPress website in WPTUI:
 
 2. **Core Download `--skip-content` Flag**:
    - In `internal/wpcli/wpcli.go`, update `CoreDownload`:
-     `args := []string{"core", "download", downloadURL, "--skip-content"}`
+     `args := []string{"core", "download", "--skip-content"}` (plus optional `--locale`)
    - The command executed will be:
      `wp core download --skip-content --locale=en_US`
    - When Package integration is disabled and a default theme is configured, no bundled default themes are retained: `DefaultThemeSkipped` is reported as true, and active-theme reporting correctly reflects that no default theme was activated. If no default theme is configured, `DefaultThemeSkipped` remains false.

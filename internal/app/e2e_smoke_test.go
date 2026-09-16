@@ -186,9 +186,12 @@ func TestTicket08_ComposedCreateFlowSmoke(t *testing.T) {
 	}
 
 	// Verify clean lean core: no default bundled themes or plugins in wp-content
-	bundledThemeDir := filepath.Join(siteOneDir, "wp-content", "themes", "twentytwentyfour")
-	if _, err := os.Stat(bundledThemeDir); !os.IsNotExist(err) {
-		t.Errorf("expected bundled theme twentytwentyfour to be absent under --skip-content, found at %s", bundledThemeDir)
+	themesDir := filepath.Join(siteOneDir, "wp-content", "themes")
+	themeEntries, _ := os.ReadDir(themesDir)
+	for _, te := range themeEntries {
+		if strings.HasPrefix(strings.ToLower(te.Name()), "twentytwenty") {
+			t.Errorf("expected bundled theme %s to be absent under --skip-content", te.Name())
+		}
 	}
 	helloDollyPlugin := filepath.Join(siteOneDir, "wp-content", "plugins", "hello.php")
 	if _, err := os.Stat(helloDollyPlugin); !os.IsNotExist(err) {
