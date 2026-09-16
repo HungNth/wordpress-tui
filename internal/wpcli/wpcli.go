@@ -129,10 +129,11 @@ func (c *Client) ConfigCreate(ctx context.Context, dir, dbName string, conn DBCo
 
 func (c *Client) DBCreate(ctx context.Context, dir string) (bool, error) {
 	stdout, stderr, err := c.runner.Run(ctx, dir, "wp", []string{"db", "create"}, "")
+	created := strings.Contains(stdout, "Database created") || strings.Contains(stdout, "Success")
 	if err != nil {
-		return false, fmt.Errorf("wp db create failed: %w (output: %s)", err, strings.TrimSpace(stderr))
+		return created, fmt.Errorf("wp db create failed: %w (output: %s)", err, sanitizeStderr(stderr))
 	}
-	return strings.Contains(stdout, "Database created") || strings.Contains(stdout, "Success"), nil
+	return created, nil
 }
 
 func (c *Client) DBDrop(ctx context.Context, dir string) error {

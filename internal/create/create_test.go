@@ -14,13 +14,13 @@ import (
 	"wptui/internal/packages"
 	"wptui/internal/wpcli"
 )
-
 type mockRunner struct {
 	mu           sync.Mutex
 	calls        []string
 	failOnSubstr string
 	parkedPath   string
 	securedSites string
+	activeTheme  string
 }
 
 func (m *mockRunner) Run(ctx context.Context, dir string, name string, args []string, stdin string) (string, string, error) {
@@ -36,6 +36,12 @@ func (m *mockRunner) Run(ctx context.Context, dir string, name string, args []st
 	}
 	if strings.Contains(full, "herd secured") {
 		return m.securedSites + "\n", "", nil
+	}
+	if strings.Contains(full, "theme list") {
+		if m.activeTheme != "" {
+			return m.activeTheme + "\n", "", nil
+		}
+		return "flatsome\n", "", nil
 	}
 
 	return "Success: Database created.", "", nil

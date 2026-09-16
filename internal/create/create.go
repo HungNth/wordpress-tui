@@ -82,15 +82,12 @@ func NewCreator(cfg *config.Config, client *wpcli.Client, checkDB DBExistsFunc) 
 }
 
 type ownershipTracker struct {
-	createdDir        bool
-	createdDB         bool
-	createdTLS        bool
-	dbCreateStarted   bool
-	dbPreflightPassed bool
-	siteDir           string
-	siteSlug          string
-	wpClient          *wpcli.Client
-	checkDBExist      DBExistsFunc
+	createdDir bool
+	createdDB  bool
+	createdTLS bool
+	siteDir    string
+	siteSlug   string
+	wpClient   *wpcli.Client
 }
 
 func (o *ownershipTracker) Rollback(ctx context.Context) {
@@ -99,10 +96,6 @@ func (o *ownershipTracker) Rollback(ctx context.Context) {
 	}
 	if o.createdDB {
 		_ = o.wpClient.DBDrop(ctx, o.siteDir)
-	} else if o.dbCreateStarted && o.dbPreflightPassed && o.checkDBExist != nil {
-		if exists, err := o.checkDBExist(ctx, o.siteSlug); err == nil && exists {
-			_ = o.wpClient.DBDrop(ctx, o.siteDir)
-		}
 	}
 	if o.createdDir && o.siteDir != "" {
 		_ = os.RemoveAll(o.siteDir)
@@ -159,7 +152,6 @@ func (c *Creator) Create(ctx context.Context, req Request, progress ProgressFunc
 	}
 
 	// Preflight 4: Database collision
-	dbPreflightPassed := false
 	if c.checkDBExist != nil {
 		exists, err := c.checkDBExist(ctx, req.WebsiteSlug)
 		if err != nil {
@@ -168,15 +160,12 @@ func (c *Creator) Create(ctx context.Context, req Request, progress ProgressFunc
 		if exists {
 			return nil, &CollisionError{Resource: "Database", Path: req.WebsiteSlug}
 		}
-		dbPreflightPassed = true
 	}
 
 	owner := &ownershipTracker{
-		siteDir:           websitePath,
-		siteSlug:          req.WebsiteSlug,
-		wpClient:          c.wpClient,
-		dbPreflightPassed: dbPreflightPassed,
-		checkDBExist:      c.checkDBExist,
+		siteDir:  websitePath,
+		siteSlug: req.WebsiteSlug,
+		wpClient: c.wpClient,
 	}
 
 	success := false
@@ -228,13 +217,13 @@ func (c *Creator) Create(ctx context.Context, req Request, progress ProgressFunc
 
 	// Step 4: Create database
 	progress("db_create", "Creating database...")
-	owner.dbCreateStarted = true
 	created, err := c.wpClient.DBCreate(ctx, websitePath)
+	if created {
+		owner.createdDB = true
+	}
 	if err != nil {
 		return nil, err
 	}
-	owner.createdDB = created
-
 	// Step 5: Core install
 	var siteURL string
 	if c.cfg.UsedHerd {
@@ -336,16 +325,10 @@ func (c *Creator) Create(ctx context.Context, req Request, progress ProgressFunc
 		recordStatus(&req.ThemeArtifacts[i])
 	}
 
-	activeTheme := "twentytwentyfour"
 	if req.DefaultTheme != nil {
 		progress("theme_install", fmt.Sprintf("Installing default theme %s...", req.DefaultTheme.Ref.Slug))
 		if err := c.wpClient.ThemeInstall(ctx, websitePath, req.DefaultTheme.Path, true); err != nil {
 			return nil, fmt.Errorf("failed to install default theme: %w", err)
-		}
-		activeTheme = req.DefaultTheme.Ref.Slug
-	} else {
-		if actualActive, err := c.wpClient.ThemeGetActive(ctx, websitePath); err == nil && actualActive != "" {
-			activeTheme = actualActive
 		}
 	}
 
@@ -372,6 +355,12 @@ func (c *Creator) Create(ctx context.Context, req Request, progress ProgressFunc
 			return nil, fmt.Errorf("failed to install additional theme %s: %w", art.Ref.Slug, err)
 		}
 		installedThemes = append(installedThemes, art.Ref.Slug)
+	}
+
+	// Always query WordPress for the active theme after installation
+	activeTheme, err := c.wpClient.ThemeGetActive(ctx, websitePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query active WordPress theme: %w", err)
 	}
 
 	success = true

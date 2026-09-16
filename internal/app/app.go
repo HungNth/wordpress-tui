@@ -209,6 +209,9 @@ func RunCreateFlowWithDeps(ctx context.Context, cfg *config.Config, deps CreateF
 		var themeArts []packages.Artifact
 		if deps.Resolver != nil && len(themes) > 0 {
 			for _, th := range themes {
+				if cfg.DefaultThemeSlug != "" && th == cfg.DefaultThemeSlug {
+					continue
+				}
 				fmt.Printf("→ Resolving theme %s...\n", th)
 				art, err := deps.Resolver.ResolvePackage(ctx, packages.PackageRef{Type: packages.PackageTypeTheme, Slug: th}, stageDir)
 				if err != nil {
