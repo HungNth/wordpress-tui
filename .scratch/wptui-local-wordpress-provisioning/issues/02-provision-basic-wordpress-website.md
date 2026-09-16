@@ -37,7 +37,7 @@ Implemented `internal/create` and `internal/wpcli`:
   - Database collision check uses `mysql --defaults-extra-file` without exposing passwords in argv, and exact-matches the schema name without raw string concatenation.
   - Preflight DB check failure immediately halts execution before any mutation occurs.
 - Atomic leaf directory creation via `os.Mkdir` ensures no race conditions overwrite or delete pre-existing directories.
-- Sequential WP-CLI database/install ordering: directory creation -> `wp core download --skip-content` -> `wp config create --skip-check` -> `wp db create` -> `wp core install` -> tweaks/packages -> `herd secure` (terminal step).
+- Sequential WP-CLI database/install ordering: directory creation -> `wp core download` -> `wp config create --skip-check` -> `wp db create` -> `wp core install` -> optional `herd secure`.
 - Passwords for DB and Admin supplied through stdin via `--prompt` to prevent process/log exposure.
 - Strict ownership tracking where `createdDB` is set only upon actual creation by `DBCreate`, preventing destruction of external databases during rollback.
 - Verified with unit and demo tests in `internal/create/create_test.go`, `internal/create/demo_test.go`, and `internal/wpcli/wpcli_test.go`.

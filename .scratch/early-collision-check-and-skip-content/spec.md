@@ -1,5 +1,6 @@
-Status: ready-for-agent
+# Early Interactive Collision Checks and Lean Core Download
 
+Status: ready-for-agent
 ## Problem Statement
 
 When creating a new WordPress website in WPTUI:
@@ -34,16 +35,19 @@ When creating a new WordPress website in WPTUI:
 1. **TUI Input Form Progression**:
    - Split `tui.PromptCreateInputs` or update `tui.BuildCreateForm` with a slug preflight checker callback:
      `type SlugAvailabilityChecker func(slug string) error`
-   - In `internal/app/app.go`, construct the `SlugAvailabilityChecker` that verifies both `os.Stat(filepath.Join(cfg.WebsitesPath, slug))` and `client.CheckDatabaseExists(...)`.
-   - If either exists, return a user-friendly error message (`"directory %s already exists"` or `"database %s already exists"`).
-   - In `tui.BuildCreateForm`, the `WebsiteSlug` input validator invokes `SlugAvailabilityChecker` after syntactic validation passes.
+   - In `internal/app/app.go`, construct the `SlugAvailabilityChecker` that verifies directory and database availability:
+     - Directory check: `os.Stat(targetPath)` — only `os.IsNotExist(err)` means available. Any permission/I/O error returns an error preventing unverified continuation.
+     - Database check: `client.CheckDatabaseExists(ctx, dbConn, slug)` — if an error occurs during the check, return the error to fail safely.
+     - If either exists, return `"directory %s already exists"` or `"database %s already exists"`.
+   - In `tui.BuildCreateForm`, the `WebsiteSlug` input validator first validates syntax (rejecting empty/malformed/Windows-reserved slugs immediately without calling the availability checker); only syntactically valid slugs invoke `SlugAvailabilityChecker`.
 
 2. **Core Download `--skip-content` Flag**:
    - In `internal/wpcli/wpcli.go`, update `CoreDownload`:
      `args := []string{"core", "download", downloadURL, "--skip-content"}`
    - The command executed will be:
      `wp core download https://wordpress.org/latest.zip --skip-content`
-   - When Package integration is disabled or no theme is selected, no bundled default themes are retained; WPTUI explicitly reports that the configured default theme was skipped with no active theme installed.
+   - When Package integration is disabled or no theme is selected, no bundled default themes are retained: `DefaultThemeSkipped` is reported as true, and active-theme reporting correctly reflects that no default theme was activated.
+   - All tests in `internal/wpcli` and `internal/create` expecting `wp core download` calls will reflect the `--skip-content` argument.
    - All tests in `internal/wpcli` and `internal/create` expecting `wp core download` calls will reflect the `--skip-content` argument.
 
 3. **Defense-in-Depth Preflights**:
