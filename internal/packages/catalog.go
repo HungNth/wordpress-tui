@@ -3,6 +3,7 @@ package packages
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -42,7 +43,23 @@ func FetchCatalog(ctx context.Context, client *http.Client, baseURL, licenseKey 
 	}
 
 	if client == nil {
-		client = http.DefaultClient
+		client = &http.Client{
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				if len(via) >= 5 {
+					return errors.New("stopped after 5 redirects")
+				}
+				if req.URL.Scheme != "https" {
+					return fmt.Errorf("redirect to non-HTTPS URL %s rejected", SanitizeURL(req.URL.String()))
+				}
+				req.Header.Del("Referer")
+				if len(via) > 0 && req.URL.Host != via[0].URL.Host {
+					q := req.URL.Query()
+					q.Del("license_key")
+					req.URL.RawQuery = q.Encode()
+				}
+				return nil
+			},
+		}
 	}
 
 	resp, err := client.Do(req)

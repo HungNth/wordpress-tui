@@ -29,32 +29,22 @@ func GetMenuItems() []MenuItem {
 // BuildMainMenuForm builds a Huh Form for the main menu.
 func BuildMainMenuForm(choice *string) *huh.Form {
 	items := GetMenuItems()
-	opts := make([]huh.Option[string], 0, len(items))
+	opts := make([]huh.Option[string], 0)
 
 	for _, item := range items {
-		label := item.Title
-		if item.Disabled {
-			label = fmt.Sprintf("%-10s [Coming soon - %s]", item.Title, item.Description)
-		} else {
-			label = fmt.Sprintf("%-10s [%s]", item.Title, item.Description)
+		if !item.Disabled {
+			opts = append(opts, huh.NewOption(fmt.Sprintf("%s — %s", item.Title, item.Description), item.Key))
 		}
-		opts = append(opts, huh.NewOption(label, item.Key))
 	}
+
+	description := "Select an available action below.\nComing soon (v1 disabled): Config, Delete, Backup, Restore, Settings"
 
 	return huh.NewForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
 				Title("WPTUI — WordPress Local Manager").
-				Description("Choose an operation to perform").
+				Description(description).
 				Options(opts...).
-				Validate(func(v string) error {
-					for _, item := range items {
-						if item.Key == v && item.Disabled {
-							return fmt.Errorf("%s is not available yet (Coming soon)", item.Title)
-						}
-					}
-					return nil
-				}).
 				Value(choice),
 		),
 	)
