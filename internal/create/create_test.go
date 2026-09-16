@@ -100,6 +100,11 @@ func TestCreator_SuccessFlow(t *testing.T) {
 	if _, err := os.Stat(expectedPath); os.IsNotExist(err) {
 		t.Errorf("expected website directory to exist at %s", expectedPath)
 	}
+
+	// Verify herd_secure is the final progress step
+	if len(progressSteps) > 0 && progressSteps[len(progressSteps)-1] != "herd_secure" {
+		t.Errorf("expected herd_secure to be final progress step, got %s", progressSteps[len(progressSteps)-1])
+	}
 }
 
 func TestCreator_PackageInstallAndDeduplication(t *testing.T) {
@@ -354,14 +359,14 @@ func TestCreator_DBPreflightErrorHaltsBeforeMutation(t *testing.T) {
 	}
 }
 
-func TestCreator_HerdUnparkedPathPreflightFails(t *testing.T) {
+func TestCreator_HerdPathTrustSucceedsWithoutParkedInspection(t *testing.T) {
 	tempDir := t.TempDir()
 	cfg := config.DefaultConfig(tempDir)
 	cfg.UsedHerd = true
-	cfg.WebsitesPath = filepath.Join(tempDir, "unparked_path")
+	cfg.WebsitesPath = filepath.Join(tempDir, "sites")
 
 	runner := &mockRunner{
-		parkedPath: "/some/other/path", // does not match cfg.WebsitesPath
+		parkedPath: "/completely/unrelated/path", // should be ignored
 	}
 	wpClient := wpcli.NewClientWithRunner(runner)
 
@@ -370,22 +375,23 @@ func TestCreator_HerdUnparkedPathPreflightFails(t *testing.T) {
 	})
 
 	req := create.Request{
-		WebsiteName: "Unparked Site",
-		WebsiteSlug: "unparked-site",
+		WebsiteName: "Trusted Site",
+		WebsiteSlug: "trusted-site",
 	}
 
-	_, err := creator.Create(context.Background(), req, nil)
-	if err == nil {
-		t.Fatal("expected error when websites_path is not parked in Herd, got nil")
+	res, err := creator.Create(context.Background(), req, nil)
+	if err != nil {
+		t.Fatalf("expected create to succeed trusting websites_path, got error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "not parked in Laravel Herd") {
-		t.Errorf("expected 'not parked in Laravel Herd' error, got %v", err)
+	if res.WebsiteURL != "https://trusted-site.test" {
+		t.Errorf("expected https://trusted-site.test, got %s", res.WebsiteURL)
 	}
 
-	// Ensure no site directory was created
-	siteDir := filepath.Join(cfg.WebsitesPath, "unparked-site")
-	if _, err := os.Stat(siteDir); !os.IsNotExist(err) {
-		t.Errorf("site directory should not have been created on unparked path error")
+	// Ensure herd paths was NEVER called
+	for _, call := range runner.calls {
+		if strings.Contains(call, "herd paths") || strings.Contains(call, "herd parked") {
+			t.Errorf("unexpected herd paths inspection call: %s", call)
+		}
 	}
 }
 

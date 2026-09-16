@@ -16,7 +16,7 @@ Let a user create a complete local WordPress Website without optional tweaks or 
 - [x] Required executables are checked before mutation; Herd is required only in Herd mode.
 - [x] WordPress core is downloaded, `wp-config.php` is created with database checking skipped, the database is created, and `wp core install` runs only after database creation succeeds.
 - [x] Database and administrator passwords use secret-safe stdin prompting where WP-CLI supports it and never appear in rendered command lines.
-- [x] Herd mode uses a pre-parked Website path, secures the Website without linking it, and returns an HTTPS `.test` URL; non-Herd mode returns an HTTP `.test` URL and relies on the documented wildcard-stack prerequisite.
+- [x] Herd mode uses the configured Website path, secures the Website without linking it as the final step, and returns an HTTPS `.test` URL; non-Herd mode returns an HTTP `.test` URL and relies on the documented wildcard-stack prerequisite.
 - [x] Database creation failure never invokes core install and leaves no Website directory or run-owned database behind.
 - [x] Critical failures and user cancellation produce named, sanitized progress and rollback only the directory, database, and Herd TLS state created by the run.
 - [x] A behavioral test at the create-use-case seam proves a successful basic Website and representative rollback paths.

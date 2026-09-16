@@ -37,7 +37,7 @@ The Package Cache keeps one verified archive per Package type and slug in the op
 15. As a developer, I want collisions to return me to the Website identity step, so that I can choose a different Slug safely.
 16. As a developer, I want administrator fields prefilled from config, so that repeated local Websites use consistent credentials.
 17. As a developer, I want to override the administrator username, password, and email per Website, so that exceptional Websites remain possible.
-18. As a Herd user, I want Websites created under a pre-parked path and secured with Herd, so that they are available at `https://<slug>.test`.
+18. As a Herd user, I want Websites created under the configured websites path and secured with Herd, so that they are available at `https://<slug>.test`.
 19. As a non-Herd user, I want WPTUI to work with my preconfigured wildcard local stack, so that Websites are available at `http://<slug>.test`.
 20. As a non-Herd user, I want WPTUI to state the wildcard-stack prerequisite during setup, so that `.test` routing is not silently assumed.
 21. As a user, I want WPTUI to verify required executables before mutation, so that missing PHP, WP-CLI, MySQL, or Herd fails early.
@@ -134,7 +134,7 @@ The Package Cache keeps one verified archive per Package type and slug in the op
 - Use Website Slug as the directory name, database name, and `.test` hostname.
 - Check destination-directory and database collisions before creating either resource. A collision returns to Website identity input and never reuses or deletes the existing resource.
 - Require `php`, `wp`, and `mysql` in `PATH`. Require `herd` when Herd mode is enabled.
-- In Herd mode, require `websites_path` to be pre-parked. Do not call `herd link`. Secure the Website with Herd and use `https://<slug>.test`.
+- In Herd mode, trust the configured `websites_path` directly without calling `herd paths` or `herd park`. Do not call `herd link`. Secure the Website with `herd secure` as the final provisioning step and use `https://<slug>.test`.
 - In non-Herd mode, require an external wildcard stack that serves children of `websites_path` at `.test` hostnames. Use `http://<slug>.test`; WPTUI does not configure that stack.
 - Install latest stable WordPress core with base locale `en_US`, Website Name as title, the resolved administrator values, and email notification disabled.
 - Keep `--skip-check` exclusively on `wp config create`, because the database does not yet exist at config-generation time. Never pass it to `wp core install`.
@@ -198,7 +198,7 @@ The Package Cache keeps one verified archive per Package type and slug in the op
 - Test create behavior for path collision, database collision, missing executable, database-create failure, core-install failure, plugin/theme failure, Herd-secure failure, and cancellation at representative stages.
 - In every rollback test, assert that pre-existing directory/database/TLS/cache resources remain untouched and only current-run Website resources are removed.
 - Test the database/install ordering as an observable contract: core install must never be attempted when database creation fails.
-- Test Herd and non-Herd URL outcomes and confirm Herd unlinking is never used because parked-path operation does not create a link.
+- Test Herd and non-Herd URL outcomes and confirm Herd unlinking is never used.
 - Test tweak opt-out, the four-command bound, exact and wildcard conflict matching, `*` config-set versus every other command, `db:*` rewrite versus every option/language database mutation, parallel option updates with distinct keys, overlap serialization for duplicate option keys, language-file conflicts, language install-before-activate dependency, deterministic configured-order reporting, continue-on-error behavior, dependency skips, and the invariant that individual tweak failures retain the Website without rollback.
 - Test plugin activation, default-theme activation, additional-theme non-activation, and default-theme skip reporting.
 - Test Package API disabled behavior even when a populated Package Cache exists; the cache must not bypass integration state.

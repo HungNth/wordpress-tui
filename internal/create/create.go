@@ -135,16 +135,6 @@ func (c *Creator) Create(ctx context.Context, req Request, progress ProgressFunc
 		return nil, fmt.Errorf("dependency preflight failed: %w", err)
 	}
 
-	// Preflight 2: In Herd mode, verify websites_path is parked
-	if c.cfg.UsedHerd {
-		parked, err := c.wpClient.IsPathParked(ctx, c.cfg.WebsitesPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to verify herd parked path: %w", err)
-		}
-		if !parked {
-			return nil, fmt.Errorf("websites_path %s is not parked in Laravel Herd; please run 'herd park %s' first", c.cfg.WebsitesPath, c.cfg.WebsitesPath)
-		}
-	}
 
 	// Preflight 3: Directory collision
 	if fi, err := os.Stat(websitePath); err == nil && fi != nil {
@@ -245,20 +235,6 @@ func (c *Creator) Create(ctx context.Context, req Request, progress ProgressFunc
 		return nil, err
 	}
 
-	// Step 6: Secure with Herd if used_herd is true
-	if c.cfg.UsedHerd {
-		alreadySecured, err := c.wpClient.IsSiteSecured(ctx, req.WebsiteSlug)
-		if err != nil {
-			return nil, fmt.Errorf("failed to verify herd TLS status: %w", err)
-		}
-		progress("herd_secure", "Securing site with Herd TLS...")
-		if err := c.wpClient.HerdSecure(ctx, websitePath, req.WebsiteSlug); err != nil {
-			return nil, err
-		}
-		if !alreadySecured {
-			owner.createdTLS = true
-		}
-	}
 
 	// Step 7: Apply tweaks if opted in
 	var failedTweaks []string
@@ -361,6 +337,21 @@ func (c *Creator) Create(ctx context.Context, req Request, progress ProgressFunc
 	activeTheme, err := c.wpClient.ThemeGetActive(ctx, websitePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query active WordPress theme: %w", err)
+	}
+
+	// Step 9: Secure with Herd if used_herd is true (final provisioning step)
+	if c.cfg.UsedHerd {
+		alreadySecured, err := c.wpClient.IsSiteSecured(ctx, req.WebsiteSlug)
+		if err != nil {
+			return nil, fmt.Errorf("failed to verify herd TLS status: %w", err)
+		}
+		progress("herd_secure", "Securing site with Herd TLS...")
+		if err := c.wpClient.HerdSecure(ctx, websitePath, req.WebsiteSlug); err != nil {
+			return nil, err
+		}
+		if !alreadySecured {
+			owner.createdTLS = true
+		}
 	}
 
 	success = true
