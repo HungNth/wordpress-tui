@@ -55,17 +55,32 @@ func TestFilterCatalog(t *testing.T) {
 	items := []packages.CatalogItem{
 		{Name: "Advanced Custom Fields PRO", Slug: "advanced-custom-fields-pro", Type: "plugin"},
 		{Name: "Admin and Site Enhancements (ASE) Pro", Slug: "admin-site-enhancements-pro", Type: "plugin"},
+		{Name: "WP Mail SMTP Pro", Slug: "wp-mail-smtp-pro", Type: "plugin"},
 		{Name: "Xstore", Slug: "xstore", Type: "theme"},
 	}
 
-	plugins := packages.FilterCatalog(items, packages.PackageTypePlugin, "admin")
-	if len(plugins) != 1 || plugins[0].Slug != "admin-site-enhancements-pro" {
-		t.Errorf("expected 1 admin plugin, got %v", plugins)
+	// 1. Direct substring match
+	res := packages.FilterCatalog(items, packages.PackageTypePlugin, "admin")
+	if len(res) != 1 || res[0].Slug != "admin-site-enhancements-pro" {
+		t.Errorf("expected admin-site-enhancements-pro, got %v", res)
 	}
 
-	themes := packages.FilterCatalog(items, packages.PackageTypeTheme, "XSTORE")
-	if len(themes) != 1 || themes[0].Slug != "xstore" {
-		t.Errorf("expected 1 theme case-insensitive match, got %v", themes)
+	// 2. Acronym / initialism match ("acf" -> "Advanced Custom Fields PRO")
+	res = packages.FilterCatalog(items, packages.PackageTypePlugin, "acf")
+	if len(res) != 1 || res[0].Slug != "advanced-custom-fields-pro" {
+		t.Errorf("expected acf acronym match to return advanced-custom-fields-pro, got %v", res)
+	}
+
+	// 3. Hyphen initialism match ("smtp")
+	res = packages.FilterCatalog(items, packages.PackageTypePlugin, "smtp")
+	if len(res) != 1 || res[0].Slug != "wp-mail-smtp-pro" {
+		t.Errorf("expected smtp match to return wp-mail-smtp-pro, got %v", res)
+	}
+
+	// 4. Empty query returns all of matching type
+	res = packages.FilterCatalog(items, packages.PackageTypeTheme, "")
+	if len(res) != 1 || res[0].Slug != "xstore" {
+		t.Errorf("expected 1 theme, got %v", res)
 	}
 }
 

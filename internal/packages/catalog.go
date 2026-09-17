@@ -88,7 +88,7 @@ func FetchCatalog(ctx context.Context, client *http.Client, baseURL, licenseKey 
 	return filtered, nil
 }
 
-// FilterCatalog filters catalog items in memory by type and search query (case-insensitive).
+// FilterCatalog filters catalog items in memory by type and search query (case-insensitive substring or initialism).
 func FilterCatalog(items []CatalogItem, expectedType PackageType, query string) []CatalogItem {
 	q := strings.ToLower(strings.TrimSpace(query))
 	var out []CatalogItem
@@ -96,8 +96,44 @@ func FilterCatalog(items []CatalogItem, expectedType PackageType, query string) 
 		if it.Type != string(expectedType) {
 			continue
 		}
-		if q == "" || strings.Contains(strings.ToLower(it.Name), q) || strings.Contains(strings.ToLower(it.Slug), q) {
+		if q == "" {
 			out = append(out, it)
+			continue
+		}
+
+		lowerName := strings.ToLower(it.Name)
+		lowerSlug := strings.ToLower(it.Slug)
+
+		// 1. Direct substring match on Name or Slug
+		if strings.Contains(lowerName, q) || strings.Contains(lowerSlug, q) {
+			out = append(out, it)
+			continue
+		}
+
+		// 2. Acronym / initialism match on words in Name (e.g. "acf" -> "Advanced Custom Fields")
+		words := strings.Fields(lowerName)
+		var nameAcronym strings.Builder
+		for _, w := range words {
+			if len(w) > 0 {
+				nameAcronym.WriteByte(w[0])
+			}
+		}
+		if strings.Contains(nameAcronym.String(), q) {
+			out = append(out, it)
+			continue
+		}
+
+		// 3. Hyphen-initialism match on Slug (e.g. "acf" -> "advanced-custom-fields-pro")
+		slugParts := strings.Split(lowerSlug, "-")
+		var slugAcronym strings.Builder
+		for _, p := range slugParts {
+			if len(p) > 0 {
+				slugAcronym.WriteByte(p[0])
+			}
+		}
+		if strings.Contains(slugAcronym.String(), q) {
+			out = append(out, it)
+			continue
 		}
 	}
 	return out

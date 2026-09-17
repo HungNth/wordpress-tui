@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
 	"wptui/internal/config"
 	"wptui/internal/packages"
@@ -74,117 +75,21 @@ func SelectPackagesFlow(
 		return deduplicateStrings(selected), nil
 	}
 
-	// Interactive selection-accumulating search loop
-	accumulatedMap := make(map[string]bool)
-	var accumulatedOrder []string
-	for _, s := range selected {
-		if !accumulatedMap[s] {
-			accumulatedMap[s] = true
-			accumulatedOrder = append(accumulatedOrder, s)
-		}
+	// Launch unified live search model
+	model := NewLiveSearchModel(itemType, catalog, selected)
+	prog := tea.NewProgram(model)
+	finalModel, err := prog.Run()
+	if err != nil {
+		return nil, err
 	}
 
-	for {
-		// Format summary of currently accumulated items
-		var summaryStr string
-		if len(accumulatedMap) == 0 {
-			summaryStr = fmt.Sprintf("Selected: 0 %ss", itemType)
-		} else {
-			var names []string
-			for _, slug := range accumulatedOrder {
-				if accumulatedMap[slug] {
-					names = append(names, slug)
-				}
-			}
-			summaryStr = fmt.Sprintf("Selected (%d): %s", len(names), strings.Join(names, ", "))
-		}
-
-		var query string
-		queryForm := huh.NewForm(
-			huh.NewGroup(
-				huh.NewInput().
-					Title(fmt.Sprintf("Search %s name or slug", itemType)).
-					Description(summaryStr + "\n(Type keyword to search, or submit empty query to view all/finish)").
-					Value(&query),
-			),
-		).WithTheme(CustomTheme())
-
-		if err := queryForm.Run(); err != nil {
-			return nil, err
-		}
-
-		// If user enters empty query and already has selections, ask if they want to finish
-		trimmedQuery := strings.TrimSpace(query)
-		matches := packages.FilterCatalog(catalog, itemType, trimmedQuery)
-
-		resultOpts := make([]huh.Option[string], 0, len(matches)+1)
-		for _, m := range matches {
-			resultOpts = append(resultOpts, huh.NewOption(fmt.Sprintf("%s (%s v%s)", m.Name, m.Slug, m.Version), m.Slug))
-		}
-		resultOpts = append(resultOpts, huh.NewOption("🔍 Search another term / continue...", SearchOptionKey))
-
-		// Pre-populate with currently accumulated packages that appear in current match set
-		var searchChoices []string
-		for _, m := range matches {
-			if accumulatedMap[m.Slug] {
-				searchChoices = append(searchChoices, m.Slug)
-			}
-		}
-
-		title := fmt.Sprintf("Matching %ss for %q", itemType, trimmedQuery)
-		if trimmedQuery == "" {
-			title = fmt.Sprintf("All catalog %ss", itemType)
-		}
-
-		resultsForm := huh.NewForm(
-			huh.NewGroup(
-				huh.NewMultiSelect[string]().
-					Title(title).
-					Description(summaryStr + "\nSpace to toggle selection, Enter to confirm query batch").
-					Options(resultOpts...).
-					Value(&searchChoices),
-			),
-		).WithTheme(CustomTheme())
-
-		if err := resultsForm.Run(); err != nil {
-			return nil, err
-		}
-
-		searchSelected, searchAgain := ExtractSelectedPackages(searchChoices)
-
-		var matchSlugs []string
-		for _, m := range matches {
-			matchSlugs = append(matchSlugs, m.Slug)
-		}
-		UpdateAccumulatedSelection(accumulatedMap, matchSlugs, searchSelected)
-
-		// Maintain deterministic order for newly added slugs
-		for _, s := range searchSelected {
-			found := false
-			for _, existing := range accumulatedOrder {
-				if existing == s {
-					found = true
-					break
-				}
-			}
-			if !found {
-				accumulatedOrder = append(accumulatedOrder, s)
-			}
-		}
-
-		if !searchAgain {
-			break
-		}
+	liveM, ok := finalModel.(*LiveSearchModel)
+	if !ok || liveM.IsAborted() {
+		// User aborted via Esc/Ctrl+C; retain choices made before search
+		return deduplicateStrings(selected), nil
 	}
 
-	var finalSelected []string
-	for _, s := range accumulatedOrder {
-		if accumulatedMap[s] {
-			finalSelected = append(finalSelected, s)
-		}
-	}
-
-	return deduplicateStrings(finalSelected), nil
+	return liveM.FinalSelected(), nil
 }
 
 func deduplicateStrings(in []string) []string {
