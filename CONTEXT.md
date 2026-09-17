@@ -76,3 +76,11 @@ _Avoid_: Loading bar, task monitor
 The mechanism that queries currently installed WordPress plugin or theme versions, compares them against target package versions, and conditionally performs clean installs or force upgrades while skipping redundant reinstalls.
 _Avoid_: Package overwriter, package refresher
 
+**Application Settings**:
+The menu workflow that facilitates system-level maintenance tasks, including launching an external editor for the configuration file and opening the system cache directory.
+_Avoid_: Preferences, options, app config
+
+**External Launcher**:
+The platform-aware subsystem responsible for safely launching external tools such as code editors and file managers.
+_Avoid_: Shell runner, process spawner
+
