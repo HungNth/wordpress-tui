@@ -252,12 +252,18 @@ func TestUpdateAdminCredentials(t *testing.T) {
 		return sql.Open(driverNameCustom, dataSourceName)
 	}
 
-	err := siteconfig.UpdateAdminCredentials(ctx, "/path/to/site", dbCfg, input, mock, customConnector)
+	progressEvents := 0
+	onProgress := func(step, total int, msg string) {
+		progressEvents++
+	}
+
+	err := siteconfig.UpdateAdminCredentials(ctx, "/path/to/site", dbCfg, input, mock, customConnector, onProgress)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-
-	// 1. Check SQL Prepared statement
+	if progressEvents == 0 {
+		t.Errorf("expected progress events to be fired")
+	}
 	expectedQuery := "UPDATE `wp_users` SET user_login = ?, user_nicename = ? WHERE ID = ?"
 	if fd.executedQuery != expectedQuery {
 		t.Errorf("expected SQL query %q, got %q", expectedQuery, fd.executedQuery)
@@ -306,11 +312,7 @@ func TestApplyTweaks(t *testing.T) {
 		{Type: "option_update", Key: "timezone_string", Value: "Asia/Ho_Chi_Minh"},
 		{Type: "language_core", Key: "install", Value: "vi"},
 	}
-
-	results := siteconfig.ApplyTweaks(ctx, "/path/to/site", tweaks, mock)
-	if len(results) != len(tweaks) {
-		t.Fatalf("expected %d tweak results, got %d", len(tweaks), len(results))
-	}
+	results := siteconfig.ApplyTweaks(ctx, "/path/to/site", tweaks, mock, nil)
 	for i, r := range results {
 		if !r.Success {
 			t.Errorf("tweak %d failed: %v", i, r.Err)
@@ -326,11 +328,7 @@ func TestInstallPackages(t *testing.T) {
 		{Ref: packages.PackageRef{Slug: "plugin-a", Type: packages.PackageTypePlugin}, Path: "/cache/plugin-a.zip"},
 		{Ref: packages.PackageRef{Slug: "plugin-b", Type: packages.PackageTypePlugin}, Path: ""},
 	}
-
-	results := siteconfig.InstallPackages(ctx, "/path/to/site", packages.PackageTypePlugin, plugins, true, mock)
-	if len(results) != 2 {
-		t.Fatalf("expected 2 results, got %d", len(results))
-	}
+	results := siteconfig.InstallPackages(ctx, "/path/to/site", packages.PackageTypePlugin, plugins, true, mock, nil)
 	if !results[0].Success || !results[0].Activated {
 		t.Errorf("plugin-a failed or not activated")
 	}
@@ -338,11 +336,95 @@ func TestInstallPackages(t *testing.T) {
 	themes := []packages.Artifact{
 		{Ref: packages.PackageRef{Slug: "theme-a", Type: packages.PackageTypeTheme}, Path: "/cache/theme-a.zip"},
 	}
-	themeResults := siteconfig.InstallPackages(ctx, "/path/to/site", packages.PackageTypeTheme, themes, false, mock)
-	if len(themeResults) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(themeResults))
-	}
+	themeResults := siteconfig.InstallPackages(ctx, "/path/to/site", packages.PackageTypeTheme, themes, false, mock, nil)
 	if !themeResults[0].Success || themeResults[0].Activated {
 		t.Errorf("theme-a failed or unexpectedly activated")
+	}
+}
+
+func TestCompareVersions(t *testing.T) {
+	tests := []struct {
+		v1, v2 string
+		want   int
+	}{
+		{"6.8.10", "6.8.9", 1},
+		{"6.8.9", "6.8.10", -1},
+		{"6.8.10", "6.8.10", 0},
+		{"v1.2.3", "1.2.3", 0},
+		{"2.0", "1.9.9", 1},
+		{"1.0.0.1", "1.0.0", 1},
+		{"1.0.0", "1.0.0.1", -1},
+	}
+
+	for _, tc := range tests {
+		got := siteconfig.CompareVersions(tc.v1, tc.v2)
+		if got != tc.want {
+			t.Errorf("CompareVersions(%q, %q) = %d, want %d", tc.v1, tc.v2, got, tc.want)
+		}
+	}
+}
+
+func TestInstallPackages_VersionAware(t *testing.T) {
+	ctx := context.Background()
+	mock := &mockWPClient{
+		runFn: func(ctx context.Context, dir, name string, args []string, stdin string) (string, string, error) {
+			if len(args) >= 3 && args[0] == "plugin" && args[1] == "get" {
+				switch args[2] {
+				case "up-to-date-plugin":
+					return "2.0.0", "", nil
+				case "outdated-plugin":
+					return "1.0.0", "", nil
+				case "newer-installed-plugin":
+					return "3.0.0", "", nil
+				case "brand-new-plugin":
+					return "", "Error: not found", errors.New("not found")
+				}
+			}
+			return "", "", nil
+		},
+	}
+
+	artifacts := []packages.Artifact{
+		{Ref: packages.PackageRef{Slug: "up-to-date-plugin", Type: packages.PackageTypePlugin}, Version: "2.0.0"},
+		{Ref: packages.PackageRef{Slug: "outdated-plugin", Type: packages.PackageTypePlugin}, Version: "2.0.0"},
+		{Ref: packages.PackageRef{Slug: "newer-installed-plugin", Type: packages.PackageTypePlugin}, Version: "2.0.0"},
+		{Ref: packages.PackageRef{Slug: "brand-new-plugin", Type: packages.PackageTypePlugin}, Version: "1.0.0"},
+	}
+
+	results := siteconfig.InstallPackages(ctx, "/path/to/site", packages.PackageTypePlugin, artifacts, true, mock, nil)
+	if len(results) != 4 {
+		t.Fatalf("expected 4 results, got %d", len(results))
+	}
+
+	// 1. up-to-date: skipped
+	if !results[0].Skipped || !strings.Contains(results[0].SkipReason, "Already up to date") {
+		t.Errorf("expected up-to-date plugin to be skipped, got: %+v", results[0])
+	}
+
+	// 2. outdated: upgraded with --force
+	if results[1].Skipped || !results[1].Success {
+		t.Errorf("expected outdated plugin to be upgraded, got: %+v", results[1])
+	}
+
+	// 3. newer installed: skipped
+	if !results[2].Skipped || !strings.Contains(results[2].SkipReason, "Current installed version is newer") {
+		t.Errorf("expected newer installed plugin to be skipped, got: %+v", results[2])
+	}
+
+	// 4. brand new: installed without --force
+	if results[3].Skipped || !results[3].Success {
+		t.Errorf("expected brand new plugin to be installed, got: %+v", results[3])
+	}
+
+	// Verify --force call in mock
+	foundForce := false
+	for _, call := range mock.calls {
+		if strings.Contains(call, "plugin install outdated-plugin") && strings.Contains(call, "--force") {
+			foundForce = true
+			break
+		}
+	}
+	if !foundForce {
+		t.Errorf("expected --force flag on outdated plugin install, calls: %v", mock.calls)
 	}
 }

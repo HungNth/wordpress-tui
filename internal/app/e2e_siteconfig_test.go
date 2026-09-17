@@ -248,10 +248,10 @@ func TestE2E_ComposedSiteConfiguration(t *testing.T) {
 		t.Errorf("expected user and site admin email update, got: %v", client.runs)
 	}
 
-	// 4. Verify Plugin Installation (activated)
+	// 4. Verify Plugin Installation (activated and version checked)
 	pluginFound := false
 	for _, r := range client.runs {
-		if strings.Contains(r, "plugin install") && strings.Contains(r, "plugin-one.zip") && strings.Contains(r, "activate:true") {
+		if strings.Contains(r, "wp plugin install") && strings.Contains(r, "plugin-one.zip") && strings.Contains(r, "--activate") {
 			pluginFound = true
 			break
 		}
@@ -260,10 +260,10 @@ func TestE2E_ComposedSiteConfiguration(t *testing.T) {
 		t.Errorf("expected plugin install with activation, got: %v", client.runs)
 	}
 
-	// 5. Verify Theme Installation (not activated)
+	// 5. Verify Theme Installation (not activated and version checked)
 	themeFound := false
 	for _, r := range client.runs {
-		if strings.Contains(r, "theme install") && strings.Contains(r, "theme-one.zip") && strings.Contains(r, "activate:false") {
+		if strings.Contains(r, "wp theme install") && strings.Contains(r, "theme-one.zip") && !strings.Contains(r, "--activate") {
 			themeFound = true
 			break
 		}

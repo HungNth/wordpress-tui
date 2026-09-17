@@ -68,3 +68,11 @@ _Avoid_: Site edit, site modification, site settings
 The mechanism that synchronizes administrative username, password, and email for an existing Website, updating the user login directly via MySQL prepared statements and updating password and email via WP-CLI.
 _Avoid_: User updater, account changer
 
+**Configuration Progress Reporter**:
+The visual progress indicator that displays real-time step descriptions and spinners during Website Configuration actions before presenting the final color-coded summary.
+_Avoid_: Loading bar, task monitor
+
+**Version-Aware Package Upgrader**:
+The mechanism that queries currently installed WordPress plugin or theme versions, compares them against target package versions, and conditionally performs clean installs or force upgrades while skipping redundant reinstalls.
+_Avoid_: Package overwriter, package refresher
+

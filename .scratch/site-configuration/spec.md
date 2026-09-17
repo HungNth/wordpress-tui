@@ -23,9 +23,9 @@ Interactive post-provisioning configuration workflow for existing WordPress webs
 
 ### 2. Action 1: Apply `wp_tweaks`
 - Reuses the existing tweak execution logic (`wpcli.ConfigSet`, `wpcli.RewriteStructure`, `wpcli.OptionUpdate`, `wpcli.LanguageCore`).
+- Shows real-time progress for each tweak being executed (e.g. `[1/15] Applying WP_DEBUG...`).
 - Iterates over all tweaks specified in `config.json`.
 - Displays status for each applied tweak in color (green: success, yellow/red: skipped/failed).
-
 ### 3. Action 2: Change Administrator Information
 - Identifies the administrator user:
   - Runs `wp user list --role=administrator --fields=ID,user_login,user_email --format=json`.
@@ -37,6 +37,7 @@ Interactive post-provisioning configuration workflow for existing WordPress webs
   - **New Password**: blank input uses `default_admin_password`.
   - **New Email**: blank input uses `default_admin_email`.
 - Execution steps:
+  - Shows real-time progress for credential extraction and updates.
   - Extracts database credentials from the selected Website's `wp-config.php` through WP-CLI. Secrets may be held in memory for the database connection but MUST NOT be printed, logged, or included in errors:
     - `wp config get DB_NAME`
     - `wp config get DB_USER`
@@ -53,23 +54,20 @@ Interactive post-provisioning configuration workflow for existing WordPress webs
   - Synchronizes the Website's administrative email with `wp option update admin_email <new_email>`.
 - Displays a color-coded execution status without secrets.
 
-### 4. Action 3: Install Plugins
-- Reuses `tui.SelectPackagesFlow` with `PackageTypePlugin`:
-  - Defaults list from `config.json` plugins.
-  - Live package search with `[x]` multi-query accumulator.
+### 4. Action 3 & 4: Install Plugins / Themes (Version-Aware)
+- Automatically fetches package catalog from API so that `Type to search plugin catalog` is always available at top of picker.
+- Reuses `tui.SelectPackagesFlow` with `[x]` multi-query accumulator.
 - Resolves package artifacts via `packages.PackageResolver`.
-- Installs and activates each plugin via `wp plugin install <pathOrSlug> --activate`.
-- Displays installation summary.
-
-### 5. Action 4: Install Themes
-- Reuses `tui.SelectPackagesFlow` with `PackageTypeTheme`:
-  - Defaults list from `config.json` themes.
-  - Live package search with `[x]` multi-query accumulator.
-- Resolves theme artifacts via `packages.PackageResolver`.
-- Prompts user whether to activate newly installed themes (default: No).
-- Installs via `wp theme install <pathOrSlug>` (adding `--activate` only if confirmed).
-- Displays installation summary.
-
+- For each package, shows active progress:
+  - Queries installed version using `wp plugin get <slug> --field=version` (or `theme`).
+  - If not installed: executes `wp <type> install <pathOrSlug> [--activate]`.
+  - If already installed:
+    - Compares installed version with target version:
+      - `target > installed`: executes `wp <type> install <pathOrSlug> --force [--activate]`.
+      - `target == installed`: skips installation, reporting `Already up to date (v...)`.
+      - `target < installed`: skips installation, warning that current version is newer.
+      - Unknown version format: defaults to `--force`.
+- Displays complete color-coded installation summary.
 ## Architectural Boundaries
 - Business logic isolated in `internal/siteconfig`.
 - Form inputs and TUI views in `internal/tui`.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"wptui/internal/app"
@@ -137,7 +138,6 @@ func TestRunConfigFlowWithDeps_ApplyTweaks(t *testing.T) {
 			return false, nil // exit site loop
 		},
 	}
-
 	err := app.RunConfigFlowWithDeps(context.Background(), cfg, deps)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -145,7 +145,7 @@ func TestRunConfigFlowWithDeps_ApplyTweaks(t *testing.T) {
 
 	foundTweak := false
 	for _, run := range mockCli.runs {
-		if run == "config set WP_DEBUG" {
+		if strings.Contains(run, "config set WP_DEBUG") {
 			foundTweak = true
 			break
 		}

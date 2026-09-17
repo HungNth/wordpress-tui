@@ -220,6 +220,15 @@ func PromptContinueConfiguring() (bool, error) {
 	}
 	return cont, nil
 }
+func PrintProgress(step, total int, message string) {
+	cyan := lipgloss.NewStyle().Foreground(lipgloss.Color("#00FFFF")).Bold(true)
+	if total > 0 {
+		fmt.Printf("  %s %s\n", cyan.Render(fmt.Sprintf("[%d/%d]", step, total)), message)
+	} else {
+		fmt.Printf("  %s %s\n", cyan.Render("[-]"), message)
+	}
+}
+
 
 // PrintTweakSummary prints the status of applied tweaks in color.
 func PrintTweakSummary(results []siteconfig.TweakStatus) {
@@ -239,10 +248,10 @@ func PrintTweakSummary(results []siteconfig.TweakStatus) {
 	fmt.Println()
 }
 
-// PrintPackageInstallSummary prints the status of installed packages.
 func PrintPackageInstallSummary(results []siteconfig.PackageStatus) {
 	cyan := lipgloss.NewStyle().Foreground(lipgloss.Color("#00FFFF")).Bold(true)
 	green := lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575")).Bold(true)
+	yellow := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFF00")).Bold(true)
 	red := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF3333")).Bold(true)
 
 	fmt.Println("\n" + cyan.Render("=== Package Installation Summary ==="))
@@ -251,7 +260,9 @@ func PrintPackageInstallSummary(results []siteconfig.PackageStatus) {
 		if r.Activated {
 			act = " (Activated)"
 		}
-		if r.Success {
+		if r.Skipped {
+			fmt.Printf("  %s %s: %s — %s\n", yellow.Render("[-]"), r.Type, r.Slug, r.SkipReason)
+		} else if r.Success {
 			fmt.Printf("  %s %s: %s%s\n", green.Render("[✓]"), r.Type, r.Slug, act)
 		} else {
 			fmt.Printf("  %s %s: %s: %s\n", red.Render("[✗]"), r.Type, r.Slug, r.Err)

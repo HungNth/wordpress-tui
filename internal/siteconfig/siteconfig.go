@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
 	_ "github.com/go-sql-driver/mysql"
 	"wptui/internal/config"
 	"wptui/internal/packages"
@@ -48,6 +49,8 @@ type WPClient interface {
 	ThemeInstall(ctx context.Context, dir, pathOrSlug string, activate bool) error
 	Run(ctx context.Context, dir, name string, args []string, stdin string) (stdout string, stderr string, err error)
 }
+
+type ProgressFunc func(step, total int, message string)
 
 type DBConnector func(driverName, dataSourceName string) (*sql.DB, error)
 
@@ -114,7 +117,7 @@ func DiscoverAdministrators(ctx context.Context, siteDir string, client WPClient
 	return users, nil
 }
 
-func UpdateAdminCredentials(ctx context.Context, siteDir string, dbCfg *DBConfig, input AdminInput, client WPClient, connector DBConnector) error {
+func UpdateAdminCredentials(ctx context.Context, siteDir string, dbCfg *DBConfig, input AdminInput, client WPClient, connector DBConnector, onProgress ProgressFunc) error {
 	if input.UserID <= 0 {
 		return fmt.Errorf("invalid user ID %d", input.UserID)
 	}
@@ -123,8 +126,26 @@ func UpdateAdminCredentials(ctx context.Context, siteDir string, dbCfg *DBConfig
 		connector = DefaultDBConnector
 	}
 
+	totalSteps := 0
+	if input.NewUsername != "" {
+		totalSteps++
+	}
+	if input.NewPassword != "" {
+		totalSteps++
+	}
+	if input.NewEmail != "" {
+		totalSteps++
+	}
+
+	currentStep := 0
+
 	// 1. Update username directly in MySQL if provided
 	if input.NewUsername != "" {
+		currentStep++
+		if onProgress != nil {
+			onProgress(currentStep, totalSteps, fmt.Sprintf("Updating username to %q in database...", input.NewUsername))
+		}
+
 		if !validTablePrefixRe.MatchString(dbCfg.TablePrefix) {
 			return fmt.Errorf("invalid table_prefix %q", dbCfg.TablePrefix)
 		}
@@ -148,7 +169,6 @@ func UpdateAdminCredentials(ctx context.Context, siteDir string, dbCfg *DBConfig
 			return fmt.Errorf("failed to check rows affected: %w", err)
 		}
 		if rows == 0 {
-			// Row may already match or user not found. Check if user exists
 			var count int
 			checkQuery := fmt.Sprintf("SELECT COUNT(*) FROM `%susers` WHERE ID = ?", dbCfg.TablePrefix)
 			if err := db.QueryRowContext(ctx, checkQuery, input.UserID).Scan(&count); err != nil || count == 0 {
@@ -159,6 +179,10 @@ func UpdateAdminCredentials(ctx context.Context, siteDir string, dbCfg *DBConfig
 
 	// 2. Update password if provided
 	if input.NewPassword != "" {
+		currentStep++
+		if onProgress != nil {
+			onProgress(currentStep, totalSteps, "Updating administrator password via WP-CLI...")
+		}
 		_, stderr, err := client.Run(ctx, siteDir, "wp", []string{"user", "update", strconv.Itoa(input.UserID), "--prompt=user_pass"}, input.NewPassword)
 		if err != nil {
 			return fmt.Errorf("failed to update password: %w (%s)", err, strings.TrimSpace(stderr))
@@ -167,6 +191,10 @@ func UpdateAdminCredentials(ctx context.Context, siteDir string, dbCfg *DBConfig
 
 	// 3. Update email if provided
 	if input.NewEmail != "" {
+		currentStep++
+		if onProgress != nil {
+			onProgress(currentStep, totalSteps, fmt.Sprintf("Updating email and site admin_email to %q...", input.NewEmail))
+		}
 		_, stderr, err := client.Run(ctx, siteDir, "wp", []string{"user", "update", strconv.Itoa(input.UserID), "--user_email=" + input.NewEmail}, "")
 		if err != nil {
 			return fmt.Errorf("failed to update user_email: %w (%s)", err, strings.TrimSpace(stderr))
@@ -186,9 +214,15 @@ type TweakStatus struct {
 	Err     error
 }
 
-func ApplyTweaks(ctx context.Context, siteDir string, tweaks []config.WPTweak, client WPClient) []TweakStatus {
+func ApplyTweaks(ctx context.Context, siteDir string, tweaks []config.WPTweak, client WPClient, onProgress ProgressFunc) []TweakStatus {
 	results := make([]TweakStatus, 0, len(tweaks))
-	for _, tw := range tweaks {
+	total := len(tweaks)
+	for i, tw := range tweaks {
+		desc := fmt.Sprintf("[%s] %s=%s", tw.Type, tw.Key, tw.Value)
+		if onProgress != nil {
+			onProgress(i+1, total, fmt.Sprintf("Applying tweak: %s", desc))
+		}
+
 		status := TweakStatus{Tweak: tw, Success: true}
 		var err error
 		switch tw.Type {
@@ -213,18 +247,73 @@ func ApplyTweaks(ctx context.Context, siteDir string, tweaks []config.WPTweak, c
 }
 
 type PackageStatus struct {
-	Slug      string
-	Type      packages.PackageType
-	Success   bool
-	Activated bool
-	Err       error
+	Slug       string
+	Type       packages.PackageType
+	Success    bool
+	Skipped    bool
+	SkipReason string
+	Activated  bool
+	Err        error
 }
 
-func InstallPackages(ctx context.Context, siteDir string, pkgType packages.PackageType, artifacts []packages.Artifact, activate bool, client WPClient) []PackageStatus {
+// CompareVersions compares two version strings (e.g. "6.8.10" vs "6.8.9").
+// Returns 1 if v1 > v2, -1 if v1 < v2, and 0 if v1 == v2.
+func CompareVersions(v1, v2 string) int {
+	v1 = strings.TrimSpace(strings.TrimPrefix(v1, "v"))
+	v2 = strings.TrimSpace(strings.TrimPrefix(v2, "v"))
+	if v1 == v2 {
+		return 0
+	}
+
+	parts1 := strings.Split(v1, ".")
+	parts2 := strings.Split(v2, ".")
+
+	maxLen := len(parts1)
+	if len(parts2) > maxLen {
+		maxLen = len(parts2)
+	}
+
+	for i := 0; i < maxLen; i++ {
+		var n1, n2 int
+		if i < len(parts1) {
+			n1, _ = strconv.Atoi(parts1[i])
+		}
+		if i < len(parts2) {
+			n2, _ = strconv.Atoi(parts2[i])
+		}
+		if n1 > n2 {
+			return 1
+		}
+		if n1 < n2 {
+			return -1
+		}
+	}
+	return 0
+}
+
+// GetInstalledVersion queries currently installed version of a plugin or theme.
+func GetInstalledVersion(ctx context.Context, siteDir string, pkgType packages.PackageType, slug string, client WPClient) (string, bool) {
+	args := []string{string(pkgType), "get", slug, "--field=version"}
+	stdout, _, err := client.Run(ctx, siteDir, "wp", args, "")
+	if err != nil {
+		return "", false
+	}
+	ver := strings.TrimSpace(stdout)
+	return ver, true
+}
+
+func InstallPackages(ctx context.Context, siteDir string, pkgType packages.PackageType, artifacts []packages.Artifact, activate bool, client WPClient, onProgress ProgressFunc) []PackageStatus {
 	results := make([]PackageStatus, 0, len(artifacts))
-	for _, art := range artifacts {
+	total := len(artifacts)
+	for idx, art := range artifacts {
+		slug := art.Ref.Slug
+		targetVer := art.Version
+		if onProgress != nil {
+			onProgress(idx+1, total, fmt.Sprintf("Checking %s %q...", pkgType, slug))
+		}
+
 		status := PackageStatus{
-			Slug:      art.Ref.Slug,
+			Slug:      slug,
 			Type:      pkgType,
 			Success:   true,
 			Activated: activate,
@@ -232,16 +321,57 @@ func InstallPackages(ctx context.Context, siteDir string, pkgType packages.Packa
 
 		pathOrSlug := art.Path
 		if pathOrSlug == "" {
-			pathOrSlug = art.Ref.Slug
+			pathOrSlug = slug
+		}
+
+		installedVer, installed := GetInstalledVersion(ctx, siteDir, pkgType, slug, client)
+		force := false
+
+		if installed {
+			if targetVer != "" && installedVer != "" {
+				cmp := CompareVersions(targetVer, installedVer)
+				if cmp == 0 {
+					status.Skipped = true
+					status.SkipReason = fmt.Sprintf("Already up to date (v%s)", installedVer)
+					results = append(results, status)
+					continue
+				} else if cmp < 0 {
+					status.Skipped = true
+					status.SkipReason = fmt.Sprintf("Current installed version is newer (v%s > target v%s)", installedVer, targetVer)
+					results = append(results, status)
+					continue
+				} else {
+					// targetVer > installedVer -> force install to upgrade
+					force = true
+				}
+			} else {
+				// Version unknown -> force install
+				force = true
+			}
+		}
+
+		if onProgress != nil {
+			actionText := "Installing"
+			if force {
+				actionText = "Upgrading (force)"
+			}
+			onProgress(idx+1, total, fmt.Sprintf("%s %s %q...", actionText, pkgType, slug))
 		}
 
 		var err error
-		if pkgType == packages.PackageTypePlugin {
-			err = client.PluginInstall(ctx, siteDir, pathOrSlug, activate)
-		} else if pkgType == packages.PackageTypeTheme {
-			err = client.ThemeInstall(ctx, siteDir, pathOrSlug, activate)
-		} else {
-			err = fmt.Errorf("unknown package type %q", pkgType)
+		args := []string{string(pkgType), "install", pathOrSlug}
+		if force {
+			args = append(args, "--force")
+		}
+		if activate && pkgType == packages.PackageTypePlugin {
+			args = append(args, "--activate")
+		} else if activate && pkgType == packages.PackageTypeTheme {
+			args = append(args, "--activate")
+		}
+
+		_, stderr, runErr := client.Run(ctx, siteDir, "wp", args, "")
+		if runErr != nil {
+			err = fmt.Errorf("wp %s install failed: %w (%s)", pkgType, runErr, strings.TrimSpace(stderr))
 		}
 
 		if err != nil {

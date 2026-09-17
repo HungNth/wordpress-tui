@@ -33,12 +33,18 @@ func RunDefaultConfigFlow(ctx context.Context, cfg *config.Config) error {
 	client := wpcli.NewClient()
 	var resolver PackageResolver
 	var catalog []packages.CatalogItem
+
 	if strings.TrimSpace(cfg.PackagesAPIURL) != "" {
 		cache, err := packages.NewCacheWithContext(ctx)
 		if err == nil {
 			resolver = packages.NewResolver(cfg, cache)
 		}
+		cat, err := packages.FetchCatalog(ctx, nil, cfg.PackagesAPIURL, cfg.PackagesAPIKey)
+		if err == nil {
+			catalog = cat
+		}
 	}
+
 	return RunConfigFlowWithDeps(ctx, cfg, ConfigFlowDependencies{
 		WPClient: client,
 		Resolver: resolver,
@@ -110,7 +116,7 @@ func RunConfigFlowWithDeps(ctx context.Context, cfg *config.Config, deps ConfigF
 
 			switch action {
 			case tui.ActionApplyTweaks:
-				results := siteconfig.ApplyTweaks(ctx, selectedSite.Path, cfg.WPTweaks, deps.WPClient)
+				results := siteconfig.ApplyTweaks(ctx, selectedSite.Path, cfg.WPTweaks, deps.WPClient, tui.PrintProgress)
 				tui.PrintTweakSummary(results)
 
 			case tui.ActionChangeAdmin:
@@ -130,13 +136,14 @@ func RunConfigFlowWithDeps(ctx context.Context, cfg *config.Config, deps ConfigF
 					break
 				}
 
+				tui.PrintProgress(0, 0, "Extracting database configuration from wp-config.php...")
 				dbCfg, err := siteconfig.ExtractDBConfig(ctx, selectedSite.Path, deps.WPClient)
 				if err != nil {
 					fmt.Printf("Error extracting database configuration: %v\n", err)
 					break
 				}
 
-				err = siteconfig.UpdateAdminCredentials(ctx, selectedSite.Path, dbCfg, adminInputs, deps.WPClient, deps.Connector)
+				err = siteconfig.UpdateAdminCredentials(ctx, selectedSite.Path, dbCfg, adminInputs, deps.WPClient, deps.Connector, tui.PrintProgress)
 				if err != nil {
 					fmt.Printf("Failed to update administrator credentials: %v\n", err)
 				} else {
@@ -161,6 +168,12 @@ func RunConfigFlowWithDeps(ctx context.Context, cfg *config.Config, deps ConfigF
 					}
 					chosenPlugins = plugins
 				}
+
+				if len(chosenPlugins) == 0 {
+					fmt.Println("No plugins selected.")
+					break
+				}
+
 				if deps.Resolver == nil {
 					fmt.Println("Package resolver is unavailable (API URL not configured).")
 					break
@@ -177,12 +190,13 @@ func RunConfigFlowWithDeps(ctx context.Context, cfg *config.Config, deps ConfigF
 					break
 				}
 
+				tui.PrintProgress(0, 0, "Resolving plugin archives...")
 				artifacts, err := deps.Resolver.ResolveAll(ctx, refs, stageDir)
 				if err != nil {
 					fmt.Printf("Warning: partial/failed package resolution: %v\n", err)
 				}
 
-				results := siteconfig.InstallPackages(ctx, selectedSite.Path, packages.PackageTypePlugin, artifacts, true, deps.WPClient)
+				results := siteconfig.InstallPackages(ctx, selectedSite.Path, packages.PackageTypePlugin, artifacts, true, deps.WPClient, tui.PrintProgress)
 				_ = os.RemoveAll(stageDir)
 				tui.PrintPackageInstallSummary(results)
 
@@ -232,12 +246,13 @@ func RunConfigFlowWithDeps(ctx context.Context, cfg *config.Config, deps ConfigF
 					break
 				}
 
+				tui.PrintProgress(0, 0, "Resolving theme archives...")
 				artifacts, err := deps.Resolver.ResolveAll(ctx, refs, stageDir)
 				if err != nil {
 					fmt.Printf("Warning: partial/failed package resolution: %v\n", err)
 				}
 
-				results := siteconfig.InstallPackages(ctx, selectedSite.Path, packages.PackageTypeTheme, artifacts, activate, deps.WPClient)
+				results := siteconfig.InstallPackages(ctx, selectedSite.Path, packages.PackageTypeTheme, artifacts, activate, deps.WPClient, tui.PrintProgress)
 				_ = os.RemoveAll(stageDir)
 				tui.PrintPackageInstallSummary(results)
 			}
