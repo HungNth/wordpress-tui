@@ -256,17 +256,19 @@ func TestRunSettingsFlowWithDeps_VSCodeProcessFails_NoReload(t *testing.T) {
 
 func TestRunSettingsFlowWithDeps_OpenCache(t *testing.T) {
 	tempDir := t.TempDir()
+	cacheDir := filepath.Join(tempDir, "wptui-cache")
+	if err := os.Mkdir(cacheDir, 0755); err != nil {
+		t.Fatal(err)
+	}
 	mockLaunch := &mockSettingsLauncher{}
-
-	// Pre-create wptui cache dir in user cache dir for test
-	userCache, _ := os.UserCacheDir()
-	cacheDir := filepath.Join(userCache, "wptui")
-	_ = os.MkdirAll(cacheDir, 0755)
 
 	actionCalls := 0
 	deps := app.SettingsFlowDependencies{
 		ConfigPath: filepath.Join(tempDir, "config.json"),
-		Launcher:   mockLaunch,
+		CacheDir: func() (string, error) {
+			return cacheDir, nil
+		},
+		Launcher: mockLaunch,
 		PromptAction: func() (tui.SettingsAction, error) {
 			actionCalls++
 			if actionCalls == 1 {

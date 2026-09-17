@@ -15,6 +15,6 @@ Labels: ready-for-agent
 3. Print success and error messages adhering to theme colors (green check, red error).
 
 ## Acceptance criteria
-- [ ] Settings item appears enabled in main menu form.
-- [ ] Sub-menu navigation with Up/Down, Enter, Esc works seamlessly.
-- [ ] Unit tests in `internal/tui/settings_test.go`.
+- [x] Settings item appears enabled in main menu form.
+- [ ] Sub-menu navigation with Up/Down, Enter, Esc works seamlessly. Direct keystroke-level coverage is not present; behavior currently relies on Huh's tested Select component.
+- [x] Unit tests in `internal/tui/settings_test.go`.

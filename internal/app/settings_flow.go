@@ -13,11 +13,19 @@ import (
 
 type SettingsFlowDependencies struct {
 	ConfigPath     string
+	CacheDir       func() (string, error)
 	Launcher       launcher.ProcessRunner
 	PromptAction   func() (tui.SettingsAction, error)
 	OnReloadConfig func(*config.Config)
 }
 
+func defaultSettingsCacheDir() (string, error) {
+	userCache, err := os.UserCacheDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(userCache, "wptui"), nil
+}
 func RunDefaultSettingsFlow(ctx context.Context, cfg *config.Config, onReload func(*config.Config)) error {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -30,6 +38,7 @@ func RunDefaultSettingsFlow(ctx context.Context, cfg *config.Config, onReload fu
 
 	return RunSettingsFlowWithDeps(ctx, cfg, SettingsFlowDependencies{
 		ConfigPath:     cfgPath,
+		CacheDir:       defaultSettingsCacheDir,
 		Launcher:       &launcher.DefaultRunner{},
 		PromptAction:   tui.PromptSettingsAction,
 		OnReloadConfig: onReload,
@@ -41,7 +50,10 @@ func RunSettingsFlowWithDeps(ctx context.Context, cfg *config.Config, deps Setti
 	if promptAction == nil {
 		promptAction = tui.PromptSettingsAction
 	}
-
+	cacheDir := deps.CacheDir
+	if cacheDir == nil {
+		cacheDir = defaultSettingsCacheDir
+	}
 	for {
 		action, err := promptAction()
 		if err != nil {
@@ -73,18 +85,16 @@ func RunSettingsFlowWithDeps(ctx context.Context, cfg *config.Config, deps Setti
 			tui.PrintSettingsSuccess("Configuration reloaded successfully.")
 
 		case tui.ActionOpenCache:
-			userCache, err := os.UserCacheDir()
+			dir, err := cacheDir()
 			if err != nil {
 				tui.PrintSettingsError(fmt.Sprintf("Failed to locate user cache directory: %v", err))
 				break
 			}
-			cacheDir := filepath.Join(userCache, "wptui")
-
-			if err := launcher.OpenDirectory(ctx, cacheDir, deps.Launcher); err != nil {
+			if err := launcher.OpenDirectory(ctx, dir, deps.Launcher); err != nil {
 				tui.PrintSettingsError(fmt.Sprintf("%v", err))
 				break
 			}
-			tui.PrintSettingsSuccess(fmt.Sprintf("Opened cache directory: %s", cacheDir))
+			tui.PrintSettingsSuccess(fmt.Sprintf("Opened cache directory: %s", dir))
 		}
 	}
 }

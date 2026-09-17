@@ -18,8 +18,8 @@ Implement a dedicated `internal/launcher` package providing cross-platform proce
      - Other OS: returns error indicating unsupported operating system.
 
 ## Acceptance criteria
-- [ ] Explicit hard failure when `code` is not in PATH.
-- [ ] Blocks on `code --wait` to prevent reload races.
-- [ ] Error returned if directory does not exist.
-- [ ] Dispatches strictly on Windows (`explorer.exe`) and macOS (`open`).
-- [ ] Comprehensive unit tests with mock ProcessRunner in `internal/launcher/launcher_test.go`.
+- [x] Explicit hard failure when `code` is not in PATH.
+- [x] Blocks on `code --wait` to prevent reload races.
+- [x] Error returned if directory does not exist.
+- [x] Dispatches strictly on Windows (`explorer.exe`) and macOS (`open`).
+- [x] Comprehensive unit tests with mock ProcessRunner in `internal/launcher/launcher_test.go`.

@@ -16,8 +16,8 @@ Labels: ready-for-agent
 3. Write end-to-end integration tests verifying flow orchestration, reload updating `App.config`, and invalid JSON retention in `internal/app/settings_flow_test.go`.
 
 ## Acceptance criteria
-- [ ] Selecting `settings` in main menu executes settings flow.
-- [ ] After `code --wait` returns cleanly, configuration is reloaded and validated, updating `App.config` via callback.
-- [ ] Invalid JSON preserves previous `App.config` in memory.
-- [ ] Hard failure displayed when `code` CLI is missing.
-- [ ] Full test suite passes under `-race` with 0 warnings from `go vet`.
+- [x] Selecting `settings` in main menu executes settings flow.
+- [x] After `code --wait` returns cleanly, configuration is reloaded and validated, updating `App.config` via callback.
+- [x] Invalid JSON preserves previous `App.config` in memory.
+- [x] Hard failure displayed when `code` CLI is missing or exits non-zero without triggering reload.
+- [x] Full test suite passes under `-race` with 0 warnings from `go vet`.
