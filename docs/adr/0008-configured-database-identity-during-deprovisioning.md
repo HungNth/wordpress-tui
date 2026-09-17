@@ -31,7 +31,7 @@ Assuming database names equal Website Slugs is unsafe because existing installat
    - Multi-Website de-provisioning executes via a bounded worker pool of `min(4, count)` goroutines (matching existing repository concurrency defaults).
    - Step lifecycle per Website:
      1. `herd unsecure <slug>` (if `used_herd = true`, best-effort).
-     2. Prior to database drop, re-verify `DB_NAME` via `wp config get DB_NAME` against the confirmed preview value; if it has changed or is unreadable, skip database drop and record an error to prevent accidental data loss. Otherwise, execute `wp db drop --yes` in the Website directory.
+     2. Prior to database drop, re-verify `DB_NAME` via `wp config get DB_NAME` against the confirmed preview value; if it has changed or is unreadable, skip database drop and record an error to minimize the race window and guard against accidental data loss. Otherwise, execute `wp db drop --yes` in the Website directory.
      3. `os.RemoveAll(siteDir)` is mandatory and always executed, regardless of Herd or database failures.
    - A failure on one Website never aborts others.
    - The final report gives distinct, per-resource outcomes for each Website:

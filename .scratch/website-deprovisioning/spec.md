@@ -80,7 +80,7 @@ WPTUI introduces an interactive `Delete` workflow (Option 3 in the Main Menu) th
 5. **Mandatory Directory Removal**:
    - The lifecycle per website inside the worker is:
      1. Unsecure Herd: `cli.HerdUnsecure(ctx, dir, slug)` (only if `used_herd = true`).
-     2. Drop DB: re-verify `DB_NAME` via `cli.ConfigGet` against the confirmed preview value before dropping; if changed or unreadable, record an error and skip `cli.DBDrop(ctx, dir)` to prevent accidental data loss. Otherwise, execute `cli.DBDrop(ctx, dir)`.
+     2. Drop DB: re-verify `DB_NAME` via `cli.ConfigGet` against the confirmed preview value before dropping; if changed or unreadable, record an error and skip `cli.DBDrop(ctx, dir)` to minimize the race window and guard against accidental data loss. Otherwise, execute `cli.DBDrop(ctx, dir)`.
      3. Remove directory: `os.RemoveAll(dir)` — executed regardless of errors in steps 1 and 2.
    - Each step records its own status (`unsecured`, `not applicable`, `failed: <err>`, `deleted`, `skipped`, etc.) in `deprovision.Result`.
 
