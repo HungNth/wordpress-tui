@@ -19,6 +19,10 @@ func TestMenuItems(t *testing.T) {
 			if item.Disabled {
 				t.Errorf("create item must be enabled")
 			}
+		} else if item.Key == "config" {
+			if item.Disabled {
+				t.Errorf("config item must be enabled")
+			}
 		} else if item.Key == "delete" {
 			if item.Disabled {
 				t.Errorf("delete item must be enabled")
@@ -28,6 +32,12 @@ func TestMenuItems(t *testing.T) {
 				t.Errorf("expected %s to be disabled in v1", item.Key)
 			}
 		}
+	}
+
+	var choice string
+	form := tui.BuildMainMenuForm(&choice)
+	if form == nil {
+		t.Fatal("expected non-nil form")
 	}
 
 	if !createFound {
