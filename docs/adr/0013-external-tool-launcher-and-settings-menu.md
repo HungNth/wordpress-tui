@@ -13,13 +13,13 @@ Because `code <path>` returns immediately if an existing VS Code window is open,
    - `1. Open config.json in VS Code`
    - `2. Open Cache Directory`
    - `← Back to Main Menu`
-2. **VS Code Waiting and Hot Reload**:
-   - Check if `code` is available in PATH via `exec.LookPath("code")`. If not found, report an explicit error (`VS Code ('code' CLI) not found in PATH`) without attempting silent fallbacks.
-   - Launch `code --wait <config_path>`, blocking until the user closes the editor tab/window.
-   - Immediately reload and validate `config.json` through `config.Load(cfgPath)` and update `App.config` via a dedicated callback (`reloadConfig func(*config.Config)`). If the edited JSON is malformed, display a clear warning without crashing or corrupting runtime memory.
-3. **Platform-Specific Directory Opening (Windows & macOS)**:
+2. **Hard Failure for VS Code Absence and Wait-Before-Reload**:
+   - Check if `code` is available in PATH via `exec.LookPath("code")`. If not found or if invocation fails, trigger a hard failure (`VS Code ('code' CLI) not found in PATH`) without attempting any fallback editor or shell launcher.
+   - Launch `code --wait <config_path>`, blocking execution until the user finishes editing and closes the editor window/tab.
+   - Only upon successful zero-exit return from the editor, reload and validate `config.json` via `config.Load(cfgPath)`.
+   - If validation or parsing fails, log an explicit warning and retain the existing in-memory `App.config` unchanged; only update `App.config` via callback when validation succeeds.
+3. **Platform-Specific Directory Opening (Windows & macOS Only)**:
    - Resolve the root cache directory: `filepath.Join(os.UserCacheDir(), "wptui")`.
-   - If the directory does not exist, report an informative error (`Cache directory does not exist yet`) rather than creating empty directories preemptively.
    - On Windows (`runtime.GOOS == "windows"`): launch `explorer.exe <dir>`.
    - On macOS (`runtime.GOOS == "darwin"`): launch `open <dir>`.
    - On other platforms: report an unsupported operating system error.

@@ -20,15 +20,15 @@ Interactive system-level maintenance and settings workflow accessible from the W
 ### 2. Action 1: Open `config.json` in VS Code
 - Locate `config.json` from the active application config path.
 - Check if `code` CLI binary exists in PATH using `exec.LookPath("code")`.
-  - If missing: display an explicit error `VS Code ('code' CLI) not found in PATH` and return to the Settings menu. Do NOT attempt silent fallback editors.
+  - If missing or invocation fails: trigger a hard failure with explicit error `VS Code ('code' CLI) not found in PATH` and return to the Settings menu. Do NOT attempt any fallback editor or shell launcher.
 - Launch `code --wait <config_path>`:
   - Blocks execution until the user closes the VS Code tab or window.
-- After process completion:
+- After process completes with exit code 0:
   - Reload and validate configuration from disk using `config.Load(cfgPath)`.
   - If valid: update `App.config` via `onReload(newCfg)` callback and display `[✓] Configuration reloaded successfully.`
-  - If invalid JSON / validation error: display `[✗] Error reloading configuration: <err>` while preserving the previous valid in-memory config to prevent crashes.
+  - If invalid JSON / validation error: display `[✗] Error reloading configuration: <err>` while preserving the previous valid in-memory `App.config` to prevent runtime crashes.
 
-### 3. Action 2: Open Cache Directory (Windows & macOS)
+### 3. Action 2: Open Cache Directory (Windows & macOS Only)
 - Resolve cache directory:
   ```go
   userCache, err := os.UserCacheDir()

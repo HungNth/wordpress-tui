@@ -8,18 +8,18 @@ Labels: ready-for-agent
 ## Required behavior
 Implement a dedicated `internal/launcher` package providing cross-platform process execution:
 1. `OpenInVSCode(ctx context.Context, filePath string, runner ProcessRunner) error`:
-   - Checks `LookPath("code")`. Returns an error if not found.
+   - Checks `LookPath("code")`. If missing, returns hard failure error `VS Code ('code' CLI) not found in PATH` without fallback editors.
    - Executes `code --wait <filePath>`, blocking until editor closes.
 2. `OpenDirectory(ctx context.Context, dirPath string, runner ProcessRunner, goos string) error`:
-   - Checks if `dirPath` exists. If not, returns error indicating it does not exist (does NOT create directories).
+   - Checks if `dirPath` exists. If not, returns error indicating cache directory does not exist (does NOT create directories).
    - Dispatches based on supported OS:
      - Windows (`windows`): `explorer.exe <dirPath>`
      - macOS (`darwin`): `open <dirPath>`
      - Other OS: returns error indicating unsupported operating system.
 
 ## Acceptance criteria
-- [ ] Explicit error when `code` is not in PATH.
+- [ ] Explicit hard failure when `code` is not in PATH.
 - [ ] Blocks on `code --wait` to prevent reload races.
-- [ ] Error if directory does not exist.
-- [ ] Correctly executes explorer on Windows and open on macOS.
+- [ ] Error returned if directory does not exist.
+- [ ] Dispatches strictly on Windows (`explorer.exe`) and macOS (`open`).
 - [ ] Comprehensive unit tests with mock ProcessRunner in `internal/launcher/launcher_test.go`.
