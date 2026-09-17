@@ -375,7 +375,7 @@ func RunDefaultDeleteFlow(ctx context.Context, cfg *config.Config) error {
 
 // RunDeleteFlowWithDeps executes the de-provisioning workflow using injected dependencies.
 func RunDeleteFlowWithDeps(ctx context.Context, cfg *config.Config, deps DeleteFlowDependencies) error {
-	candidates, err := deprovision.DiscoverCandidates(ctx, cfg.WebsitesPath, cfg.DeleteExcludes, deps.WPClient)
+	candidates, err := deprovision.DiscoverCandidates(ctx, cfg.WebsitesPath, cfg.DeleteExcludes)
 	if err != nil {
 		return fmt.Errorf("failed to discover websites: %w", err)
 	}
@@ -398,12 +398,14 @@ func RunDeleteFlowWithDeps(ctx context.Context, cfg *config.Config, deps DeleteF
 		fmt.Println("No websites selected.")
 		return nil
 	}
+	for i := range selected {
+		deprovision.ResolveCandidateDB(ctx, &selected[i], deps.WPClient)
+	}
 
 	confirmFn := deps.Confirm
 	if confirmFn == nil {
 		confirmFn = tui.PromptDeleteConfirmMulti
 	}
-
 	confirmed, err := confirmFn(selected)
 	if err != nil {
 		return err

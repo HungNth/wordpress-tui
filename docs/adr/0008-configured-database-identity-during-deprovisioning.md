@@ -18,8 +18,10 @@ Assuming database names equal Website Slugs is unsafe because existing installat
    - `DefaultConfig` initializes `DeleteExcludes` to `[]string{"backups"}`.
    - When loading an existing `config.json` via `config.Load(path)`, only if the `delete_excludes` field is completely absent or explicitly `null`, WPTUI normalizes `DeleteExcludes` to `[]string{"backups"}` and immediately saves the file once (`config.Save(path, cfg)`). If `delete_excludes` is present (including an explicitly empty list `[]`), WPTUI preserves the user's configuration as-is without re-saving.
    - Users can subsequently edit or extend `delete_excludes` directly in `config.json`.
-3. **Accurate Database Resolution**:
-   - For eligible directories containing `wp-config.php`, query `wp config get DB_NAME` via WP-CLI to discover the exact database name for the confirmation prompt.
+3. **Accurate Lazy Database Resolution**:
+   - Directory discovery is purely filesystem-based (`os.ReadDir`), ensuring instant initial rendering of the selection list without executing slow WP-CLI processes.
+   - MultiSelect labels render clean directory names (`<slug>`) without pre-fetching database names.
+   - Query `wp config get DB_NAME` via WP-CLI only for the websites explicitly selected by the user, immediately before rendering the confirmation summary table.
    - If `wp-config.php` is missing or `DB_NAME` cannot be determined, the database is marked `unknown — not deleted`. The database is never guessed from the Website Slug.
 4. **Safety Confirmation**:
    - Present a clear summary table of selected items (Slug/Directory name, Directory path, Detected DB name) with a prominent warning.

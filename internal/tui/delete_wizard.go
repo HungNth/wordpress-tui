@@ -13,12 +13,7 @@ import (
 func BuildDeleteSelectionForm(candidates []deprovision.Candidate, selectedSlugs *[]string) *huh.Form {
 	opts := make([]huh.Option[string], 0, len(candidates))
 	for _, c := range candidates {
-		dbText := c.DetectedDB
-		if dbText == "" {
-			dbText = "no DB"
-		}
-		label := fmt.Sprintf("%s (%s)", c.Slug, dbText)
-		opts = append(opts, huh.NewOption(label, c.Slug))
+		opts = append(opts, huh.NewOption(c.Slug, c.Slug))
 	}
 
 	return huh.NewForm(

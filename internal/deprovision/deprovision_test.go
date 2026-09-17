@@ -81,16 +81,7 @@ func TestDiscoverCandidates(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	client := &mockWPClient{
-		configGetFn: func(ctx context.Context, dir, key string) (string, error) {
-			if strings.Contains(dir, "site-a") && key == "DB_NAME" {
-				return "site_a_db", nil
-			}
-			return "", errors.New("not found")
-		},
-	}
-
-	candidates, err := deprovision.DiscoverCandidates(ctx, tempDir, []string{"backups"}, client)
+	candidates, err := deprovision.DiscoverCandidates(ctx, tempDir, []string{"backups"})
 	if err != nil {
 		t.Fatalf("DiscoverCandidates failed: %v", err)
 	}
@@ -101,8 +92,8 @@ func TestDiscoverCandidates(t *testing.T) {
 
 	for _, c := range candidates {
 		if c.Slug == "site-a" {
-			if !c.HasWPConfig || c.DetectedDB != "site_a_db" {
-				t.Errorf("site-a expected HasWPConfig=true, DetectedDB=site_a_db, got %+v", c)
+			if !c.HasWPConfig || c.DetectedDB != "" {
+				t.Errorf("site-a expected HasWPConfig=true and initial DetectedDB='', got %+v", c)
 			}
 		} else if c.Slug == "empty-site" {
 			if c.HasWPConfig || c.DetectedDB != "" {
@@ -110,6 +101,24 @@ func TestDiscoverCandidates(t *testing.T) {
 			}
 		} else {
 			t.Errorf("unexpected candidate: %s", c.Slug)
+		}
+	}
+
+	// Test lazy resolution
+	client := &mockWPClient{
+		configGetFn: func(ctx context.Context, dir, key string) (string, error) {
+			if strings.Contains(dir, "site-a") && key == "DB_NAME" {
+				return "site_a_db", nil
+			}
+			return "", errors.New("not found")
+		},
+	}
+	for i := range candidates {
+		if candidates[i].Slug == "site-a" {
+			deprovision.ResolveCandidateDB(ctx, &candidates[i], client)
+			if candidates[i].DetectedDB != "site_a_db" {
+				t.Errorf("expected lazy resolved DB 'site_a_db', got %q", candidates[i].DetectedDB)
+			}
 		}
 	}
 }
@@ -171,8 +180,7 @@ func TestDiscoverCandidates_IgnoresSymlinks(t *testing.T) {
 	if err := os.Symlink(targetDir, symlinkPath); err != nil {
 		t.Skipf("skipping symlink test on platform without symlink support: %v", err)
 	}
-
-	candidates, err := deprovision.DiscoverCandidates(context.Background(), tempDir, nil, nil)
+	candidates, err := deprovision.DiscoverCandidates(context.Background(), tempDir, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

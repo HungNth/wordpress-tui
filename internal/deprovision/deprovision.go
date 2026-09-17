@@ -36,8 +36,9 @@ type WPClient interface {
 }
 
 // DiscoverCandidates scans websitesPath, filtering out hidden directories,
-// symlinks/junctions, and paths listed in deleteExcludes.
-func DiscoverCandidates(ctx context.Context, websitesPath string, deleteExcludes []string, client WPClient) ([]Candidate, error) {
+// symlinks/junctions, and paths listed in deleteExcludes. It does not invoke WP-CLI,
+// ensuring instant rendering of the selection menu.
+func DiscoverCandidates(ctx context.Context, websitesPath string, deleteExcludes []string) ([]Candidate, error) {
 	if _, err := os.Stat(websitesPath); os.IsNotExist(err) {
 		return nil, nil
 	}
@@ -77,31 +78,32 @@ func DiscoverCandidates(ctx context.Context, websitesPath string, deleteExcludes
 		}
 
 		fullPath := filepath.Join(websitesPath, name)
-
-		// Check if wp-config.php exists
+		// Check if wp-config.php exists on disk without calling WP-CLI
 		wpConfigPath := filepath.Join(fullPath, "wp-config.php")
 		hasWPConfig := false
-		var detectedDB string
-
 		if _, err := os.Stat(wpConfigPath); err == nil {
 			hasWPConfig = true
-			if client != nil {
-				dbName, err := client.ConfigGet(ctx, fullPath, "DB_NAME")
-				if err == nil && strings.TrimSpace(dbName) != "" {
-					detectedDB = strings.TrimSpace(dbName)
-				}
-			}
 		}
 
 		candidates = append(candidates, Candidate{
 			Slug:        name,
 			Path:        fullPath,
-			DetectedDB:  detectedDB,
 			HasWPConfig: hasWPConfig,
 		})
 	}
 
 	return candidates, nil
+}
+
+// ResolveCandidateDB lazily extracts DB_NAME via WP-CLI for selected candidates.
+func ResolveCandidateDB(ctx context.Context, c *Candidate, client WPClient) {
+	if !c.HasWPConfig || client == nil {
+		return
+	}
+	dbName, err := client.ConfigGet(ctx, c.Path, "DB_NAME")
+	if err == nil && strings.TrimSpace(dbName) != "" {
+		c.DetectedDB = strings.TrimSpace(dbName)
+	}
 }
 
 // DeprovisionOptions configures de-provisioning execution.
