@@ -137,8 +137,11 @@ func TestDeprovisionSingle_MandatoryDirectoryRemovalOnFailure(t *testing.T) {
 		HasWPConfig: true,
 	}
 
-	// Simulate Herd and DB failure
+	// Simulate Herd and DB failure while DB_NAME still matches
 	client := &mockWPClient{
+		configGetFn: func(ctx context.Context, dir, key string) (string, error) {
+			return "fail_db", nil
+		},
 		herdUnsecureFn: func(ctx context.Context, dir, slug string) error {
 			return errors.New("simulated herd unsecure failure")
 		},
@@ -146,7 +149,6 @@ func TestDeprovisionSingle_MandatoryDirectoryRemovalOnFailure(t *testing.T) {
 			return errors.New("simulated db drop failure")
 		},
 	}
-
 	res := deprovision.DeprovisionSingle(context.Background(), candidate, client, true)
 
 	// Herd and DB should have errors
@@ -168,6 +170,48 @@ func TestDeprovisionSingle_MandatoryDirectoryRemovalOnFailure(t *testing.T) {
 	// Verify directory is deleted from filesystem
 	if _, err := os.Stat(siteDir); !os.IsNotExist(err) {
 		t.Errorf("expected directory %s to be deleted, but it still exists", siteDir)
+	}
+}
+
+func TestDeprovisionSingle_DBMismatchSkipsDrop(t *testing.T) {
+	tempDir := t.TempDir()
+	siteDir := filepath.Join(tempDir, "mismatch-site")
+	if err := os.MkdirAll(siteDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	candidate := deprovision.Candidate{
+		Slug:        "mismatch-site",
+		Path:        siteDir,
+		DetectedDB:  "previewed_db",
+		HasWPConfig: true,
+	}
+
+	var dbDropCalled bool
+	client := &mockWPClient{
+		configGetFn: func(ctx context.Context, dir, key string) (string, error) {
+			// Return changed database name
+			return "different_live_db", nil
+		},
+		dbDropFn: func(ctx context.Context, dir string) error {
+			dbDropCalled = true
+			return nil
+		},
+	}
+
+	res := deprovision.DeprovisionSingle(context.Background(), candidate, client, false)
+
+	if dbDropCalled {
+		t.Errorf("expected DBDrop to NOT be called when DB_NAME mismatches")
+	}
+	if res.DBErr == nil {
+		t.Errorf("expected DBErr explaining DB name mismatch, got nil")
+	}
+	if !res.DirDone {
+		t.Errorf("expected directory removal to succeed despite DB mismatch")
+	}
+	if _, err := os.Stat(siteDir); !os.IsNotExist(err) {
+		t.Errorf("expected directory %s to be deleted", siteDir)
 	}
 }
 

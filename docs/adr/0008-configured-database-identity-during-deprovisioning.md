@@ -21,7 +21,7 @@ Assuming database names equal Website Slugs is unsafe because existing installat
 3. **Accurate Lazy Database Resolution**:
    - Directory discovery is purely filesystem-based (`os.ReadDir`), ensuring instant initial rendering of the selection list without executing slow WP-CLI processes.
    - MultiSelect labels render clean directory names (`<slug>`) without pre-fetching database names.
-   - Query `wp config get DB_NAME` via WP-CLI only for the websites explicitly selected by the user, immediately before rendering the confirmation summary table.
+   - Query `wp config get DB_NAME` via WP-CLI in the target directory only for the websites explicitly selected by the user, immediately before rendering the confirmation summary table.
    - If `wp-config.php` is missing or `DB_NAME` cannot be determined, the database is marked `unknown — not deleted`. The database is never guessed from the Website Slug.
 4. **Safety Confirmation**:
    - Present a clear summary table of selected items (Slug/Directory name, Directory path, Detected DB name) with a prominent warning.

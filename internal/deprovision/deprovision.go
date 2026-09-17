@@ -128,12 +128,17 @@ func DeprovisionSingle(ctx context.Context, c Candidate, client WPClient, usedHe
 		}
 	}
 
-	// 2. Drop Database (only if accurately identified)
+	// 2. Drop Database (only if accurately identified and still matches confirmed preview)
 	if c.DetectedDB != "" && client != nil {
-		if err := client.DBDrop(ctx, c.Path); err != nil {
-			res.DBErr = err
+		currentDB, err := client.ConfigGet(ctx, c.Path, "DB_NAME")
+		if err != nil || currentDB != c.DetectedDB {
+			res.DBErr = fmt.Errorf("database name changed or unreadable since confirmation (previewed %q, current %q); skipping drop", c.DetectedDB, currentDB)
 		} else {
-			res.DBDone = true
+			if err := client.DBDrop(ctx, c.Path); err != nil {
+				res.DBErr = err
+			} else {
+				res.DBDone = true
+			}
 		}
 	}
 

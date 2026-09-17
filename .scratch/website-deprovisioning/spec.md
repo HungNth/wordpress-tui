@@ -66,7 +66,7 @@ WPTUI introduces an interactive `Delete` workflow (Option 3 in the Main Menu) th
      - Wire `DeleteFn` dependency into `app.App` and execute `internal/deprovision` when option `delete` is selected in `RunWithContext`.
 
 2. **Accurate Lazy Database Resolution via WP-CLI**:
-   - In `internal/wpcli/wpcli.go`, add `ConfigGet(ctx context.Context, dir string, key string) (string, error)` invoking `wp config get <key>` with `--path=<dir>`.
+   - In `internal/wpcli/wpcli.go`, `ConfigGet(ctx context.Context, dir string, key string) (string, error)` invokes `wp config get <key>` with the target site directory as its working directory.
    - Use `ResolveCandidateDB` to inspect candidate databases only after the user submits their selection from the multi-select list.
    - If `wp-config.php` does not exist in the candidate folder or `ConfigGet` fails, `DetectedDB` is left empty (`""`).
    - Database deletion calls existing `Client.DBDrop(ctx, dir)`. If `DetectedDB` is empty, database drop is skipped and marked `unknown/skipped`.
