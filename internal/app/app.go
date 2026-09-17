@@ -23,8 +23,9 @@ type Options struct {
 	WizardFn func(homeDir string) (*config.Config, error)
 	MenuFn   func() (string, error)
 	CreateFn func(ctx context.Context, cfg *config.Config) error
-	DeleteFn func(ctx context.Context, cfg *config.Config) error
-	ConfigFn func(ctx context.Context, cfg *config.Config) error
+	DeleteFn   func(ctx context.Context, cfg *config.Config) error
+	ConfigFn   func(ctx context.Context, cfg *config.Config) error
+	SettingsFn func(ctx context.Context, cfg *config.Config, onReload func(*config.Config)) error
 }
 
 type App struct {
@@ -34,8 +35,9 @@ type App struct {
 	wizardFn func(homeDir string) (*config.Config, error)
 	menuFn   func() (string, error)
 	createFn func(ctx context.Context, cfg *config.Config) error
-	deleteFn func(ctx context.Context, cfg *config.Config) error
-	configFn func(ctx context.Context, cfg *config.Config) error
+	deleteFn   func(ctx context.Context, cfg *config.Config) error
+	configFn   func(ctx context.Context, cfg *config.Config) error
+	settingsFn func(ctx context.Context, cfg *config.Config, onReload func(*config.Config)) error
 }
 
 func New(opts Options) *App {
@@ -74,14 +76,19 @@ func New(opts Options) *App {
 		cfgFn = RunDefaultConfigFlow
 	}
 
+	sFn := opts.SettingsFn
+	if sFn == nil {
+		sFn = RunDefaultSettingsFlow
+	}
 	return &App{
-		homeDir:  home,
-		cfgPath:  cfgPath,
-		wizardFn: wFn,
-		menuFn:   mFn,
-		createFn: cFn,
-		deleteFn: dFn,
-		configFn: cfgFn,
+		homeDir:    home,
+		cfgPath:    cfgPath,
+		wizardFn:   wFn,
+		menuFn:     mFn,
+		createFn:   cFn,
+		deleteFn:   dFn,
+		configFn:   cfgFn,
+		settingsFn: sFn,
 	}
 }
 
@@ -475,6 +482,10 @@ func (a *App) RunWithContext(ctx context.Context) error {
 		case "config":
 			if err := a.configFn(ctx, a.config); err != nil {
 				fmt.Printf("Error configuring website: %v\n", err)
+			}
+		case "settings":
+			if err := a.settingsFn(ctx, a.config, func(newCfg *config.Config) { a.config = newCfg }); err != nil {
+				fmt.Printf("Error in settings: %v\n", err)
 			}
 		default:
 			fmt.Printf("Option %q is coming soon.\n", action)

@@ -1,5 +1,5 @@
 # Title: Platform-aware external launcher subsystem
-Status: ready-for-agent
+Status: resolved
 Labels: ready-for-agent
 
 ## Parent spec

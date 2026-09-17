@@ -1,5 +1,5 @@
 # Title: Settings TUI sub-menu and main menu enablement
-Status: ready-for-agent
+Status: resolved
 Labels: ready-for-agent
 
 ## Parent spec

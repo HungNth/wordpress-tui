@@ -1,5 +1,5 @@
 # Title: Settings app flow orchestration and hot-reload verification
-Status: ready-for-agent
+Status: resolved
 Labels: ready-for-agent
 
 ## Parent spec
