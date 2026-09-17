@@ -10,8 +10,8 @@ import (
 type SettingsAction string
 
 const (
-	ActionOpenVSCode SettingsAction = "vscode"
-	ActionOpenCache  SettingsAction = "cache"
+	ActionOpenVSCode   SettingsAction = "vscode"
+	ActionOpenCache    SettingsAction = "cache"
 	ActionSettingsBack SettingsAction = "back"
 )
 

@@ -19,22 +19,22 @@ import (
 )
 
 type Options struct {
-	HomeDir  string
-	WizardFn func(homeDir string) (*config.Config, error)
-	MenuFn   func() (string, error)
-	CreateFn func(ctx context.Context, cfg *config.Config) error
+	HomeDir    string
+	WizardFn   func(homeDir string) (*config.Config, error)
+	MenuFn     func() (string, error)
+	CreateFn   func(ctx context.Context, cfg *config.Config) error
 	DeleteFn   func(ctx context.Context, cfg *config.Config) error
 	ConfigFn   func(ctx context.Context, cfg *config.Config) error
 	SettingsFn func(ctx context.Context, cfg *config.Config, onReload func(*config.Config)) error
 }
 
 type App struct {
-	homeDir  string
-	cfgPath  string
-	config   *config.Config
-	wizardFn func(homeDir string) (*config.Config, error)
-	menuFn   func() (string, error)
-	createFn func(ctx context.Context, cfg *config.Config) error
+	homeDir    string
+	cfgPath    string
+	config     *config.Config
+	wizardFn   func(homeDir string) (*config.Config, error)
+	menuFn     func() (string, error)
+	createFn   func(ctx context.Context, cfg *config.Config) error
 	deleteFn   func(ctx context.Context, cfg *config.Config) error
 	configFn   func(ctx context.Context, cfg *config.Config) error
 	settingsFn func(ctx context.Context, cfg *config.Config, onReload func(*config.Config)) error

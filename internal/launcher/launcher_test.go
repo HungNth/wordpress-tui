@@ -3,6 +3,7 @@ package launcher_test
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -72,6 +73,42 @@ func TestOpenInVSCode_NotFound(t *testing.T) {
 	}
 	if len(mock.calls) != 0 {
 		t.Errorf("expected no commands to be executed on missing binary, got: %v", mock.calls)
+	}
+}
+
+func TestOpenInVSCode_RunFails(t *testing.T) {
+	mock := &mockRunner{
+		runFn: func(ctx context.Context, name string, args ...string) error {
+			return errors.New("exit status 1")
+		},
+	}
+	ctx := context.Background()
+
+	err := launcher.OpenInVSCode(ctx, "/path/to/config.json", mock)
+	if err == nil {
+		t.Fatal("expected error when editor process exits non-zero, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to run VS Code") {
+		t.Errorf("expected 'failed to run VS Code' error, got: %v", err)
+	}
+	if len(mock.calls) != 1 || mock.calls[0] != "code --wait /path/to/config.json" {
+		t.Errorf("expected exactly one 'code --wait' invocation, got: %v", mock.calls)
+	}
+}
+
+func TestOpenDirectory_NotADirectory(t *testing.T) {
+	tempDir := t.TempDir()
+	filePath := filepath.Join(tempDir, "file.txt")
+	if err := os.WriteFile(filePath, []byte("data"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := launcher.OpenDirectory(context.Background(), filePath, &mockRunner{}, "windows")
+	if err == nil {
+		t.Fatal("expected error when path is not a directory, got nil")
+	}
+	if !strings.Contains(err.Error(), "not a directory") {
+		t.Errorf("expected 'not a directory' error, got: %v", err)
 	}
 }
 

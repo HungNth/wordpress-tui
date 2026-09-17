@@ -207,6 +207,53 @@ func TestRunSettingsFlowWithDeps_MissingCodeCLI(t *testing.T) {
 	}
 }
 
+func TestRunSettingsFlowWithDeps_VSCodeProcessFails_NoReload(t *testing.T) {
+	tempDir := t.TempDir()
+	cfgPath := filepath.Join(tempDir, "config.json")
+
+	initialCfg := config.DefaultConfig(tempDir)
+	initialCfg.WebsitesPath = tempDir
+	initialCfg.DefaultAdminUsername = "stable_admin"
+	_ = config.Save(cfgPath, initialCfg)
+
+	mockLaunch := &mockSettingsLauncher{
+		runFn: func(ctx context.Context, name string, args ...string) error {
+			// Editor exits non-zero without the user saving anything
+			return errors.New("exit status 1")
+		},
+	}
+
+	reloadCalled := false
+	actionCalls := 0
+
+	deps := app.SettingsFlowDependencies{
+		ConfigPath: cfgPath,
+		Launcher:   mockLaunch,
+		PromptAction: func() (tui.SettingsAction, error) {
+			actionCalls++
+			if actionCalls == 1 {
+				return tui.ActionOpenVSCode, nil
+			}
+			return tui.ActionSettingsBack, nil
+		},
+		OnReloadConfig: func(newCfg *config.Config) {
+			reloadCalled = true
+		},
+	}
+
+	err := app.RunSettingsFlowWithDeps(context.Background(), initialCfg, deps)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if reloadCalled {
+		t.Errorf("reload callback must NOT be called when the editor process fails")
+	}
+	if len(mockLaunch.runs) != 1 {
+		t.Errorf("expected exactly one 'code --wait' invocation, got: %v", mockLaunch.runs)
+	}
+}
+
 func TestRunSettingsFlowWithDeps_OpenCache(t *testing.T) {
 	tempDir := t.TempDir()
 	mockLaunch := &mockSettingsLauncher{}
