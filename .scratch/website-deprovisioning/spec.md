@@ -57,7 +57,7 @@ WPTUI introduces an interactive `Delete` workflow (Option 3 in the Main Menu) th
 1. **Architecture and Package Seams**:
    - `internal/deprovision`: Houses domain logic for website discovery, candidate inspection, and the de-provisioning execution engine.
      - `DiscoverCandidates(ctx context.Context, websitesPath string, deleteExcludes []string) ([]Candidate, error)`: Scans directory instantly via filesystem inspection, filtering exclusions and symlinks/junctions without invoking slow WP-CLI processes.
-     - `ResolveCandidateDB(ctx context.Context, c *Candidate, client WPClient)`: Lazily queries `wp config get DB_NAME` only for candidate websites confirmed for deletion.
+     - `ResolveCandidateDB(ctx context.Context, c *Candidate, client WPClient)`: Lazily queries `wp config get DB_NAME` only for candidate websites selected by the user, immediately prior to confirmation preview.
      - `Deprovision(ctx context.Context, candidates []Candidate, client WPClient, opts DeprovisionOptions) []Result`: Coordinates bounded worker pool (`min(4, len(candidates))`) executing Herd unsecure, database drop, and directory removal.
    - `internal/tui` (interactive UI):
      - `menu.go`: Enable `delete` menu option (un-disable item 3 in Main Menu).
@@ -75,7 +75,7 @@ WPTUI introduces an interactive `Delete` workflow (Option 3 in the Main Menu) th
    - During `DiscoverCandidates`, check `entry.Type()&os.ModeSymlink != 0 || entry.Type()&os.ModeIrregular != 0` directly from `os.ReadDir` entries to skip symlinks and reparse points immediately on both Unix and Windows.
 4. **Bounded Concurrency Engine**:
    - The worker pool is bounded by a semaphore channel `chan struct{}` of capacity `min(4, len(selected))`.
-   - Results are collected into a thread-safe slice protected by a mutex, ordered by original candidate selection.
+   - Results are collected into an indexed slice corresponding to the original candidate selection order.
 
 5. **Mandatory Directory Removal**:
    - The lifecycle per website inside the worker is:
