@@ -182,54 +182,80 @@ func TestLoadAndSaveConfig(t *testing.T) {
 		t.Errorf("expected error loading invalid JSON, got nil")
 	}
 }
-
 func TestLoad_DeleteExcludesMigration(t *testing.T) {
 	tempHome := t.TempDir()
-	configPath := filepath.Join(tempHome, ".config", "wptui", "config.json")
+	configDir := filepath.Join(tempHome, ".config", "wptui")
+	configPath := filepath.Join(configDir, "config.json")
 
-	// 1. Existing config without delete_excludes field (nil)
+	// 1. Existing legacy config with delete_excludes completely absent (missing key)
 	cfg := config.DefaultConfig(tempHome)
-	cfg.DeleteExcludes = nil
-
 	data, err := json.MarshalIndent(cfg, "", "    ")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Dir(configPath), 0700); err != nil {
+
+	var rawMap map[string]interface{}
+	if err := json.Unmarshal(data, &rawMap); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(configPath, data, 0600); err != nil {
+	delete(rawMap, "delete_excludes") // explicitly remove key to simulate legacy file
+
+	legacyBytes, err := json.MarshalIndent(rawMap, "", "    ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(configDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, legacyBytes, 0600); err != nil {
 		t.Fatal(err)
 	}
 
-	// Load should auto-migrate to ["backups"] and persist
+	// Load should auto-migrate missing key to ["backups"] and persist to file
 	loaded, err := config.Load(configPath)
 	if err != nil {
-		t.Fatalf("Load failed on config without delete_excludes: %v", err)
+		t.Fatalf("Load failed on config with missing delete_excludes: %v", err)
 	}
 	if len(loaded.DeleteExcludes) != 1 || loaded.DeleteExcludes[0] != "backups" {
 		t.Fatalf("expected migrated delete_excludes to be ['backups'], got %v", loaded.DeleteExcludes)
 	}
 
-	// Read back raw file to ensure it was physically written
-	rawBytes, err := os.ReadFile(configPath)
+	// Verify it was physically written back to the disk file
+	persistedBytes, err := os.ReadFile(configPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var rawMap map[string]interface{}
-	if err := json.Unmarshal(rawBytes, &rawMap); err != nil {
+	var persistedMap map[string]interface{}
+	if err := json.Unmarshal(persistedBytes, &persistedMap); err != nil {
 		t.Fatal(err)
 	}
-	de, ok := rawMap["delete_excludes"]
-	if !ok {
+	deVal, exists := persistedMap["delete_excludes"]
+	if !exists {
 		t.Fatalf("expected delete_excludes to be persisted into config.json, but was absent")
 	}
-	deSlice, ok := de.([]interface{})
+	deSlice, ok := deVal.([]interface{})
 	if !ok || len(deSlice) != 1 || deSlice[0] != "backups" {
-		t.Fatalf("unexpected persisted delete_excludes in raw JSON: %v", de)
+		t.Fatalf("unexpected persisted delete_excludes: %v", deVal)
 	}
 
-	// 2. Explicitly empty delete_excludes [] should be preserved and not re-seeded
+	// 2. Existing config with explicit null value should also migrate and persist
+	rawMap["delete_excludes"] = nil
+	nullBytes, err := json.MarshalIndent(rawMap, "", "    ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, nullBytes, 0600); err != nil {
+		t.Fatal(err)
+	}
+	loadedNull, err := config.Load(configPath)
+	if err != nil {
+		t.Fatalf("Load failed on null delete_excludes: %v", err)
+	}
+	if len(loadedNull.DeleteExcludes) != 1 || loadedNull.DeleteExcludes[0] != "backups" {
+		t.Fatalf("expected null delete_excludes to migrate to ['backups'], got %v", loadedNull.DeleteExcludes)
+	}
+
+	// 3. Explicitly empty delete_excludes [] should be preserved as empty and not re-seeded
 	loaded.DeleteExcludes = []string{}
 	if err := config.Save(configPath, loaded); err != nil {
 		t.Fatal(err)

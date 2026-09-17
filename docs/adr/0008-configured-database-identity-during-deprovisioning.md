@@ -16,7 +16,7 @@ Assuming database names equal Website Slugs is unsafe because existing installat
 2. **Website Discovery and Exclusions**:
    - `delete_excludes` is a distinct field (`DeleteExcludes []string` with JSON tag `delete_excludes`) in `Config`, completely separate from `backup_excludes` and `wp_content_copy_excludes`.
    - `DefaultConfig` initializes `DeleteExcludes` to `[]string{"backups"}`.
-   - When loading an existing `config.json` via `config.Load(path)`, only if the `delete_excludes` field is completely absent (`DeleteExcludes == nil`), WPTUI normalizes `DeleteExcludes` to `[]string{"backups"}` and saves the file once (`config.Save(path, cfg)`). If `delete_excludes` is present (including an explicitly empty list `[]`), WPTUI preserves the user's configuration as-is without re-saving.
+   - When loading an existing `config.json` via `config.Load(path)`, only if the `delete_excludes` field is completely absent or explicitly `null`, WPTUI normalizes `DeleteExcludes` to `[]string{"backups"}` and immediately saves the file once (`config.Save(path, cfg)`). If `delete_excludes` is present (including an explicitly empty list `[]`), WPTUI preserves the user's configuration as-is without re-saving.
    - Users can subsequently edit or extend `delete_excludes` directly in `config.json`.
 3. **Accurate Database Resolution**:
    - For eligible directories containing `wp-config.php`, query `wp config get DB_NAME` via WP-CLI to discover the exact database name for the confirmation prompt.
