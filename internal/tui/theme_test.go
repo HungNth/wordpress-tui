@@ -119,18 +119,26 @@ func TestRenderMultiSelectView(t *testing.T) {
 	m.Focus()
 	view := m.View()
 
-	// 1. Assert standardized [x] indicator is rendered for selected item
-	if !strings.Contains(view, "[x]") {
-		t.Errorf("expected view to render [x] checkmark for selected option, got:\n%s", view)
+	// 1. Assert standardized green bold [x] indicator is rendered for selected item
+	expectedSelectedPrefix := lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575")).Bold(true).Render("[x] ")
+	if !strings.Contains(view, expectedSelectedPrefix) {
+		t.Errorf("expected view to render green bold [x] prefix %q, got:\n%s", expectedSelectedPrefix, view)
 	}
 
-	// 2. Assert [ ] is rendered for unselected item
-	if !strings.Contains(view, "[ ]") {
+	// 2. Assert selected option label Option 1 is rendered with green bold styling
+	expectedSelectedLabel := lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575")).Bold(true).Render("Option 1")
+	if !strings.Contains(view, expectedSelectedLabel) {
+		t.Errorf("expected view to render green bold label %q, got:\n%s", expectedSelectedLabel, view)
+	}
+
+	// 3. Assert active cursor indicator > is rendered with cyan bold styling
+	expectedCursor := lipgloss.NewStyle().Foreground(lipgloss.Color("#00FFFF")).Bold(true).Render("> ")
+	if !strings.Contains(view, expectedCursor) {
+		t.Errorf("expected view to render cyan bold active cursor %q, got:\n%s", expectedCursor, view)
+	}
+
+	// 4. Assert [ ] is rendered for unselected item
+	if !strings.Contains(view, "[ ] Option 2") {
 		t.Errorf("expected view to render [ ] checkmark for unselected option, got:\n%s", view)
-	}
-
-	// 3. Assert active cursor indicator > is rendered
-	if !strings.Contains(view, ">") {
-		t.Errorf("expected view to render active cursor >, got:\n%s", view)
 	}
 }
