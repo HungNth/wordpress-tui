@@ -20,10 +20,10 @@ Because `code <path>` returns immediately if an existing VS Code window is open,
    - If validation or parsing fails, log an explicit warning and retain the existing in-memory `App.config` unchanged; only update `App.config` via callback when validation succeeds.
 3. **Platform-Specific Directory Opening (Windows & macOS Only)**:
    - Resolve the root cache directory: `filepath.Join(os.UserCacheDir(), "wptui")`.
+   - If the directory does not exist, report an explicit error (`Cache directory does not exist yet`) rather than creating it preemptively.
    - On Windows (`runtime.GOOS == "windows"`): launch `explorer.exe <dir>`.
    - On macOS (`runtime.GOOS == "darwin"`): launch `open <dir>`.
    - On other platforms: report an unsupported operating system error.
-
 ## Consequences
 - Requires users to have the `code` CLI installed in PATH to use the direct editing action.
 - Guarantees data consistency by reloading configuration strictly after editing finishes and propagating the new config to `App.config`.
