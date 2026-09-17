@@ -54,16 +54,16 @@ func TestInlineSearchOptionAndExtraction(t *testing.T) {
 		t.Errorf("expected defaults preserved without search option, got %+v", optsWithoutCat)
 	}
 
-	// 2. When catalog is present, defaults remain in order and search option is appended last
+	// 2. When catalog is present, search option is prepended at index 0 and defaults follow in order
 	optsWithCat := tui.BuildPackageOptions(defaultOpts, true)
 	if len(optsWithCat) != 3 {
 		t.Fatalf("expected 3 options, got %d", len(optsWithCat))
 	}
-	if optsWithCat[0].Value != "plugin-a" || optsWithCat[1].Value != "plugin-b" {
-		t.Errorf("expected defaults preserved in order, got %+v", optsWithCat)
+	if optsWithCat[0].Value != tui.SearchOptionKey {
+		t.Errorf("expected head option value %q, got %q", tui.SearchOptionKey, optsWithCat[0].Value)
 	}
-	if optsWithCat[2].Value != tui.SearchOptionKey {
-		t.Errorf("expected terminal option value %q, got %q", tui.SearchOptionKey, optsWithCat[2].Value)
+	if optsWithCat[1].Value != "plugin-a" || optsWithCat[2].Value != "plugin-b" {
+		t.Errorf("expected defaults preserved in order following search, got %+v", optsWithCat)
 	}
 
 	// 3. ExtractSelectedPackages filters search trigger and reports wantsSearch
@@ -84,5 +84,57 @@ func TestInlineSearchOptionAndExtraction(t *testing.T) {
 	}
 	if len(selected) != 1 || selected[0] != "plugin-one" {
 		t.Errorf("unexpected selected packages: %v", selected)
+	}
+}
+
+func TestUpdateAccumulatedSelection(t *testing.T) {
+	// Start with site defaults already selected
+	accumulated := map[string]bool{
+		"default-plugin": true,
+	}
+
+	// Query 1: User searched "acf" matching ["acf-pro", "acf-extended"]
+	// User selects "acf-pro"
+	view1Matches := []string{"acf-pro", "acf-extended"}
+	view1Chosen := []string{"acf-pro"}
+	tui.UpdateAccumulatedSelection(accumulated, view1Matches, view1Chosen)
+
+	if !accumulated["default-plugin"] {
+		t.Errorf("expected default-plugin to be retained")
+	}
+	if !accumulated["acf-pro"] {
+		t.Errorf("expected acf-pro to be accumulated")
+	}
+	if accumulated["acf-extended"] {
+		t.Errorf("expected acf-extended to not be selected")
+	}
+
+	// Query 2: User clears and searches "smtp" matching ["wp-mail-smtp", "easy-smtp"]
+	// User selects "wp-mail-smtp"
+	view2Matches := []string{"wp-mail-smtp", "easy-smtp"}
+	view2Chosen := []string{"wp-mail-smtp"}
+	tui.UpdateAccumulatedSelection(accumulated, view2Matches, view2Chosen)
+
+	// Both previous selections MUST be retained!
+	if !accumulated["default-plugin"] {
+		t.Errorf("expected default-plugin to still be retained across query 2")
+	}
+	if !accumulated["acf-pro"] {
+		t.Errorf("expected acf-pro from query 1 to be preserved after query 2")
+	}
+	if !accumulated["wp-mail-smtp"] {
+		t.Errorf("expected wp-mail-smtp to be accumulated in query 2")
+	}
+
+	// Query 3: User searches "acf" again and UNCHECKS "acf-pro"
+	view3Matches := []string{"acf-pro", "acf-extended"}
+	view3Chosen := []string{} // unchecked in this view
+	tui.UpdateAccumulatedSelection(accumulated, view3Matches, view3Chosen)
+
+	if accumulated["acf-pro"] {
+		t.Errorf("expected acf-pro to be unselected when unchecked in matching view")
+	}
+	if !accumulated["default-plugin"] || !accumulated["wp-mail-smtp"] {
+		t.Errorf("expected unrelated selections to remain intact")
 	}
 }

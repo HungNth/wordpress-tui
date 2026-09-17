@@ -12,13 +12,17 @@ import (
 
 const SearchOptionKey = "__search__"
 
-// BuildPackageOptions builds the initial option list, appending inline search when catalog is available.
+// BuildPackageOptions builds the initial option list, placing inline search at the very top (index 0) when catalog is available.
 func BuildPackageOptions(defaultOptions []huh.Option[string], hasCatalog bool) []huh.Option[string] {
-	opts := make([]huh.Option[string], len(defaultOptions))
-	copy(opts, defaultOptions)
-	if hasCatalog {
-		opts = append(opts, huh.NewOption("🔍 Type to search catalog...", SearchOptionKey))
+	if !hasCatalog {
+		opts := make([]huh.Option[string], len(defaultOptions))
+		copy(opts, defaultOptions)
+		return opts
 	}
+
+	opts := make([]huh.Option[string], 0, len(defaultOptions)+1)
+	opts = append(opts, huh.NewOption("🔍 Type to search catalog...", SearchOptionKey))
+	opts = append(opts, defaultOptions...)
 	return opts
 }
 
@@ -70,14 +74,37 @@ func SelectPackagesFlow(
 		return deduplicateStrings(selected), nil
 	}
 
-	// Interactive search loop
+	// Interactive selection-accumulating search loop
+	accumulatedMap := make(map[string]bool)
+	var accumulatedOrder []string
+	for _, s := range selected {
+		if !accumulatedMap[s] {
+			accumulatedMap[s] = true
+			accumulatedOrder = append(accumulatedOrder, s)
+		}
+	}
+
 	for {
+		// Format summary of currently accumulated items
+		var summaryStr string
+		if len(accumulatedMap) == 0 {
+			summaryStr = fmt.Sprintf("Selected: 0 %ss", itemType)
+		} else {
+			var names []string
+			for _, slug := range accumulatedOrder {
+				if accumulatedMap[slug] {
+					names = append(names, slug)
+				}
+			}
+			summaryStr = fmt.Sprintf("Selected (%d): %s", len(names), strings.Join(names, ", "))
+		}
+
 		var query string
 		queryForm := huh.NewForm(
 			huh.NewGroup(
 				huh.NewInput().
 					Title(fmt.Sprintf("Search %s name or slug", itemType)).
-					Description(fmt.Sprintf("Currently selected: %d %ss", len(selected), itemType)).
+					Description(summaryStr + "\n(Type keyword to search, or submit empty query to view all/finish)").
 					Value(&query),
 			),
 		).WithTheme(CustomTheme())
@@ -86,22 +113,34 @@ func SelectPackagesFlow(
 			return nil, err
 		}
 
-		matches := packages.FilterCatalog(catalog, itemType, query)
-		if len(matches) == 0 {
-			fmt.Printf("No matching %ss found for %q.\n", itemType, query)
-		}
+		// If user enters empty query and already has selections, ask if they want to finish
+		trimmedQuery := strings.TrimSpace(query)
+		matches := packages.FilterCatalog(catalog, itemType, trimmedQuery)
 
 		resultOpts := make([]huh.Option[string], 0, len(matches)+1)
 		for _, m := range matches {
 			resultOpts = append(resultOpts, huh.NewOption(fmt.Sprintf("%s (%s v%s)", m.Name, m.Slug, m.Version), m.Slug))
 		}
-		resultOpts = append(resultOpts, huh.NewOption("🔍 Search again...", SearchOptionKey))
+		resultOpts = append(resultOpts, huh.NewOption("🔍 Search another term / continue...", SearchOptionKey))
 
+		// Pre-populate with currently accumulated packages that appear in current match set
 		var searchChoices []string
+		for _, m := range matches {
+			if accumulatedMap[m.Slug] {
+				searchChoices = append(searchChoices, m.Slug)
+			}
+		}
+
+		title := fmt.Sprintf("Matching %ss for %q", itemType, trimmedQuery)
+		if trimmedQuery == "" {
+			title = fmt.Sprintf("All catalog %ss", itemType)
+		}
+
 		resultsForm := huh.NewForm(
 			huh.NewGroup(
 				huh.NewMultiSelect[string]().
-					Title(fmt.Sprintf("Matching %ss for %q", itemType, query)).
+					Title(title).
+					Description(summaryStr + "\nSpace to toggle selection, Enter to confirm query batch").
 					Options(resultOpts...).
 					Value(&searchChoices),
 			),
@@ -112,14 +151,40 @@ func SelectPackagesFlow(
 		}
 
 		searchSelected, searchAgain := ExtractSelectedPackages(searchChoices)
-		selected = append(selected, searchSelected...)
+
+		var matchSlugs []string
+		for _, m := range matches {
+			matchSlugs = append(matchSlugs, m.Slug)
+		}
+		UpdateAccumulatedSelection(accumulatedMap, matchSlugs, searchSelected)
+
+		// Maintain deterministic order for newly added slugs
+		for _, s := range searchSelected {
+			found := false
+			for _, existing := range accumulatedOrder {
+				if existing == s {
+					found = true
+					break
+				}
+			}
+			if !found {
+				accumulatedOrder = append(accumulatedOrder, s)
+			}
+		}
 
 		if !searchAgain {
 			break
 		}
 	}
 
-	return deduplicateStrings(selected), nil
+	var finalSelected []string
+	for _, s := range accumulatedOrder {
+		if accumulatedMap[s] {
+			finalSelected = append(finalSelected, s)
+		}
+	}
+
+	return deduplicateStrings(finalSelected), nil
 }
 
 func deduplicateStrings(in []string) []string {
