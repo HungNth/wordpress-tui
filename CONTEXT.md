@@ -28,6 +28,10 @@ _Avoid_: Extension, asset
 The complete collection of Packages returned by the configured package service for local filtering and selection.
 _Avoid_: Package list, repository
 
+**Package Selection Accumulator**:
+The preserved collection of user-chosen Packages maintained across multiple search queries during interactive selection.
+_Avoid_: Temporary cart, search buffer
+
 **Package Cache**:
 The local collection of verified Package archives retained to avoid repeated downloads and to permit a stale fallback during network failures. It keeps only the latest cached version for each Package identity.
 _Avoid_: Download folder, temporary files
