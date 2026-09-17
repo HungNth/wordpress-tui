@@ -185,8 +185,10 @@ func (m *LiveSearchModel) View() tea.View {
 			}
 			sb.WriteString("\n")
 		}
+		if len(m.filtered) > maxItems {
 			sb.WriteString(dimStyle.Render(fmt.Sprintf("  ... and %d more (scroll with Up/Down)\n", len(m.filtered)-maxItems)))
 		}
+	}
 	return tea.NewView(sb.String())
 }
 

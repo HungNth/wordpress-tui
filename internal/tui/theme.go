@@ -26,6 +26,9 @@ func AppTheme() *huh.Styles {
 	theme.Focused.SelectedPrefix = theme.Focused.SelectedPrefix.Foreground(green).Bold(true)
 	theme.Focused.SelectedOption = theme.Focused.SelectedOption.Foreground(green).Bold(true)
 
+	// Maintain green styling for checked items even when the field is blurred/inactive
+	theme.Blurred.SelectedPrefix = theme.Blurred.SelectedPrefix.Foreground(green).Bold(true)
+	theme.Blurred.SelectedOption = theme.Blurred.SelectedOption.Foreground(green)
 	return theme
 }
 
