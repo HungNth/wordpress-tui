@@ -119,10 +119,11 @@ func (m *LiveSearchModel) View() tea.View {
 	var sb strings.Builder
 
 	cyan := lipgloss.Color("#00FFFF")
+	green := lipgloss.Color("#04B575")
 	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(cyan)
 	highlightStyle := lipgloss.NewStyle().Foreground(cyan).Bold(true)
+	checkedStyle := lipgloss.NewStyle().Foreground(green).Bold(true)
 	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
-
 	sb.WriteString(titleStyle.Render(fmt.Sprintf("🔍 Live %s Catalog Search", strings.Title(string(m.itemType)))))
 	sb.WriteString("\n")
 
@@ -168,21 +169,24 @@ func (m *LiveSearchModel) View() tea.View {
 
 			check := "[ ]"
 			if m.selectedMap[item.Slug] {
-				check = "[x]"
+				check = checkedStyle.Render("[x]")
 			}
 
-			line := fmt.Sprintf("%s%s %s (%s v%s)", cursorIndicator, check, item.Name, item.Slug, item.Version)
+			itemText := fmt.Sprintf("%s (%s v%s)", item.Name, item.Slug, item.Version)
+			if m.selectedMap[item.Slug] && i != m.cursor {
+				itemText = checkedStyle.Render(itemText)
+			}
+
+			line := fmt.Sprintf("%s%s %s", cursorIndicator, check, itemText)
 			if i == m.cursor {
-				sb.WriteString(highlightStyle.Render(line))
+				sb.WriteString(highlightStyle.Render(fmt.Sprintf("%s%s %s", cursorIndicator, check, fmt.Sprintf("%s (%s v%s)", item.Name, item.Slug, item.Version))))
 			} else {
 				sb.WriteString(line)
 			}
 			sb.WriteString("\n")
 		}
-		if len(m.filtered) > maxItems {
 			sb.WriteString(dimStyle.Render(fmt.Sprintf("  ... and %d more (scroll with Up/Down)\n", len(m.filtered)-maxItems)))
 		}
-	}
 	return tea.NewView(sb.String())
 }
 

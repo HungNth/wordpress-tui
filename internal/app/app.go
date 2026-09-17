@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"charm.land/huh/v2"
+	"charm.land/lipgloss/v2"
 	"wptui/internal/config"
 	"wptui/internal/create"
 	"wptui/internal/deprovision"
@@ -296,42 +297,50 @@ func RunCreateFlowWithDeps(ctx context.Context, cfg *config.Config, deps CreateF
 			return fmt.Errorf("creation failed at step %q: %w", currentStep, createErr)
 		}
 		_ = os.RemoveAll(stageDir)
-		fmt.Println("\n=== Website Provisioned Successfully! ===")
-		fmt.Printf("Path: %s\n", result.WebsitePath)
-		fmt.Printf("URL:  %s\n", result.WebsiteURL)
+		successStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575")).Bold(true)
+		highlightStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#00FFFF")).Bold(true)
+		warningStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFA500")).Bold(true)
+		errorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF4444")).Bold(true)
+
+		fmt.Println("\n" + successStyle.Render("=== Website Provisioned Successfully! ==="))
+		fmt.Printf("Path: %s\n", highlightStyle.Render(result.WebsitePath))
+		fmt.Printf("URL:  %s\n", highlightStyle.Render(result.WebsiteURL))
 		fmt.Printf("Active Theme: %s\n", result.ActiveTheme)
 		if result.DefaultThemeSkipped {
-			fmt.Printf("Notice: Default theme (%s) skipped — Package API disabled.\n", cfg.DefaultThemeSlug)
+			fmt.Printf("%s: Default theme (%s) skipped — Package API disabled.\n", warningStyle.Render("Notice"), cfg.DefaultThemeSlug)
 		}
 		if len(result.PackageStatuses) > 0 {
-			fmt.Println("\nPackage Installation Statuses:")
+			fmt.Println("\n" + highlightStyle.Render("Package Installation Statuses:"))
 			for _, ps := range result.PackageStatuses {
 				if ps.Status == "stale" {
-					fmt.Printf("  - %s %s (v%s): stale fallback (%s)\n", ps.Type, ps.Slug, ps.Version, ps.Reason)
+					fmt.Printf("  - %s %s (v%s): %s (%s)\n", ps.Type, ps.Slug, ps.Version, warningStyle.Render("stale fallback"), ps.Reason)
 				} else {
-					fmt.Printf("  - %s %s (v%s): %s\n", ps.Type, ps.Slug, ps.Version, ps.Status)
+					statusRendered := successStyle.Render(ps.Status)
+					if ps.Status == "downloaded" {
+						statusRendered = highlightStyle.Render(ps.Status)
+					}
+					fmt.Printf("  - %s %s (v%s): %s\n", ps.Type, ps.Slug, ps.Version, statusRendered)
 				}
 			}
 		}
 		if len(result.InstalledPlugins) > 0 {
-			fmt.Printf("Plugins: %s\n", strings.Join(result.InstalledPlugins, ", "))
+			fmt.Printf("Plugins: %s\n", highlightStyle.Render(strings.Join(result.InstalledPlugins, ", ")))
 		}
 		if len(result.InstalledThemes) > 0 {
-			fmt.Printf("Themes:  %s\n", strings.Join(result.InstalledThemes, ", "))
+			fmt.Printf("Themes:  %s\n", highlightStyle.Render(strings.Join(result.InstalledThemes, ", ")))
 		}
 		if len(result.FailedTweaks) > 0 {
-			fmt.Println("\nTweak Warnings:")
+			fmt.Println("\n" + errorStyle.Render("Tweak Warnings:"))
 			for _, twErr := range result.FailedTweaks {
-				fmt.Printf("  - %s\n", twErr)
+				fmt.Printf("  - %s\n", errorStyle.Render(twErr))
 			}
 		}
 		if len(result.SkippedTweaks) > 0 {
-			fmt.Println("\nSkipped Tweaks:")
+			fmt.Println("\n" + warningStyle.Render("Skipped Tweaks:"))
 			for _, sk := range result.SkippedTweaks {
-				fmt.Printf("  - %s\n", sk)
+				fmt.Printf("  - %s\n", warningStyle.Render(sk))
 			}
 		}
-		fmt.Println()
 		return nil
 	}
 }

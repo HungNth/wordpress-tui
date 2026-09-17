@@ -30,3 +30,79 @@ func TestAppTheme_FocusedBorderCyan(t *testing.T) {
 		t.Errorf("expected Focused.Base to have left border enabled")
 	}
 }
+
+func TestAppTheme_OptionAndSelectionColors(t *testing.T) {
+	theme := tui.AppTheme()
+	cyan := lipgloss.Color("#00FFFF")
+	green := lipgloss.Color("#04B575")
+
+	// 1. Option foreground matches cyan
+	optFg := theme.Focused.Option.GetForeground()
+	if optFg == nil {
+		t.Fatal("expected Focused.Option foreground to be set")
+	}
+	r1, g1, b1, a1 := optFg.RGBA()
+	r2, g2, b2, a2 := cyan.RGBA()
+	if r1 != r2 || g1 != g2 || b1 != b2 || a1 != a2 {
+		t.Errorf("expected Focused.Option foreground %v, got %v", color.Color(cyan), optFg)
+	}
+	if !theme.Focused.Option.GetBold() {
+		t.Errorf("expected Focused.Option to be bold")
+	}
+
+	// 2. SelectedPrefix matches green
+	selPrefixFg := theme.Focused.SelectedPrefix.GetForeground()
+	if selPrefixFg == nil {
+		t.Fatal("expected Focused.SelectedPrefix foreground to be set")
+	}
+	r1, g1, b1, a1 = selPrefixFg.RGBA()
+	r2, g2, b2, a2 = green.RGBA()
+	if r1 != r2 || g1 != g2 || b1 != b2 || a1 != a2 {
+		t.Errorf("expected Focused.SelectedPrefix foreground %v, got %v", color.Color(green), selPrefixFg)
+	}
+	if !theme.Focused.SelectedPrefix.GetBold() {
+		t.Errorf("expected Focused.SelectedPrefix to be bold")
+	}
+
+	// 3. SelectedOption matches green
+	selOptFg := theme.Focused.SelectedOption.GetForeground()
+	if selOptFg == nil {
+		t.Fatal("expected Focused.SelectedOption foreground to be set")
+	}
+	r1, g1, b1, a1 = selOptFg.RGBA()
+	r2, g2, b2, a2 = green.RGBA()
+	if r1 != r2 || g1 != g2 || b1 != b2 || a1 != a2 {
+		t.Errorf("expected Focused.SelectedOption foreground %v, got %v", color.Color(green), selOptFg)
+	}
+	if !theme.Focused.SelectedOption.GetBold() {
+		t.Errorf("expected Focused.SelectedOption to be bold")
+	}
+
+	// 4. SelectSelector matches cyan and bold
+	selSelectorFg := theme.Focused.SelectSelector.GetForeground()
+	if selSelectorFg == nil {
+		t.Fatal("expected Focused.SelectSelector foreground to be set")
+	}
+	r1, g1, b1, a1 = selSelectorFg.RGBA()
+	r2, g2, b2, a2 = cyan.RGBA()
+	if r1 != r2 || g1 != g2 || b1 != b2 || a1 != a2 {
+		t.Errorf("expected Focused.SelectSelector foreground %v, got %v", color.Color(cyan), selSelectorFg)
+	}
+	if !theme.Focused.SelectSelector.GetBold() {
+		t.Errorf("expected Focused.SelectSelector to be bold")
+	}
+
+	// 5. MultiSelectSelector matches cyan and bold
+	multiSelectorFg := theme.Focused.MultiSelectSelector.GetForeground()
+	if multiSelectorFg == nil {
+		t.Fatal("expected Focused.MultiSelectSelector foreground to be set")
+	}
+	r1, g1, b1, a1 = multiSelectorFg.RGBA()
+	r2, g2, b2, a2 = cyan.RGBA()
+	if r1 != r2 || g1 != g2 || b1 != b2 || a1 != a2 {
+		t.Errorf("expected Focused.MultiSelectSelector foreground %v, got %v", color.Color(cyan), multiSelectorFg)
+	}
+	if !theme.Focused.MultiSelectSelector.GetBold() {
+		t.Errorf("expected Focused.MultiSelectSelector to be bold")
+	}
+}

@@ -6,7 +6,16 @@ import (
 	"strings"
 
 	"charm.land/huh/v2"
+	"charm.land/lipgloss/v2"
 	"wptui/internal/deprovision"
+)
+
+var (
+	styleSuccess   = lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575")).Bold(true)
+	styleHighlight = lipgloss.NewStyle().Foreground(lipgloss.Color("#00FFFF")).Bold(true)
+	styleWarning   = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFA500")).Bold(true)
+	styleError     = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF4444")).Bold(true)
+	styleDim       = lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
 )
 
 // BuildDeleteSelectionForm constructs a MultiSelect form allowing selection of candidates.
@@ -110,84 +119,85 @@ func PromptDeleteConfirm(c deprovision.Candidate) (bool, error) {
 
 // PrintDeleteResult outputs a structured summary of the de-provisioning outcome.
 func PrintDeleteResult(res deprovision.Result) {
-	fmt.Printf("\n=== De-provisioning Result for %q ===\n", res.Candidate.Slug)
-	fmt.Printf("Path: %s\n", res.Candidate.Path)
+	fmt.Printf("\n%s\n", styleHighlight.Render(fmt.Sprintf("=== De-provisioning Result for %q ===", res.Candidate.Slug)))
+	fmt.Printf("Path: %s\n", styleHighlight.Render(res.Candidate.Path))
 
 	// Herd
 	if res.HerdDone {
-		fmt.Println("  - Herd TLS:       unsecured")
+		fmt.Printf("  - Herd TLS:       %s\n", styleSuccess.Render("unsecured"))
 	} else if res.HerdErr != nil {
-		fmt.Printf("  - Herd TLS:       warning: %v\n", res.HerdErr)
+		fmt.Printf("  - Herd TLS:       %s\n", styleWarning.Render(fmt.Sprintf("warning: %v", res.HerdErr)))
 	} else {
-		fmt.Println("  - Herd TLS:       not applicable")
+		fmt.Printf("  - Herd TLS:       %s\n", styleDim.Render("not applicable"))
 	}
 
 	// Database
 	if res.DBDone {
-		fmt.Printf("  - Database:       deleted (%s)\n", res.Candidate.DetectedDB)
+		fmt.Printf("  - Database:       %s\n", styleSuccess.Render(fmt.Sprintf("deleted (%s)", res.Candidate.DetectedDB)))
 	} else if res.DBErr != nil {
-		fmt.Printf("  - Database:       error: %v\n", res.DBErr)
+		fmt.Printf("  - Database:       %s\n", styleError.Render(fmt.Sprintf("error: %v", res.DBErr)))
 	} else if res.Candidate.DetectedDB != "" {
-		fmt.Printf("  - Database:       skipped\n")
+		fmt.Printf("  - Database:       %s\n", styleWarning.Render("skipped"))
 	} else {
-		fmt.Println("  - Database:       unknown (not deleted)")
+		fmt.Printf("  - Database:       %s\n", styleDim.Render("unknown (not deleted)"))
 	}
 
 	// Directory
 	if res.DirDone {
-		fmt.Println("  - Directory:      deleted")
+		fmt.Printf("  - Directory:      %s\n", styleSuccess.Render("deleted"))
 	} else if res.DirErr != nil {
-		fmt.Printf("  - Directory:      error: %v\n", res.DirErr)
+		fmt.Printf("  - Directory:      %s\n", styleError.Render(fmt.Sprintf("error: %v", res.DirErr)))
 	}
 	fmt.Println()
 }
-
 // PrintDeleteSummary prints a formatted aggregate report for all de-provisioning results.
 func PrintDeleteSummary(results []deprovision.Result) {
 	if len(results) == 0 {
 		return
 	}
 
-	fmt.Println("\n================ De-provisioning Summary ================")
+	fmt.Println("\n" + styleHighlight.Render("================ De-provisioning Summary ================"))
 	var totalDeletedDirs int
 	var totalDroppedDBs int
 	var totalUnsecuredHerd int
 
 	for i, res := range results {
-		fmt.Printf("[%d/%d] %s (%s)\n", i+1, len(results), res.Candidate.Slug, res.Candidate.Path)
+		fmt.Printf("[%d/%d] %s (%s)\n", i+1, len(results), styleHighlight.Render(res.Candidate.Slug), res.Candidate.Path)
 
 		// Herd status
 		if res.HerdDone {
-			fmt.Println("    • Herd TLS:  unsecured")
+			fmt.Printf("    • Herd TLS:  %s\n", styleSuccess.Render("unsecured"))
 			totalUnsecuredHerd++
 		} else if res.HerdErr != nil {
-			fmt.Printf("    • Herd TLS:  warning: %v\n", res.HerdErr)
+			fmt.Printf("    • Herd TLS:  %s\n", styleWarning.Render(fmt.Sprintf("warning: %v", res.HerdErr)))
 		} else {
-			fmt.Println("    • Herd TLS:  not applicable")
+			fmt.Printf("    • Herd TLS:  %s\n", styleDim.Render("not applicable"))
 		}
 
 		// DB status
 		if res.DBDone {
-			fmt.Printf("    • Database:  deleted (%s)\n", res.Candidate.DetectedDB)
+			fmt.Printf("    • Database:  %s\n", styleSuccess.Render(fmt.Sprintf("deleted (%s)", res.Candidate.DetectedDB)))
 			totalDroppedDBs++
 		} else if res.DBErr != nil {
-			fmt.Printf("    • Database:  error: %v\n", res.DBErr)
+			fmt.Printf("    • Database:  %s\n", styleError.Render(fmt.Sprintf("error: %v", res.DBErr)))
 		} else if res.Candidate.DetectedDB != "" {
-			fmt.Println("    • Database:  skipped")
+			fmt.Printf("    • Database:  %s\n", styleWarning.Render("skipped"))
 		} else {
-			fmt.Println("    • Database:  unknown (not deleted)")
+			fmt.Printf("    • Database:  %s\n", styleDim.Render("unknown (not deleted)"))
 		}
 
 		// Directory status
 		if res.DirDone {
-			fmt.Println("    • Directory: deleted")
+			fmt.Printf("    • Directory: %s\n", styleSuccess.Render("deleted"))
 			totalDeletedDirs++
 		} else if res.DirErr != nil {
-			fmt.Printf("    • Directory: error: %v\n", res.DirErr)
+			fmt.Printf("    • Directory: %s\n", styleError.Render(fmt.Sprintf("error: %v", res.DirErr)))
 		}
 	}
 
-	fmt.Printf("\nTotals: %d/%d directories deleted, %d databases dropped, %d TLS certs unsecured.\n",
-		totalDeletedDirs, len(results), totalDroppedDBs, totalUnsecuredHerd)
-	fmt.Println("=========================================================")
+	fmt.Printf("\nTotals: %s directories deleted, %s databases dropped, %s TLS certs unsecured.\n",
+		styleSuccess.Render(fmt.Sprintf("%d/%d", totalDeletedDirs, len(results))),
+		styleSuccess.Render(fmt.Sprintf("%d", totalDroppedDBs)),
+		styleSuccess.Render(fmt.Sprintf("%d", totalUnsecuredHerd)))
+	fmt.Println(styleHighlight.Render("========================================================="))
 }

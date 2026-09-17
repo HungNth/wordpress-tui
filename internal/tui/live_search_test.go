@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"wptui/internal/packages"
 	"wptui/internal/tui"
 )
@@ -41,6 +42,13 @@ func TestLiveSearchModel_InteractiveMultiQueryFlow(t *testing.T) {
 	final := m.FinalSelected()
 	if len(final) != 2 || final[0] != "default-plugin" || final[1] != "advanced-custom-fields-pro" {
 		t.Errorf("expected [default-plugin, advanced-custom-fields-pro], got %v", final)
+	}
+
+	// Assert checked item renders green styled [x] in view
+	selectedView := m.ViewString()
+	expectedChecked := lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575")).Bold(true).Render("[x]")
+	if !strings.Contains(selectedView, expectedChecked) {
+		t.Errorf("expected view to render green bold [x] checkmark, got:\n%s", selectedView)
 	}
 
 	// 4. Backspace query to clear "acf"

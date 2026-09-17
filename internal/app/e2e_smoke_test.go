@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -18,6 +19,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"charm.land/lipgloss/v2"
 	"wptui/internal/app"
 	"wptui/internal/config"
 	"wptui/internal/packages"
@@ -347,5 +349,59 @@ func TestTicket08_ComposedCreateFlowSmoke(t *testing.T) {
 		if strings.Contains(call, "topsecret") {
 			t.Errorf("admin password leaked in failing runner command arguments: %s", call)
 		}
+	}
+}
+
+func TestRunCreateFlow_ColorOutput(t *testing.T) {
+	tempHome := t.TempDir()
+	cfg := config.DefaultConfig(tempHome)
+	cfg.WebsitesPath = filepath.Join(tempHome, "Herd")
+	cfg.DefaultThemeSlug = "" // skip default theme
+
+	runner := &e2eMockRunner{parkedPath: cfg.WebsitesPath}
+
+	deps := app.CreateFlowDependencies{
+		Runner: runner,
+		PromptCreate: func(c *config.Config, checker ...tui.SlugAvailabilityChecker) (*tui.CreateInputs, error) {
+			return &tui.CreateInputs{
+				WebsiteName: "Color Test Site",
+				WebsiteSlug: "color-test-site",
+			}, nil
+		},
+		PromptPackages: func(ctx context.Context, c *config.Config, items []packages.CatalogItem) ([]string, []string, error) {
+			return nil, nil, nil
+		},
+	}
+
+	// Capture stdout
+	origStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = w
+
+	createErr := app.RunCreateFlowWithDeps(context.Background(), cfg, deps)
+
+	_ = w.Close()
+	os.Stdout = origStdout
+
+	if createErr != nil {
+		t.Fatalf("RunCreateFlowWithDeps failed: %v", createErr)
+	}
+
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+	output := buf.String()
+
+	// Verify styled success title and cyan path/URL
+	expectedSuccess := lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575")).Bold(true).Render("=== Website Provisioned Successfully! ===")
+	expectedURL := lipgloss.NewStyle().Foreground(lipgloss.Color("#00FFFF")).Bold(true).Render("https://color-test-site.test")
+
+	if !strings.Contains(output, expectedSuccess) {
+		t.Errorf("expected output to contain green styled success header %q, got:\n%s", expectedSuccess, output)
+	}
+	if !strings.Contains(output, expectedURL) {
+		t.Errorf("expected output to contain cyan styled URL %q, got:\n%s", expectedURL, output)
 	}
 }

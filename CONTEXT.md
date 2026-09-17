@@ -56,3 +56,7 @@ _Avoid_: Setup, scaffolding
 The operation that destroys one or more existing Websites, safely unsecuring Herd TLS, dropping the accurately extracted database, and removing the Website directory.
 _Avoid_: Cleanup, wipe, uninstall
 
+**Visual Theme Palette**:
+The unified terminal color system that styles focus navigation, selected items, and status indicators across interactive forms and completion summaries.
+_Avoid_: Skin, custom CSS
+
