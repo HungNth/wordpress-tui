@@ -6,16 +6,28 @@ BUILD_DIR := bin
 ifeq ($(OS),Windows_NT)
     DETECTED_OS := Windows
     BINARY_EXT := .exe
-    MKDIR_CMD := cmd //c "if not exist $(BUILD_DIR) mkdir $(BUILD_DIR)"
-    CLEAN_CMD := cmd //c "if exist $(BUILD_DIR) rmdir /s /q $(BUILD_DIR)"
+
+    # Force GNU Make to use Windows cmd.exe
+    SHELL := cmd.exe
+    .SHELLFLAGS := /C
+
+    MKDIR_CMD := if not exist "$(BUILD_DIR)" mkdir "$(BUILD_DIR)"
+    CLEAN_CMD := if exist "$(BUILD_DIR)" rmdir /S /Q "$(BUILD_DIR)"
 else
     DETECTED_OS := $(shell uname -s)
     BINARY_EXT :=
-    MKDIR_CMD := mkdir -p $(BUILD_DIR)
-    CLEAN_CMD := rm -rf $(BUILD_DIR)
+    MKDIR_CMD := mkdir -p "$(BUILD_DIR)"
+    CLEAN_CMD := rm -rf "$(BUILD_DIR)"
 endif
 
 TARGET := $(BUILD_DIR)/$(BINARY_NAME)$(BINARY_EXT)
+
+# Command used to run the binary
+ifeq ($(OS),Windows_NT)
+    RUN_CMD := "$(TARGET)"
+else
+    RUN_CMD := ./$(TARGET)
+endif
 
 .PHONY: all build run test test-race vet fmt clean help
 
@@ -24,45 +36,45 @@ all: build
 $(BUILD_DIR):
 	@$(MKDIR_CMD)
 
-## build: Biên dịch binary cho hệ điều hành hiện tại
+## build: Build the binary for the current operating system
 build: $(BUILD_DIR)
-	go build -o $(TARGET) $(CMD_DIR)
+	go build -o "$(TARGET)" $(CMD_DIR)
 	@echo Built $(TARGET) for $(DETECTED_OS)
 
-## run: Biên dịch và khởi chạy wptui
+## run: Build and run wptui
 run: build
-	./$(TARGET)
+	@$(RUN_CMD)
 
-## test: Chạy toàn bộ test suites
+## test: Run all test suites
 test:
 	go test -v ./...
 
-## test-race: Chạy toàn bộ test suites với race detector
+## test-race: Run all test suites with the race detector
 test-race:
 	go test -v -race ./...
 
-## vet: Chạy go vet kiểm tra code
+## vet: Run go vet to check the code
 vet:
 	go vet ./...
 
-## fmt: Format toàn bộ mã nguồn
+## fmt: Format all source code
 fmt:
 	go fmt ./...
 
-## clean: Dọn dẹp thư mục build theo từng hệ điều hành
+## clean: Remove the build directory using the appropriate OS command
 clean:
 	@$(CLEAN_CMD)
 	@echo Cleaned $(BUILD_DIR) for $(DETECTED_OS)
 
-## help: Hướng dẫn sử dụng
+## help: Show usage information
 help:
-	@echo "Usage: make [target]"
-	@echo ""
-	@echo "Targets:"
-	@echo "  build       Biên dịch binary cho $(DETECTED_OS) ($(TARGET))"
-	@echo "  run         Biên dịch và khởi chạy ứng dụng"
-	@echo "  test        Chạy go test"
-	@echo "  test-race   Chạy go test với -race"
-	@echo "  vet         Chạy go vet"
-	@echo "  fmt         Chạy go fmt"
-	@echo "  clean       Xóa thư mục build ($(BUILD_DIR)) phù hợp $(DETECTED_OS)"
+	@echo Usage: make [target]
+	@echo.
+	@echo Targets:
+	@echo   build       Build the binary for $(DETECTED_OS) ($(TARGET))
+	@echo   run         Build and run the application
+	@echo   test        Run go test
+	@echo   test-race   Run go test with -race
+	@echo   vet         Run go vet
+	@echo   fmt         Run go fmt
+	@echo   clean       Remove the build directory ($(BUILD_DIR)) for $(DETECTED_OS)
