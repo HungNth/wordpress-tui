@@ -1,6 +1,6 @@
 # Title: TUI views and site-first navigation sub-menu
-Status: ready-for-agent
-Labels: ready-for-agent
+Status: needs-info
+Labels: needs-info
 
 ## Parent spec
 .scratch/site-configuration/spec.md
@@ -17,12 +17,12 @@ Implement user interface components in `internal/tui`:
      3. Install plugins
      4. Install themes
      `< Back` (returns to website list).
-3. `PromptAdminInfoForm(current AdminUser, defaults DefaultAdmin) (*AdminInput, error)`:
-   - Shows detected administrator information.
-   - Form inputs for Username, Password, Email.
-   - Blank inputs retain current values.
+3. Administrator selection and input:
+   - Displays all administrator users with the first administrator preselected.
+   - Shows the selected administrator's current ID, username, and email.
+   - Prompts for Username, Password, and Email; blank values resolve to `config.json` defaults.
 4. `PromptThemeActivation() (bool, error)`:
-   - Confirm whether to activate newly installed themes.
+   - Confirms whether to activate newly installed themes, defaulting to No.
 5. `PrintSiteConfigSummary(results []ConfigResult)`:
    - Color-coded summary output using cyan focus, green success, and red error styling.
 

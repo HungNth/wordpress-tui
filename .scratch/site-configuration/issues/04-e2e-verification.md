@@ -1,6 +1,6 @@
 # Title: Composed end-to-end integration and verification
-Status: ready-for-agent
-Labels: ready-for-agent
+Status: needs-info
+Labels: needs-info
 
 ## Parent spec
 .scratch/site-configuration/spec.md

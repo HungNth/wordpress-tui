@@ -29,29 +29,29 @@ Interactive post-provisioning configuration workflow for existing WordPress webs
 ### 3. Action 2: Change Administrator Information
 - Identifies the administrator user:
   - Runs `wp user list --role=administrator --fields=ID,user_login,user_email --format=json`.
-  - Displays the first detected administrator's ID, current username, and current email.
-  - If no administrator is found, falls back to the first available user (`wp user list --fields=ID,user_login,user_email --format=json`).
-- Prompts the user with form inputs (with default placeholders from `config.json`):
-  - **New Username**: if entered, will be updated. If left blank, keeps current username.
-  - **New Password**: if entered, will be updated. If left blank, keeps current password.
-  - **New Email**: if entered, will be updated. If left blank, keeps current email.
+  - If multiple administrators exist, displays them for selection with the first administrator preselected.
+  - If no administrator exists, reports an error and returns to the Website Configuration menu; it does not silently select the first non-administrator user.
+- Displays the selected administrator's ID, current username, and current email.
+- Prompts for replacement values using defaults from `config.json`:
+  - **New Username**: blank input uses `default_admin_username`.
+  - **New Password**: blank input uses `default_admin_password`.
+  - **New Email**: blank input uses `default_admin_email`.
 - Execution steps:
-  - Extract database credentials directly from the website's `wp-config.php` using WP-CLI:
+  - Extracts database credentials from the selected Website's `wp-config.php` through WP-CLI. Secrets may be held in memory for the database connection but MUST NOT be printed, logged, or included in errors:
     - `wp config get DB_NAME`
     - `wp config get DB_USER`
     - `wp config get DB_PASSWORD`
     - `wp config get DB_HOST`
-    - `wp config get table_prefix`
+    - `wp config get table_prefix --type=variable`
   - If **Username** changed:
-    - Connect via Go `database/sql` using `github.com/go-sql-driver/mysql`.
-    - Execute prepared statement:
-      `UPDATE {prefix}users SET user_login = ?, user_nicename = ? WHERE ID = ?;`
-  - If **Password** changed:
-    - Execute `wp user update <id> --prompt=user_pass` passing password via stdin to prevent argument leakage.
-  - If **Email** changed:
-    - Execute `wp user update <id> --user_email=<new_email>`
-    - Execute `wp option update admin_email <new_email>` to synchronize site-wide administrator email.
-- Displays full color-coded execution status.
+    - Validates the table prefix before using it as an SQL identifier.
+    - Connects through Go `database/sql` using `github.com/go-sql-driver/mysql`.
+    - Executes the prepared statement:
+      `UPDATE {validated_prefix}users SET user_login = ?, user_nicename = ? WHERE ID = ?;`
+  - Updates the password with `wp user update <id> --prompt=user_pass`, passing the password via stdin.
+  - Updates the email with `wp user update <id> --user_email=<new_email>`.
+  - Synchronizes the Website's administrative email with `wp option update admin_email <new_email>`.
+- Displays a color-coded execution status without secrets.
 
 ### 4. Action 3: Install Plugins
 - Reuses `tui.SelectPackagesFlow` with `PackageTypePlugin`:
