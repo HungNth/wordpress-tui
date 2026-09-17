@@ -106,3 +106,20 @@ func TestLiveSearchModel_EscapeAborts(t *testing.T) {
 		t.Errorf("expected Esc to abort search")
 	}
 }
+
+func TestLiveSearchModel_SmallResultNoNegativeOverflow(t *testing.T) {
+	// Catalog with fewer than 10 items (e.g. 3 items)
+	smallCatalog := []packages.CatalogItem{
+		{Name: "Plugin One", Slug: "plugin-one", Type: "plugin"},
+		{Name: "Plugin Two", Slug: "plugin-two", Type: "plugin"},
+		{Name: "Plugin Three", Slug: "plugin-three", Type: "plugin"},
+	}
+
+	m := tui.NewLiveSearchModel(packages.PackageTypePlugin, smallCatalog, nil)
+	view := m.ViewString()
+
+	// Assert that no negative overflow line e.g. "... and -7 more" appears
+	if strings.Contains(view, "... and") {
+		t.Errorf("expected no overflow line for small catalog (< 10 items), but got view:\n%s", view)
+	}
+}
