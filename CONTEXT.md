@@ -13,8 +13,12 @@ The human-readable name used as the WordPress title of a Website.
 _Avoid_: Project name, site name
 
 **Website Slug**:
-The user-confirmed 1–63 character ASCII param-case identifier shared by the Website directory, database, and `.test` hostname. It is initially suggested from the Website Name but may differ from it.
+The user-confirmed 1–63 character ASCII param-case identifier used by the Website directory and `.test` hostname. A newly provisioned Website initially uses it as the database name, but an existing Website may reference a differently named database.
 _Avoid_: Project slug, folder name
+
+**Website Database**:
+The MySQL database configured for and referenced by a Website; its identity is independent of the Website Slug.
+_Avoid_: Slug database, assumed database
 
 **Package**:
 An installable WordPress plugin or theme offered by the configured package service.
@@ -43,4 +47,8 @@ _Avoid_: Core folder, WordPress cache, temporary core
 **Provisioning**:
 The operation that creates a Website atomically through its critical core, database, Herd, and Package steps, then applies WordPress tweaks on a best-effort basis. Individual tweak failures are reported without removing the Website.
 _Avoid_: Setup, scaffolding
+
+**De-provisioning**:
+The operation that destroys one or more existing Websites, safely unsecuring Herd TLS, dropping the accurately extracted database, and removing the Website directory.
+_Avoid_: Cleanup, wipe, uninstall
 

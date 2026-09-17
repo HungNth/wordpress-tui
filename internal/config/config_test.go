@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -36,6 +37,9 @@ func TestDefaultConfig(t *testing.T) {
 	}
 	if err := config.Validate(cfg); err != nil {
 		t.Fatalf("default config should be valid: %v", err)
+	}
+	if len(cfg.DeleteExcludes) != 1 || cfg.DeleteExcludes[0] != "backups" {
+		t.Errorf("expected default DeleteExcludes to be ['backups'], got %v", cfg.DeleteExcludes)
 	}
 }
 
@@ -176,5 +180,69 @@ func TestLoadAndSaveConfig(t *testing.T) {
 	_, err = config.Load(configPath)
 	if err == nil {
 		t.Errorf("expected error loading invalid JSON, got nil")
+	}
+}
+
+func TestLoad_DeleteExcludesMigration(t *testing.T) {
+	tempHome := t.TempDir()
+	configPath := filepath.Join(tempHome, ".config", "wptui", "config.json")
+
+	// 1. Existing config without delete_excludes field (nil)
+	cfg := config.DefaultConfig(tempHome)
+	cfg.DeleteExcludes = nil
+
+	data, err := json.MarshalIndent(cfg, "", "    ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(configPath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Load should auto-migrate to ["backups"] and persist
+	loaded, err := config.Load(configPath)
+	if err != nil {
+		t.Fatalf("Load failed on config without delete_excludes: %v", err)
+	}
+	if len(loaded.DeleteExcludes) != 1 || loaded.DeleteExcludes[0] != "backups" {
+		t.Fatalf("expected migrated delete_excludes to be ['backups'], got %v", loaded.DeleteExcludes)
+	}
+
+	// Read back raw file to ensure it was physically written
+	rawBytes, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rawMap map[string]interface{}
+	if err := json.Unmarshal(rawBytes, &rawMap); err != nil {
+		t.Fatal(err)
+	}
+	de, ok := rawMap["delete_excludes"]
+	if !ok {
+		t.Fatalf("expected delete_excludes to be persisted into config.json, but was absent")
+	}
+	deSlice, ok := de.([]interface{})
+	if !ok || len(deSlice) != 1 || deSlice[0] != "backups" {
+		t.Fatalf("unexpected persisted delete_excludes in raw JSON: %v", de)
+	}
+
+	// 2. Explicitly empty delete_excludes [] should be preserved and not re-seeded
+	loaded.DeleteExcludes = []string{}
+	if err := config.Save(configPath, loaded); err != nil {
+		t.Fatal(err)
+	}
+
+	reloaded, err := config.Load(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reloaded.DeleteExcludes == nil {
+		t.Fatalf("expected empty slice, got nil")
+	}
+	if len(reloaded.DeleteExcludes) != 0 {
+		t.Fatalf("expected empty delete_excludes [] to be preserved, got %v", reloaded.DeleteExcludes)
 	}
 }

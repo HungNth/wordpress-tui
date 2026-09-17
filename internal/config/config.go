@@ -56,6 +56,7 @@ type Config struct {
 	WPTweaks              []WPTweak    `json:"wp_tweaks"`
 	BackupExcludes        []string     `json:"backup_excludes"`
 	WPContentCopyExcludes []string     `json:"wp_content_copy_excludes"`
+	DeleteExcludes        []string     `json:"delete_excludes"`
 }
 
 var ValidTweakTypes = map[TweakType]bool{
@@ -147,6 +148,9 @@ func DefaultConfig(homeDir string) *Config {
 			"__MACOSX",
 			"node_modules",
 			"cache",
+		},
+		DeleteExcludes: []string{
+			"backups",
 		},
 	}
 }
@@ -254,14 +258,25 @@ func Load(path string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("invalid config JSON in %s: %w", path, err)
+	}
 
 	var cfg Config
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("invalid config JSON in %s: %w", path, err)
 	}
-
 	if err := Validate(&cfg); err != nil {
 		return nil, fmt.Errorf("invalid config in %s: %w", path, err)
+	}
+
+	// If delete_excludes key is completely absent from JSON, migrate to default ["backups"] and persist
+	if rawMsg, keyExists := raw["delete_excludes"]; !keyExists || string(rawMsg) == "null" {
+		cfg.DeleteExcludes = []string{"backups"}
+		if err := Save(path, &cfg); err != nil {
+			return nil, fmt.Errorf("failed to persist migrated delete_excludes to %s: %w", path, err)
+		}
 	}
 
 	return &cfg, nil
