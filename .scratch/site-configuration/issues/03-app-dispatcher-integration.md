@@ -1,6 +1,6 @@
 # Title: App dispatcher integration for config menu
-Status: needs-info
-Labels: needs-info
+Status: resolved
+Labels: ready-for-agent
 
 ## Parent spec
 .scratch/site-configuration/spec.md

@@ -1,6 +1,6 @@
 # Title: Core domain logic and database/WP-CLI execution in internal/siteconfig
-Status: needs-info
-Labels: needs-info
+Status: resolved
+Labels: ready-for-agent
 
 ## Parent spec
 .scratch/site-configuration/spec.md

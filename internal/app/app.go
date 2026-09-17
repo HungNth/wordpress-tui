@@ -24,6 +24,7 @@ type Options struct {
 	MenuFn   func() (string, error)
 	CreateFn func(ctx context.Context, cfg *config.Config) error
 	DeleteFn func(ctx context.Context, cfg *config.Config) error
+	ConfigFn func(ctx context.Context, cfg *config.Config) error
 }
 
 type App struct {
@@ -34,6 +35,7 @@ type App struct {
 	menuFn   func() (string, error)
 	createFn func(ctx context.Context, cfg *config.Config) error
 	deleteFn func(ctx context.Context, cfg *config.Config) error
+	configFn func(ctx context.Context, cfg *config.Config) error
 }
 
 func New(opts Options) *App {
@@ -66,6 +68,12 @@ func New(opts Options) *App {
 	if dFn == nil {
 		dFn = RunDefaultDeleteFlow
 	}
+
+	cfgFn := opts.ConfigFn
+	if cfgFn == nil {
+		cfgFn = RunDefaultConfigFlow
+	}
+
 	return &App{
 		homeDir:  home,
 		cfgPath:  cfgPath,
@@ -73,6 +81,7 @@ func New(opts Options) *App {
 		menuFn:   mFn,
 		createFn: cFn,
 		deleteFn: dFn,
+		configFn: cfgFn,
 	}
 }
 
@@ -462,6 +471,10 @@ func (a *App) RunWithContext(ctx context.Context) error {
 		case "delete":
 			if err := a.deleteFn(ctx, a.config); err != nil {
 				fmt.Printf("Error deleting website: %v\n", err)
+			}
+		case "config":
+			if err := a.configFn(ctx, a.config); err != nil {
+				fmt.Printf("Error configuring website: %v\n", err)
 			}
 		default:
 			fmt.Printf("Option %q is coming soon.\n", action)

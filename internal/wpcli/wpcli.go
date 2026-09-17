@@ -61,6 +61,10 @@ func NewClientWithRunner(r Runner) *Client {
 		runner: r,
 	}
 }
+func (c *Client) Run(ctx context.Context, dir string, name string, args []string, stdin string) (string, string, error) {
+	return c.runner.Run(ctx, dir, name, args, stdin)
+}
+
 
 func (c *Client) CheckDependencies(usedHerd bool) error {
 	required := []string{"php", "wp", "mysql"}

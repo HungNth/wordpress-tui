@@ -27,6 +27,21 @@ func BuildPackageOptions(defaultOptions []huh.Option[string], hasCatalog bool) [
 	return opts
 }
 
+func BuildPluginOptions(items []config.PluginItem) []huh.Option[string] {
+	opts := make([]huh.Option[string], 0, len(items))
+	for _, it := range items {
+		opts = append(opts, huh.NewOption(fmt.Sprintf("%s (%s)", it.Name, it.Slug), it.Slug))
+	}
+	return opts
+}
+
+func BuildThemeOptions(items []config.ThemeItem) []huh.Option[string] {
+	opts := make([]huh.Option[string], 0, len(items))
+	for _, it := range items {
+		opts = append(opts, huh.NewOption(fmt.Sprintf("%s (%s)", it.Name, it.Slug), it.Slug))
+	}
+	return opts
+}
 // ExtractSelectedPackages separates normal package slugs from the inline search trigger.
 func ExtractSelectedPackages(choices []string) (selected []string, wantsSearch bool) {
 	for _, ch := range choices {
