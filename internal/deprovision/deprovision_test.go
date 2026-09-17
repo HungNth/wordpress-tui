@@ -138,6 +138,7 @@ func TestDeprovisionSingle_MandatoryDirectoryRemovalOnFailure(t *testing.T) {
 	}
 
 	// Simulate Herd and DB failure while DB_NAME still matches
+	var dbDropCalled bool
 	client := &mockWPClient{
 		configGetFn: func(ctx context.Context, dir, key string) (string, error) {
 			return "fail_db", nil
@@ -146,11 +147,15 @@ func TestDeprovisionSingle_MandatoryDirectoryRemovalOnFailure(t *testing.T) {
 			return errors.New("simulated herd unsecure failure")
 		},
 		dbDropFn: func(ctx context.Context, dir string) error {
+			dbDropCalled = true
 			return errors.New("simulated db drop failure")
 		},
 	}
 	res := deprovision.DeprovisionSingle(context.Background(), candidate, client, true)
 
+	if !dbDropCalled {
+		t.Errorf("expected dbDrop to be called when DB_NAME matches")
+	}
 	// Herd and DB should have errors
 	if res.HerdErr == nil {
 		t.Errorf("expected HerdErr to be set")

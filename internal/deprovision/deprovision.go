@@ -66,7 +66,7 @@ func DiscoverCandidates(ctx context.Context, websitesPath string, deleteExcludes
 			continue
 		}
 
-		// 3. Ignore symlinks or irregular reparse points directly from DirEntry
+		// 3. Ignore symlinks and irregular entries identified via DirEntry.Type()
 		entryType := entry.Type()
 		if entryType&os.ModeSymlink != 0 || entryType&os.ModeIrregular != 0 {
 			continue

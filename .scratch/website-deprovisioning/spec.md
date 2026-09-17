@@ -16,7 +16,7 @@ Performing these steps manually is error-prone. Guessing database names based on
 
 WPTUI introduces an interactive `Delete` workflow (Option 3 in the Main Menu) that:
 1. Discovers candidate directories located inside `websites_path` using pure filesystem inspection (`os.ReadDir`). If `websites_path` does not exist or yields zero eligible directories, WPTUI outputs `No websites found in <websites_path>` and returns immediately to the Main Menu without entering selection or confirmation.
-2. Filters out hidden directories (`.*`), symlinks/junctions (via `DirEntry.Type()`), and excluded paths specified by `delete_excludes` (defaulting to `["backups"]`).
+2. Filters out hidden directories (`.*`), symlinks and irregular entries identified via `DirEntry.Type()`, and excluded paths specified by `delete_excludes` (defaulting to `["backups"]`).
 3. Presents an interactive multi-select picker allowing the user to select one or multiple targets for removal instantly without pre-fetching database names.
 4. Accurately extracts the configured database name (`DB_NAME`) via WP-CLI inspection lazily, only for the selected websites, immediately prior to displaying the confirmation table.
 5. Displays a high-visibility summary table detailing the selected directory name, exact directory path, and detected database name, followed by an explicit `huh.Confirm` dialog defaulting to `No`.
@@ -71,8 +71,8 @@ WPTUI introduces an interactive `Delete` workflow (Option 3 in the Main Menu) th
    - If `wp-config.php` does not exist in the candidate folder or `ConfigGet` fails, `DetectedDB` is left empty (`""`).
    - Database deletion calls existing `Client.DBDrop(ctx, dir)`. If `DetectedDB` is empty, database drop is skipped and marked `unknown/skipped`.
 
-3. **Symlink and Junction Protection**:
-   - During `DiscoverCandidates`, check `entry.Type()&os.ModeSymlink != 0 || entry.Type()&os.ModeIrregular != 0` directly from `os.ReadDir` entries to skip symlinks and reparse points immediately on both Unix and Windows.
+3. **Symlink and Irregular Entry Protection**:
+   - During `DiscoverCandidates`, check `entry.Type()&os.ModeSymlink != 0 || entry.Type()&os.ModeIrregular != 0` directly from `os.ReadDir` entries to skip symlinks and recognized irregular reparse points.
 4. **Bounded Concurrency Engine**:
    - The worker pool is bounded by a semaphore channel `chan struct{}` of capacity `min(4, len(selected))`.
    - Results are collected into an indexed slice corresponding to the original candidate selection order.
@@ -80,7 +80,7 @@ WPTUI introduces an interactive `Delete` workflow (Option 3 in the Main Menu) th
 5. **Mandatory Directory Removal**:
    - The lifecycle per website inside the worker is:
      1. Unsecure Herd: `cli.HerdUnsecure(ctx, dir, slug)` (only if `used_herd = true`).
-     2. Drop DB: `cli.DBDrop(ctx, dir)` (only if `DetectedDB != ""`).
+     2. Drop DB: re-verify `DB_NAME` via `cli.ConfigGet` against the confirmed preview value before dropping; if changed or unreadable, record an error and skip `cli.DBDrop(ctx, dir)` to prevent accidental data loss. Otherwise, execute `cli.DBDrop(ctx, dir)`.
      3. Remove directory: `os.RemoveAll(dir)` — executed regardless of errors in steps 1 and 2.
    - Each step records its own status (`unsecured`, `not applicable`, `failed: <err>`, `deleted`, `skipped`, etc.) in `deprovision.Result`.
 
