@@ -171,19 +171,21 @@ func (m *LiveSearchModel) View() tea.View {
 			if m.selectedMap[item.Slug] {
 				check = checkedStyle.Render("[x]")
 			}
-
 			itemText := fmt.Sprintf("%s (%s v%s)", item.Name, item.Slug, item.Version)
-			if m.selectedMap[item.Slug] && i != m.cursor {
+			if m.selectedMap[item.Slug] {
+				// When selected, text renders in vibrant green bold
 				itemText = checkedStyle.Render(itemText)
+			} else if i == m.cursor {
+				// When unselected but cursor is on it, text renders in cyan bold
+				itemText = highlightStyle.Render(itemText)
 			}
 
-			line := fmt.Sprintf("%s%s %s", cursorIndicator, check, itemText)
+			cursorPrefix := cursorIndicator
 			if i == m.cursor {
-				sb.WriteString(highlightStyle.Render(fmt.Sprintf("%s%s %s", cursorIndicator, check, fmt.Sprintf("%s (%s v%s)", item.Name, item.Slug, item.Version))))
-			} else {
-				sb.WriteString(line)
+				cursorPrefix = highlightStyle.Render(cursorIndicator)
 			}
-			sb.WriteString("\n")
+
+			sb.WriteString(fmt.Sprintf("%s%s %s\n", cursorPrefix, check, itemText))
 		}
 		if len(m.filtered) > maxItems {
 			sb.WriteString(dimStyle.Render(fmt.Sprintf("  ... and %d more (scroll with Up/Down)\n", len(m.filtered)-maxItems)))

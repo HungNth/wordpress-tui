@@ -12,10 +12,10 @@ import (
 
 func TestLiveSearchModel_InteractiveMultiQueryFlow(t *testing.T) {
 	catalog := []packages.CatalogItem{
-		{Name: "Advanced Custom Fields PRO", Slug: "advanced-custom-fields-pro", Type: "plugin"},
-		{Name: "Admin and Site Enhancements (ASE) Pro", Slug: "admin-site-enhancements-pro", Type: "plugin"},
-		{Name: "WP Mail SMTP Pro", Slug: "wp-mail-smtp-pro", Type: "plugin"},
-		{Name: "Rank Math SEO PRO", Slug: "seo-by-rank-math-pro", Type: "plugin"},
+		{Name: "Advanced Custom Fields PRO", Slug: "advanced-custom-fields-pro", Version: "6.8.10", Type: "plugin"},
+		{Name: "Admin and Site Enhancements (ASE) Pro", Slug: "admin-site-enhancements-pro", Version: "9.1.1.1", Type: "plugin"},
+		{Name: "WP Mail SMTP Pro", Slug: "wp-mail-smtp-pro", Version: "4.3.0", Type: "plugin"},
+		{Name: "Rank Math SEO PRO", Slug: "seo-by-rank-math-pro", Version: "3.0.70", Type: "plugin"},
 	}
 
 	initialSelected := []string{"default-plugin"}
@@ -44,11 +44,15 @@ func TestLiveSearchModel_InteractiveMultiQueryFlow(t *testing.T) {
 		t.Errorf("expected [default-plugin, advanced-custom-fields-pro], got %v", final)
 	}
 
-	// Assert checked item renders green styled [x] in view
+	// Assert checked item renders green styled [x] and green styled text even when cursor is on it
 	selectedView := m.ViewString()
 	expectedChecked := lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575")).Bold(true).Render("[x]")
+	expectedItemText := lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575")).Bold(true).Render("Advanced Custom Fields PRO (advanced-custom-fields-pro v6.8.10)")
 	if !strings.Contains(selectedView, expectedChecked) {
 		t.Errorf("expected view to render green bold [x] checkmark, got:\n%s", selectedView)
+	}
+	if !strings.Contains(selectedView, expectedItemText) {
+		t.Errorf("expected view to retain green bold item text when focused, got:\n%s", selectedView)
 	}
 
 	// 4. Backspace query to clear "acf"

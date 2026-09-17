@@ -2,8 +2,10 @@ package tui_test
 
 import (
 	"image/color"
+	"strings"
 	"testing"
 
+	"charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
 	"wptui/internal/tui"
 )
@@ -63,7 +65,9 @@ func TestAppTheme_OptionAndSelectionColors(t *testing.T) {
 	if !theme.Focused.SelectedPrefix.GetBold() {
 		t.Errorf("expected Focused.SelectedPrefix to be bold")
 	}
-
+	if theme.Focused.SelectedPrefix.String() != "[x] " && !strings.Contains(theme.Focused.SelectedPrefix.String(), "[x]") {
+		t.Errorf("expected Focused.SelectedPrefix to contain [x], got %q", theme.Focused.SelectedPrefix.String())
+	}
 	// 3. SelectedOption matches green
 	selOptFg := theme.Focused.SelectedOption.GetForeground()
 	if selOptFg == nil {
@@ -105,4 +109,14 @@ func TestAppTheme_OptionAndSelectionColors(t *testing.T) {
 	if !theme.Focused.MultiSelectSelector.GetBold() {
 		t.Errorf("expected Focused.MultiSelectSelector to be bold")
 	}
+}
+func TestRenderMultiSelectView(t *testing.T) {
+	val := []string{"1"}
+	m := huh.NewMultiSelect[string]().
+		Options(huh.NewOption("Option 1", "1"), huh.NewOption("Option 2", "2")).
+		Value(&val).
+		WithTheme(tui.CustomTheme())
+	m.Focus()
+	view := m.View()
+	t.Logf("Rendered MultiSelect View (with val selected): %q", view)
 }

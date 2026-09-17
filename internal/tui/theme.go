@@ -22,16 +22,18 @@ func AppTheme() *huh.Styles {
 	theme.Focused.MultiSelectSelector = theme.Focused.MultiSelectSelector.Foreground(cyan).Bold(true)
 	theme.Focused.Option = theme.Focused.Option.Foreground(cyan).Bold(true)
 
-	// Highlight checked items ([x]) in bold vibrant green
-	theme.Focused.SelectedPrefix = theme.Focused.SelectedPrefix.Foreground(green).Bold(true)
-	theme.Focused.SelectedOption = theme.Focused.SelectedOption.Foreground(green).Bold(true)
+	// Standardize checked indicator prefix to [x] and unchecked to [ ]
+	theme.Focused.SelectedPrefix = lipgloss.NewStyle().SetString("[x] ").Foreground(green).Bold(true)
+	theme.Focused.UnselectedPrefix = lipgloss.NewStyle().SetString("[ ] ")
+	theme.Blurred.SelectedPrefix = lipgloss.NewStyle().SetString("[x] ").Foreground(green).Bold(true)
+	theme.Blurred.UnselectedPrefix = lipgloss.NewStyle().SetString("[ ] ")
 
-	// Maintain green styling for checked items even when the field is blurred/inactive
-	theme.Blurred.SelectedPrefix = theme.Blurred.SelectedPrefix.Foreground(green).Bold(true)
+	// Highlight checked items in bold vibrant green
+	theme.Focused.SelectedOption = theme.Focused.SelectedOption.Foreground(green).Bold(true)
 	theme.Blurred.SelectedOption = theme.Blurred.SelectedOption.Foreground(green)
+
 	return theme
 }
-
 // CustomTheme returns the huh.Theme value for WPTUI forms.
 func CustomTheme() huh.Theme {
 	return huh.ThemeFunc(func(isDark bool) *huh.Styles {
