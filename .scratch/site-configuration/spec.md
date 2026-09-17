@@ -1,0 +1,82 @@
+# Website Configuration Specification
+
+## Summary
+Interactive post-provisioning configuration workflow for existing WordPress websites managed by `wptui`. Located under the Main Menu option `config` ("Configure an existing website"), this feature allows users to select an existing website from `websites_path` and perform one or more configuration actions in a site-first loop:
+1. Apply `wp_tweaks` from `config.json`.
+2. Change administrator information (username via direct MySQL prepared statement, password & email via WP-CLI, synchronized with site `admin_email`).
+3. Install plugins with catalog defaults, live search, and automatic activation.
+4. Install themes with catalog defaults, live search, and optional user-confirmed activation.
+
+## Requirements
+
+### 1. Site-First Navigation & Sub-Menu Loop
+- Invoked via Main Menu option `config` in `internal/app/app.go`.
+- Scans `websites_path` using existing candidate discovery (`deprovision.DiscoverCandidates`).
+- Allows selecting exactly **1 website** to configure, or choosing `< Back` / Esc to return to Main Menu.
+- Once a website is selected, enters an interactive configuration sub-menu for that site:
+  - `1. Apply wp_tweaks`
+  - `2. Change admin info`
+  - `3. Install plugins`
+  - `4. Install themes`
+  - `< Back` (returns to website selection).
+- After an action completes, displays a color-coded execution summary. The user can perform another action on the same website, choose `< Back` to pick another website, or return to the main menu.
+
+### 2. Action 1: Apply `wp_tweaks`
+- Reuses the existing tweak execution logic (`wpcli.ConfigSet`, `wpcli.RewriteStructure`, `wpcli.OptionUpdate`, `wpcli.LanguageCore`).
+- Iterates over all tweaks specified in `config.json`.
+- Displays status for each applied tweak in color (green: success, yellow/red: skipped/failed).
+
+### 3. Action 2: Change Administrator Information
+- Identifies the administrator user:
+  - Runs `wp user list --role=administrator --fields=ID,user_login,user_email --format=json`.
+  - Displays the first detected administrator's ID, current username, and current email.
+  - If no administrator is found, falls back to the first available user (`wp user list --fields=ID,user_login,user_email --format=json`).
+- Prompts the user with form inputs (with default placeholders from `config.json`):
+  - **New Username**: if entered, will be updated. If left blank, keeps current username.
+  - **New Password**: if entered, will be updated. If left blank, keeps current password.
+  - **New Email**: if entered, will be updated. If left blank, keeps current email.
+- Execution steps:
+  - Extract database credentials directly from the website's `wp-config.php` using WP-CLI:
+    - `wp config get DB_NAME`
+    - `wp config get DB_USER`
+    - `wp config get DB_PASSWORD`
+    - `wp config get DB_HOST`
+    - `wp config get table_prefix`
+  - If **Username** changed:
+    - Connect via Go `database/sql` using `github.com/go-sql-driver/mysql`.
+    - Execute prepared statement:
+      `UPDATE {prefix}users SET user_login = ?, user_nicename = ? WHERE ID = ?;`
+  - If **Password** changed:
+    - Execute `wp user update <id> --prompt=user_pass` passing password via stdin to prevent argument leakage.
+  - If **Email** changed:
+    - Execute `wp user update <id> --user_email=<new_email>`
+    - Execute `wp option update admin_email <new_email>` to synchronize site-wide administrator email.
+- Displays full color-coded execution status.
+
+### 4. Action 3: Install Plugins
+- Reuses `tui.SelectPackagesFlow` with `PackageTypePlugin`:
+  - Defaults list from `config.json` plugins.
+  - Live package search with `[x]` multi-query accumulator.
+- Resolves package artifacts via `packages.PackageResolver`.
+- Installs and activates each plugin via `wp plugin install <pathOrSlug> --activate`.
+- Displays installation summary.
+
+### 5. Action 4: Install Themes
+- Reuses `tui.SelectPackagesFlow` with `PackageTypeTheme`:
+  - Defaults list from `config.json` themes.
+  - Live package search with `[x]` multi-query accumulator.
+- Resolves theme artifacts via `packages.PackageResolver`.
+- Prompts user whether to activate newly installed themes (default: No).
+- Installs via `wp theme install <pathOrSlug>` (adding `--activate` only if confirmed).
+- Displays installation summary.
+
+## Architectural Boundaries
+- Business logic isolated in `internal/siteconfig`.
+- Form inputs and TUI views in `internal/tui`.
+- WP-CLI and database operations in `internal/wpcli` and `internal/siteconfig`.
+- Integrated into `internal/app/app.go` under action `config`.
+
+## Testing Seams
+- Unit tests with mock runners for WP-CLI and database execution in `internal/siteconfig/siteconfig_test.go`.
+- Form validation and flow tests in `internal/tui`.
+- End-to-end flow test in `internal/app/app_test.go` or `internal/app/config_flow_test.go`.

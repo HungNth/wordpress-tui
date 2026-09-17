@@ -60,3 +60,11 @@ _Avoid_: Cleanup, wipe, uninstall
 The unified terminal color system that styles focus navigation, selected items, and status indicators across interactive forms and completion summaries.
 _Avoid_: Skin, custom CSS
 
+**Website Configuration**:
+The post-provisioning management workflow that modifies an existing Website by applying system tweaks, updating administrative credentials, or installing packages.
+_Avoid_: Site edit, site modification, site settings
+
+**Administrative Credential Reconciler**:
+The mechanism that synchronizes administrative username, password, and email for an existing Website, updating the user login directly via MySQL prepared statements and updating password and email via WP-CLI.
+_Avoid_: User updater, account changer
+
