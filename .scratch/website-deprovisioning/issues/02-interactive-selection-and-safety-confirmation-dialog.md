@@ -1,6 +1,6 @@
 # 02: Interactive Selection and Safety Confirmation Dialog
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: 01-core-discovery-and-single-site-deprovisioning.md
 Parent spec: ../spec.md
 
@@ -14,10 +14,10 @@ Implement the interactive multi-site selection and safety preview dialog:
 
 ## Acceptance criteria
 
-- [ ] MultiSelect interface allows user to pick one or more websites from the candidate list or cancel.
-- [ ] Preview displays directory, filesystem path, and detected database for all selected websites.
-- [ ] Confirmation defaults to No and cancels execution cleanly if declined.
-- [ ] Unit tests verify multi-select option construction, preview rendering, and rejection handling.
+- [x] MultiSelect interface allows user to pick one or more websites from the candidate list or cancel.
+- [x] Preview displays directory, filesystem path, and detected database for all selected websites.
+- [x] Confirmation defaults to No and cancels execution cleanly if declined.
+- [x] Unit tests verify multi-select option construction, preview rendering, and rejection handling.
 ## Testing seam
 
 - `internal/tui/delete_wizard_test.go`: test form construction, empty candidates handling, and confirm default values.
@@ -25,3 +25,11 @@ Implement the interactive multi-site selection and safety preview dialog:
 ## Demo path
 
 Launch delete wizard with scripted inputs, select a candidate, view the warning table, and confirm or reject deletion.
+
+## Answer
+
+Implemented interactive multi-site selection and safety preview:
+1. `BuildDeleteSelectionForm` and `PromptDeleteSelection` allowing multi-selection of candidates.
+2. `BuildDeleteConfirmMultiForm` rendering formatted warning table with directory name, path, and detected DB.
+3. `PromptDeleteConfirmMulti` with explicit confirmation prompt defaulting to `false`.
+4. Unit tests in `internal/tui/delete_wizard_test.go` verifying form construction and default values.

@@ -18,7 +18,7 @@ func GetMenuItems() []MenuItem {
 	return []MenuItem{
 		{Key: "create", Title: "Create", Description: "Provision a new local WordPress website", Disabled: false},
 		{Key: "config", Title: "Config", Description: "Configuration manager (Coming soon)", Disabled: true},
-		{Key: "delete", Title: "Delete", Description: "Delete website and database (Coming soon)", Disabled: true},
+		{Key: "delete", Title: "Delete", Description: "De-provision and delete local WordPress websites", Disabled: false},
 		{Key: "backup", Title: "Backup", Description: "Backup website (Coming soon)", Disabled: true},
 		{Key: "restore", Title: "Restore", Description: "Restore website (Coming soon)", Disabled: true},
 		{Key: "settings", Title: "Settings", Description: "Application settings (Coming soon)", Disabled: true},
@@ -37,7 +37,7 @@ func BuildMainMenuForm(choice *string) *huh.Form {
 		}
 	}
 
-	description := "Select an available action below.\nComing soon (v1 disabled): Config, Delete, Backup, Restore, Settings"
+	description := "Select an available action below.\nComing soon (v1 disabled): Config, Backup, Restore, Settings"
 
 	return huh.NewForm(
 		huh.NewGroup(

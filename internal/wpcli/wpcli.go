@@ -130,6 +130,14 @@ func (c *Client) ConfigCreate(ctx context.Context, dir, dbName string, conn DBCo
 	return nil
 }
 
+func (c *Client) ConfigGet(ctx context.Context, dir, key string) (string, error) {
+	stdout, stderr, err := c.runner.Run(ctx, dir, "wp", []string{"config", "get", key}, "")
+	if err != nil {
+		return "", fmt.Errorf("wp config get %s failed: %w (output: %s)", key, err, strings.TrimSpace(stderr))
+	}
+	return strings.TrimSpace(stdout), nil
+}
+
 func (c *Client) DBCreate(ctx context.Context, dir string) (bool, error) {
 	stdout, stderr, err := c.runner.Run(ctx, dir, "wp", []string{"db", "create"}, "")
 	if err != nil {

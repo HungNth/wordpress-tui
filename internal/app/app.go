@@ -11,6 +11,7 @@ import (
 	"charm.land/huh/v2"
 	"wptui/internal/config"
 	"wptui/internal/create"
+	"wptui/internal/deprovision"
 	"wptui/internal/packages"
 	"wptui/internal/tui"
 	"wptui/internal/wpcli"
@@ -21,6 +22,7 @@ type Options struct {
 	WizardFn func(homeDir string) (*config.Config, error)
 	MenuFn   func() (string, error)
 	CreateFn func(ctx context.Context, cfg *config.Config) error
+	DeleteFn func(ctx context.Context, cfg *config.Config) error
 }
 
 type App struct {
@@ -30,6 +32,7 @@ type App struct {
 	wizardFn func(homeDir string) (*config.Config, error)
 	menuFn   func() (string, error)
 	createFn func(ctx context.Context, cfg *config.Config) error
+	deleteFn func(ctx context.Context, cfg *config.Config) error
 }
 
 func New(opts Options) *App {
@@ -58,12 +61,17 @@ func New(opts Options) *App {
 		cFn = RunDefaultCreateFlow
 	}
 
+	dFn := opts.DeleteFn
+	if dFn == nil {
+		dFn = RunDefaultDeleteFlow
+	}
 	return &App{
 		homeDir:  home,
 		cfgPath:  cfgPath,
 		wizardFn: wFn,
 		menuFn:   mFn,
 		createFn: cFn,
+		deleteFn: dFn,
 	}
 }
 
@@ -348,6 +356,71 @@ func (a *App) Run() error {
 }
 
 // RunWithContext runs the main application loop with the supplied context for cancellation and signal handling.
+// DeleteFlowDependencies abstracts dependencies for the deletion flow.
+type DeleteFlowDependencies struct {
+	WPClient deprovision.WPClient
+	Select   func(candidates []deprovision.Candidate) ([]deprovision.Candidate, error)
+	Confirm  func(selected []deprovision.Candidate) (bool, error)
+}
+
+// RunDefaultDeleteFlow runs the standard de-provisioning workflow.
+func RunDefaultDeleteFlow(ctx context.Context, cfg *config.Config) error {
+	cli := wpcli.NewClient()
+	return RunDeleteFlowWithDeps(ctx, cfg, DeleteFlowDependencies{
+		WPClient: cli,
+		Select:   tui.PromptDeleteSelection,
+		Confirm:  tui.PromptDeleteConfirmMulti,
+	})
+}
+
+// RunDeleteFlowWithDeps executes the de-provisioning workflow using injected dependencies.
+func RunDeleteFlowWithDeps(ctx context.Context, cfg *config.Config, deps DeleteFlowDependencies) error {
+	candidates, err := deprovision.DiscoverCandidates(ctx, cfg.WebsitesPath, cfg.DeleteExcludes, deps.WPClient)
+	if err != nil {
+		return fmt.Errorf("failed to discover websites: %w", err)
+	}
+
+	if len(candidates) == 0 {
+		fmt.Printf("No websites found in %s\n", cfg.WebsitesPath)
+		return nil
+	}
+
+	selectFn := deps.Select
+	if selectFn == nil {
+		selectFn = tui.PromptDeleteSelection
+	}
+
+	selected, err := selectFn(candidates)
+	if err != nil {
+		return err
+	}
+	if len(selected) == 0 {
+		fmt.Println("No websites selected.")
+		return nil
+	}
+
+	confirmFn := deps.Confirm
+	if confirmFn == nil {
+		confirmFn = tui.PromptDeleteConfirmMulti
+	}
+
+	confirmed, err := confirmFn(selected)
+	if err != nil {
+		return err
+	}
+	if !confirmed {
+		fmt.Println("Deletion cancelled.")
+		return nil
+	}
+
+	results := deprovision.Deprovision(ctx, selected, deps.WPClient, deprovision.DeprovisionOptions{
+		UsedHerd:    cfg.UsedHerd,
+		Concurrency: 4,
+	})
+
+	tui.PrintDeleteSummary(results)
+	return nil
+}
 func (a *App) RunWithContext(ctx context.Context) error {
 	cfg, err := a.InitConfig(true)
 	if err != nil {
@@ -374,6 +447,10 @@ func (a *App) RunWithContext(ctx context.Context) error {
 		case "create":
 			if err := a.createFn(ctx, a.config); err != nil {
 				fmt.Printf("Error creating website: %v\n", err)
+			}
+		case "delete":
+			if err := a.deleteFn(ctx, a.config); err != nil {
+				fmt.Printf("Error deleting website: %v\n", err)
 			}
 		default:
 			fmt.Printf("Option %q is coming soon.\n", action)

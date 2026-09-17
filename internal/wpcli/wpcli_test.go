@@ -27,6 +27,9 @@ func (m *mockRunner) Run(ctx context.Context, dir string, name string, args []st
 	if strings.Contains(call, "herd secured") {
 		return "+----------------------------+\n| Site                       |\n+----------------------------+\n| existing-secure.test       |\n+----------------------------+\n", "", nil
 	}
+	if strings.Contains(call, "wp config get DB_NAME") {
+		return "site_db\n", "", nil
+	}
 	return "Success: Database created.", "", nil
 }
 
@@ -138,5 +141,20 @@ func TestWPCLIClient_IsSiteSecured(t *testing.T) {
 	secured, err = client.IsSiteSecured(ctx, "unsecured-site")
 	if err != nil || secured {
 		t.Errorf("expected unsecured-site to NOT be secured, got %v", secured)
+	}
+}
+
+func TestWPCLIClient_ConfigGet(t *testing.T) {
+	runner := &mockRunner{}
+	client := wpcli.NewClientWithRunner(runner)
+	ctx := context.Background()
+	dir := "/var/www/site"
+
+	val, err := client.ConfigGet(ctx, dir, "DB_NAME")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if val != "site_db" {
+		t.Errorf("expected DB_NAME 'site_db', got %q", val)
 	}
 }

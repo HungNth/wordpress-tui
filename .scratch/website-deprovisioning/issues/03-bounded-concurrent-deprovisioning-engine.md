@@ -1,6 +1,6 @@
 # 03: Bounded Concurrent De-provisioning Engine
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: 01-core-discovery-and-single-site-deprovisioning.md
 Parent spec: ../spec.md
 
@@ -14,10 +14,10 @@ Implement the bounded concurrent de-provisioning execution engine:
 
 ## Acceptance criteria
 
-- [ ] Concurrency is bounded to a maximum of 4 concurrent workers.
-- [ ] Partial failures on one website do not abort or disrupt other running deletions.
-- [ ] Context cancellation terminates queued operations cleanly.
-- [ ] Unit tests verify bounded concurrency under race detector, failure isolation, and result mapping.
+- [x] Concurrency is bounded to a maximum of 4 concurrent workers.
+- [x] Partial failures on one website do not abort or disrupt other running deletions.
+- [x] Context cancellation terminates queued operations cleanly.
+- [x] Unit tests verify bounded concurrency under race detector, failure isolation, and result mapping.
 
 ## Testing seam
 
@@ -25,4 +25,10 @@ Implement the bounded concurrent de-provisioning execution engine:
 
 ## Demo path
 
-Run de-provisioning across 5 test directories concurrently; observe that max concurrency is bounded to 4 and all sites produce distinct per-resource results.
+
+## Answer
+Implemented bounded concurrent de-provisioning:
+1. `Deprovision` engine function in `internal/deprovision/deprovision.go` with semaphore channel capacity capped to max 4 workers (`min(4, len(candidates))`).
+2. Isolated per-site lifecycle: Herd unsecure -> DB drop -> mandatory directory removal.
+3. Context cancellation handling marking queued candidates aborted cleanly.
+4. Unit tests in `internal/deprovision/deprovision_test.go` with race detector: `TestDeprovision_ConcurrentBounded` measuring peak active concurrency <= 4 with partial failures on site-3 and site-5, and `TestDeprovision_CancellationAbortsRemaining`.

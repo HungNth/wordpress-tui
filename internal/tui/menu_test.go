@@ -19,6 +19,10 @@ func TestMenuItems(t *testing.T) {
 			if item.Disabled {
 				t.Errorf("create item must be enabled")
 			}
+		} else if item.Key == "delete" {
+			if item.Disabled {
+				t.Errorf("delete item must be enabled")
+			}
 		} else if item.Key != "exit" {
 			if !item.Disabled {
 				t.Errorf("expected %s to be disabled in v1", item.Key)
