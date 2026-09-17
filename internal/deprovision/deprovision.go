@@ -65,21 +65,18 @@ func DiscoverCandidates(ctx context.Context, websitesPath string, deleteExcludes
 			continue
 		}
 
+		// 3. Ignore symlinks or irregular reparse points directly from DirEntry
+		entryType := entry.Type()
+		if entryType&os.ModeSymlink != 0 || entryType&os.ModeIrregular != 0 {
+			continue
+		}
+
+		// 4. Must be a directory
+		if !entry.IsDir() {
+			continue
+		}
+
 		fullPath := filepath.Join(websitesPath, name)
-		fi, err := os.Lstat(fullPath)
-		if err != nil {
-			continue
-		}
-
-		// 3. Must be a directory
-		if !fi.IsDir() {
-			continue
-		}
-
-		// 4. Ignore symlinks or Windows junctions / reparse points (ModeSymlink or ModeIrregular)
-		if fi.Mode()&os.ModeSymlink != 0 || fi.Mode()&os.ModeIrregular != 0 {
-			continue
-		}
 
 		// Check if wp-config.php exists
 		wpConfigPath := filepath.Join(fullPath, "wp-config.php")
@@ -129,17 +126,12 @@ func DeprovisionSingle(ctx context.Context, c Candidate, client WPClient, usedHe
 		}
 	}
 
-	// 2. Drop Database (only if accurately identified and still matches confirmed preview)
+	// 2. Drop Database (only if accurately identified)
 	if c.DetectedDB != "" && client != nil {
-		currentDB, err := client.ConfigGet(ctx, c.Path, "DB_NAME")
-		if err != nil || currentDB != c.DetectedDB {
-			res.DBErr = fmt.Errorf("database name changed or unreadable since preview (previewed %q, current %q); skipping drop", c.DetectedDB, currentDB)
+		if err := client.DBDrop(ctx, c.Path); err != nil {
+			res.DBErr = err
 		} else {
-			if err := client.DBDrop(ctx, c.Path); err != nil {
-				res.DBErr = err
-			} else {
-				res.DBDone = true
-			}
+			res.DBDone = true
 		}
 	}
 
