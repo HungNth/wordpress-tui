@@ -118,5 +118,19 @@ func TestRenderMultiSelectView(t *testing.T) {
 		WithTheme(tui.CustomTheme())
 	m.Focus()
 	view := m.View()
-	t.Logf("Rendered MultiSelect View (with val selected): %q", view)
+
+	// 1. Assert standardized [x] indicator is rendered for selected item
+	if !strings.Contains(view, "[x]") {
+		t.Errorf("expected view to render [x] checkmark for selected option, got:\n%s", view)
+	}
+
+	// 2. Assert [ ] is rendered for unselected item
+	if !strings.Contains(view, "[ ]") {
+		t.Errorf("expected view to render [ ] checkmark for unselected option, got:\n%s", view)
+	}
+
+	// 3. Assert active cursor indicator > is rendered
+	if !strings.Contains(view, ">") {
+		t.Errorf("expected view to render active cursor >, got:\n%s", view)
+	}
 }
