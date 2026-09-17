@@ -15,10 +15,10 @@ Performing these steps manually is error-prone. Guessing database names based on
 ## Solution
 
 WPTUI introduces an interactive `Delete` workflow (Option 3 in the Main Menu) that:
-1. Discovers candidate directories located inside `websites_path`. If `websites_path` does not exist or yields zero eligible directories, WPTUI outputs `No websites found in <websites_path>` and returns immediately to the Main Menu without entering selection or confirmation.
-2. Filters out hidden directories (`.*`), symlinks/junctions, and excluded paths specified by `delete_excludes` (defaulting to `["backups"]`).
-3. Accurately extracts the configured database name (`DB_NAME`) for each candidate via WP-CLI inspection without guessing or assuming slug equivalence.
-4. Presents an interactive multi-select picker allowing the user to select one or multiple targets for removal.
+1. Discovers candidate directories located inside `websites_path` using pure filesystem inspection (`os.ReadDir`). If `websites_path` does not exist or yields zero eligible directories, WPTUI outputs `No websites found in <websites_path>` and returns immediately to the Main Menu without entering selection or confirmation.
+2. Filters out hidden directories (`.*`), symlinks/junctions (via `DirEntry.Type()`), and excluded paths specified by `delete_excludes` (defaulting to `["backups"]`).
+3. Presents an interactive multi-select picker allowing the user to select one or multiple targets for removal instantly without pre-fetching database names.
+4. Accurately extracts the configured database name (`DB_NAME`) via WP-CLI inspection lazily, only for the selected websites, immediately prior to displaying the confirmation table.
 5. Displays a high-visibility summary table detailing the selected directory name, exact directory path, and detected database name, followed by an explicit `huh.Confirm` dialog defaulting to `No`.
 6. Concurrently de-provisions selected websites using a bounded worker pool (`min(4, count)` goroutines):
    - Unsecures Herd TLS (`herd unsecure <slug>`) if `used_herd = true` on a best-effort basis.
@@ -55,24 +55,24 @@ WPTUI introduces an interactive `Delete` workflow (Option 3 in the Main Menu) th
 ## Implementation Decisions
 
 1. **Architecture and Package Seams**:
-   - `internal/deprovision` (new deep module): Houses all domain logic for website discovery, candidate inspection, and the de-provisioning execution engine.
-     - `DiscoverCandidates(websitesPath string, excludes []string, cli wpcli.Client) ([]Candidate, error)`: Scans directory, filters exclusions/symlinks, and resolves `DB_NAME` via `wp config get DB_NAME --path=<dir>`.
-     - `Deprovision(ctx context.Context, candidates []Candidate, opts DeprovisionOptions) []Result`: Coordinates bounded worker pool (`min(4, len(candidates))`) executing Herd unsecure, database drop, and directory removal.
+   - `internal/deprovision`: Houses domain logic for website discovery, candidate inspection, and the de-provisioning execution engine.
+     - `DiscoverCandidates(ctx context.Context, websitesPath string, deleteExcludes []string) ([]Candidate, error)`: Scans directory instantly via filesystem inspection, filtering exclusions and symlinks/junctions without invoking slow WP-CLI processes.
+     - `ResolveCandidateDB(ctx context.Context, c *Candidate, client WPClient)`: Lazily queries `wp config get DB_NAME` only for candidate websites confirmed for deletion.
+     - `Deprovision(ctx context.Context, candidates []Candidate, client WPClient, opts DeprovisionOptions) []Result`: Coordinates bounded worker pool (`min(4, len(candidates))`) executing Herd unsecure, database drop, and directory removal.
    - `internal/tui` (interactive UI):
      - `menu.go`: Enable `delete` menu option (un-disable item 3 in Main Menu).
-     - `delete_wizard.go`: Interactive forms using Huh for selecting candidate websites, displaying the summary warning table, and running the confirmation prompt.
+     - `delete_wizard.go`: Interactive forms using Huh for selecting candidate websites (displaying clean slug labels), lazily previewing details with the summary warning table, and running the confirmation prompt.
    - `internal/app`:
      - Wire `DeleteFn` dependency into `app.App` and execute `internal/deprovision` when option `delete` is selected in `RunWithContext`.
 
-2. **Accurate Database Resolution via WP-CLI**:
+2. **Accurate Lazy Database Resolution via WP-CLI**:
    - In `internal/wpcli/wpcli.go`, add `ConfigGet(ctx context.Context, dir string, key string) (string, error)` invoking `wp config get <key>` with `--path=<dir>`.
-   - Use `ConfigGet(ctx, dir, "DB_NAME")` to inspect the candidate's actual database.
+   - Use `ResolveCandidateDB` to inspect candidate databases only after the user submits their selection from the multi-select list.
    - If `wp-config.php` does not exist in the candidate folder or `ConfigGet` fails, `DetectedDB` is left empty (`""`).
    - Database deletion calls existing `Client.DBDrop(ctx, dir)`. If `DetectedDB` is empty, database drop is skipped and marked `unknown/skipped`.
 
 3. **Symlink and Junction Protection**:
-   - During `DiscoverCandidates`, call `os.Lstat(entryPath)`. If `info.Mode()&os.ModeSymlink != 0` or (on Windows) reparse point/junction attributes are detected, skip the directory immediately.
-
+   - During `DiscoverCandidates`, check `entry.Type()&os.ModeSymlink != 0 || entry.Type()&os.ModeIrregular != 0` directly from `os.ReadDir` entries to skip symlinks and reparse points immediately on both Unix and Windows.
 4. **Bounded Concurrency Engine**:
    - The worker pool is bounded by a semaphore channel `chan struct{}` of capacity `min(4, len(selected))`.
    - Results are collected into a thread-safe slice protected by a mutex, ordered by original candidate selection.
