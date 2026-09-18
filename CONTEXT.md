@@ -92,3 +92,19 @@ _Avoid_: Snapshot, site dump, archive bundle
 The final immutable backup artifact (`.zip` or `.wpress`) relocated to `backup_path` under standardized naming conventions.
 _Avoid_: Dump file, backup folder, zip target
 
+**Website Restoration**:
+The operation that reconstitutes a Website from a Backup Archive into a fresh, non-colliding Website, reconciles database configuration, synchronizes administrative credentials, and configures local development hostnames.
+_Avoid_: Site unarchive, backup unpack, website overwrite
+
+**Full ZIP Restore Engine**:
+The restoration mechanism that reconstitutes a Website from a consolidated zip archive containing WordPress source files and a database dump.
+_Avoid_: Zip unpacker, raw site extractor
+
+**AI1WM Restore Engine**:
+The restoration mechanism that reconstitutes a Website from an All-in-One WP Migration package archive.
+_Avoid_: Wpress runner, migration importer
+
+**WordPress Root**:
+The specific directory inside an archive that represents the root of the WordPress core installation.
+_Avoid_: App root, site root, extracted folder
+

@@ -30,7 +30,7 @@ grill-with-docs
 
 Use `grill-me` instead of `grill-with-docs` only when persistent domain documentation is not desired.
 
-**Do not commit planning artifacts—including specs, ADRs, or tickets—until the user has explicitly approved them. Creating, editing, reviewing, or validating these artifacts does not imply approval to commit. Keep them uncommitted until explicit user approval is given.**
+**Do not create Git commits without explicit user approval. This applies to all repository changes, including specs, ADRs, tickets, documentation, source code, tests, configuration, generated files, and fixes. Creating, editing, implementing, reviewing, testing, or validating changes does not imply approval to commit. Keep all changes uncommitted until the user explicitly authorizes the commit.**
 
 Keep requirement discovery, specification, and ticket decomposition in the primary OMP context.
 
