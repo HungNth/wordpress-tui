@@ -19,21 +19,21 @@ Deliver the complete, interactive All-in-One WP Migration (`.wpress`) Website Re
 
 **Blocked by:** 01: End-to-End Full ZIP Website Restoration.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## Acceptance criteria
 
-- [ ] Restoration strategy selection presents "AI1WM Restore" alongside "Full ZIP Restore".
-- [ ] Archive picker lists valid `.wpress` files from the configured backup location with `[Enter custom path...]` as the first item.
-- [ ] Custom path input validates that the file exists, is a regular file, is readable, and ends with `.wpress`, showing clear errors on invalid inputs.
-- [ ] Reuses website name, slug normalization, non-collision checks, and administrator credential collection established in Ticket 01.
-- [ ] CLI execution interface provides the non-interactive restoration command (`wp ai1wm restore <filename> --yes`).
-- [ ] Provisions a minimal WordPress foundation site using cached core files, a new database, and basic configuration without executing full theme/plugin provisioning.
-- [ ] Verifies and activates `all-in-one-wp-migration-unlimited-extension` on the foundation site prior to executing restore commands.
-- [ ] Staging copies the `.wpress` file into `wp-content/ai1wm-backups/` inside the target website directory.
-- [ ] Executes the AI1WM restore command non-interactively, restoring site content and database tables.
-- [ ] The staged `.wpress` copy inside `wp-content/ai1wm-backups/` is strictly removed upon completion to avoid duplicate disk usage.
-- [ ] Administrator credentials (user login via direct database update, password and email via CLI) are synchronized strictly after the AI1WM restore command completes, ensuring imported accounts are reconciled.
-- [ ] Herd TLS is configured if enabled, treating any TLS failure as a non-fatal warning without rolling back the restored website.
-- [ ] Any critical failure during foundation provisioning, extension installation, archive staging, command execution, or credential reconciliation triggers atomic rollback (dropping the created database, deleting the target directory, and cleaning temporary staging) while preserving the source `.wpress` file.
-- [ ] Progress spinners and step descriptions display real-time feedback during AI1WM execution, concluding with the unified color-coded summary report.
+- [x] Restoration strategy selection presents "AI1WM Restore" alongside "Full ZIP Restore".
+- [x] Archive picker lists valid `.wpress` files from the configured backup location with `[Enter custom path...]` as the first item.
+- [x] Custom path input validates that the file exists, is a regular file, is readable, and ends with `.wpress`, showing clear errors on invalid inputs.
+- [x] Reuses website name, slug normalization, non-collision checks, and administrator credential collection established in Ticket 01.
+- [x] CLI execution interface provides the non-interactive restoration command (`wp ai1wm restore <filename> --yes`).
+- [x] Provisions a minimal WordPress foundation site using cached core files, a new database, and basic configuration without executing full theme/plugin provisioning.
+- [x] Verifies and activates `all-in-one-wp-migration-unlimited-extension` on the foundation site prior to executing restore commands.
+- [x] Staging copies the `.wpress` file into `wp-content/ai1wm-backups/` inside the target website directory.
+- [x] Executes the AI1WM restore command non-interactively, restoring site content and database tables.
+- [x] The staged `.wpress` copy inside `wp-content/ai1wm-backups/` is strictly removed upon completion to avoid duplicate disk usage.
+- [x] Administrator credentials (user login via direct database update, password and email via CLI) are synchronized strictly after the AI1WM restore command completes, ensuring imported accounts are reconciled.
+- [x] Herd TLS is configured if enabled, treating any TLS failure as a non-fatal warning without rolling back the restored website.
+- [x] Any critical failure during foundation provisioning, extension installation, archive staging, command execution, or credential reconciliation triggers atomic rollback (dropping the created database, deleting the target directory, and cleaning temporary staging) while preserving the source `.wpress` file.
+- [x] Progress spinners and step descriptions display real-time feedback during AI1WM execution, concluding with the unified color-coded summary report.

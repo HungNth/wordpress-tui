@@ -20,25 +20,25 @@ Deliver the complete, interactive Full ZIP Website Restoration capability throug
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## Acceptance criteria
 
-- [ ] Main menu displays an enabled "Restore" option and dispatches to the restoration workflow.
-- [ ] Archive picker lists valid `.zip` files from the configured backup location with `[Enter custom path...]` as the first item.
-- [ ] Custom path input validates that the file exists, is a regular file, is readable, and ends with `.zip`, showing clear errors on invalid inputs.
-- [ ] Website Name input automatically normalizes to an ASCII param-case Website Slug.
-- [ ] Preflight validation performs fail-fast rejection if the Website Slug matches an existing folder in the websites path or an existing database in MySQL.
-- [ ] Optional administrative username, password, and email inputs fall back to default configuration values when left blank.
-- [ ] ZIP extraction occurs in an isolated temporary staging location outside the target web root.
-- [ ] Root discovery strictly identifies the single directory containing `wp-content/`, `wp-includes/`, and `wp-settings.php`, failing fast if zero or multiple candidates are found.
-- [ ] Database dump resolution selects `<slug>.sql` for standard WPTUI archives, auto-selects if exactly one `.sql` file exists, prompts interactively if multiple `.sql` files exist, and fails fast if zero exist.
-- [ ] Table prefix is extracted from the archive configuration or SQL dump; if undetermined, the operation fails fast with an explicit error instead of assuming a default.
-- [ ] CLI execution interface provides database import (`wp db import`) and precise domain search-replace (`wp search-replace`).
-- [ ] Files are relocated to the destination directory, a fresh configuration file is generated with current database parameters and the discovered table prefix, and the database dump is imported.
-- [ ] Prior site URL is discovered automatically and replaced with the new `.test` domain across all prefixed tables.
-- [ ] Administrator credentials are synchronized using direct database login update and CLI credential updates.
-- [ ] Herd TLS is configured if enabled; any TLS error is captured as a non-fatal warning without aborting or rolling back the restored website.
-- [ ] The imported database dump file is deleted from the target website directory strictly upon successful completion of the full restore sequence.
-- [ ] Any critical failure during staging, root discovery, dump resolution, database import, search-replace, or credential update triggers atomic rollback (dropping the created database, deleting the target directory, and cleaning temporary staging) while strictly preserving the source backup file.
-- [ ] Real-time progress spinners and step descriptions display during execution, concluding with a color-coded summary report displaying site details.
+- [x] Main menu displays an enabled "Restore" option and dispatches to the restoration workflow.
+- [x] Archive picker lists valid `.zip` files from the configured backup location with `[Enter custom path...]` as the first item.
+- [x] Custom path input validates that the file exists, is a regular file, is readable, and ends with `.zip`, showing clear errors on invalid inputs.
+- [x] Website Name input automatically normalizes to an ASCII param-case Website Slug.
+- [x] Preflight validation performs fail-fast rejection if the Website Slug matches an existing folder in the websites path or an existing database in MySQL.
+- [x] Optional administrative username, password, and email inputs fall back to default configuration values when left blank.
+- [x] ZIP extraction occurs in an isolated temporary staging location outside the target web root.
+- [x] Root discovery strictly identifies the single directory containing `wp-content/`, `wp-includes/`, and `wp-settings.php`, failing fast if zero or multiple candidates are found.
+- [x] Database dump resolution selects `<slug>.sql` for standard WPTUI archives, auto-selects if exactly one `.sql` file exists, prompts interactively if multiple `.sql` files exist, and fails fast if zero exist.
+- [x] Table prefix is extracted from the archive configuration or SQL dump; if undetermined, the operation fails fast with an explicit error instead of assuming a default.
+- [x] CLI execution interface provides database import (`wp db import`) and precise domain search-replace (`wp search-replace`).
+- [x] Files are relocated to the destination directory, a fresh configuration file is generated with current database parameters and the discovered table prefix, and the database dump is imported.
+- [x] Prior site URL is discovered automatically and replaced with the new `.test` domain across all prefixed tables.
+- [x] Administrator credentials are synchronized using direct database login update and CLI credential updates.
+- [x] Herd TLS is configured if enabled; any TLS error is captured as a non-fatal warning without aborting or rolling back the restored website.
+- [x] The imported database dump file is deleted from the target website directory strictly upon successful completion of the full restore sequence.
+- [x] Any critical failure during staging, root discovery, dump resolution, database import, search-replace, or credential update triggers atomic rollback (dropping the created database, deleting the target directory, and cleaning temporary staging) while strictly preserving the source backup file.
+- [x] Real-time progress spinners and step descriptions display during execution, concluding with a color-coded summary report displaying site details.
