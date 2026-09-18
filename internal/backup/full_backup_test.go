@@ -138,6 +138,48 @@ func TestRunFullBackup_NestedBackupDirExcluded(t *testing.T) {
 	}
 }
 
+func TestRunFullBackup_CleanupFailureReturnsError(t *testing.T) {
+	siteDir := t.TempDir()
+	slug := "cleanup-fail-site"
+	backupDir := filepath.Join(t.TempDir(), "backups")
+
+	_ = os.WriteFile(filepath.Join(siteDir, "index.php"), []byte("<?php"), 0644)
+
+	mock := &mockWPClient{
+		runFn: func(ctx context.Context, dir, name string, args []string, stdin string) (string, string, error) {
+			if len(args) >= 3 && args[0] == "db" && args[1] == "export" {
+				// Create a non-empty directory in place of the dump file so os.Remove fails
+				// deterministically on both Windows and POSIX after the archive succeeds.
+				dumpDir := filepath.Join(dir, args[2])
+				_ = os.MkdirAll(dumpDir, 0755)
+				_ = os.WriteFile(filepath.Join(dumpDir, "locked"), []byte("x"), 0644)
+				return "", "", nil
+			}
+			return "", "", nil
+		},
+	}
+
+	_, err := backup.RunFullBackup(context.Background(), siteDir, slug, backupDir, nil, mock, nil)
+	if err == nil {
+		t.Fatal("expected error when temporary dump cannot be removed, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to remove temporary database dump") {
+		t.Errorf("expected cleanup failure error, got: %v", err)
+	}
+
+	// The archive itself must still have been produced before cleanup was attempted
+	entries, _ := os.ReadDir(backupDir)
+	foundZip := false
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "full_"+slug+"_") && strings.HasSuffix(e.Name(), ".zip") {
+			foundZip = true
+		}
+	}
+	if !foundZip {
+		t.Errorf("expected archive to be created before cleanup failure, found: %v", entries)
+	}
+}
+
 func TestRunFullBackup_RelocationFailureRetainsSQLDump(t *testing.T) {
 	siteDir := t.TempDir()
 	slug := "test-site-reloc-fail"

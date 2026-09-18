@@ -47,6 +47,39 @@ func TestDefaultConfig(t *testing.T) {
 	}
 }
 
+func TestConfig_LegacyLoadWithoutBackupPath(t *testing.T) {
+	tempDir := t.TempDir()
+	cfgPath := filepath.Join(tempDir, "config.json")
+
+	// Legacy config.json authored before backup_path existed, with no backup_path key
+	legacyJSON := `{
+  "used_herd": true,
+  "websites_path": "C:\\sites",
+  "packages_api_url": "",
+  "packages_api_key": "",
+  "default_admin_username": "admin",
+  "default_admin_password": "admin",
+  "default_admin_email": "admin@admin.com",
+  "database_host": "localhost",
+  "database_port": 3306,
+  "db_username": "root",
+  "db_password": "",
+  "db_socket": "",
+  "default_theme_slug": "flatsome"
+}`
+	if err := os.WriteFile(cfgPath, []byte(legacyJSON), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		t.Fatalf("legacy config without backup_path must still load: %v", err)
+	}
+	if cfg.BackupPath != "" {
+		t.Errorf("Load must not inject a backup_path fallback, got %q", cfg.BackupPath)
+	}
+}
+
 func TestConfig_BackupPathSerialization(t *testing.T) {
 	tempHome := t.TempDir()
 	cfg := config.DefaultConfig(tempHome)

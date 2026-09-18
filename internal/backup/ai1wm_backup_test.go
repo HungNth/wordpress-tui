@@ -2,6 +2,7 @@ package backup_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -109,6 +110,89 @@ Backup location: F:/laravel-herd/wordpress/flatsome/wp-content/ai1wm-backups/fla
 	}
 	if !strings.Contains(filepath.ToSlash(loc), "flatsome-test-20260918-091210-d94gl7ofzrzz.wpress") {
 		t.Errorf("unexpected parsed location: %q", loc)
+	}
+}
+
+func TestRunAI1WMBackup_InstallsExtensionPlugin(t *testing.T) {
+	siteDir := t.TempDir()
+	backupDir := filepath.Join(t.TempDir(), "backups")
+
+	wpressDir := filepath.Join(siteDir, "wp-content", "ai1wm-backups")
+	_ = os.MkdirAll(wpressDir, 0755)
+	sourceWpress := filepath.Join(wpressDir, "generated.wpress")
+	_ = os.WriteFile(sourceWpress, []byte("wpress"), 0644)
+
+	// Report the extension as NOT installed so a version-aware install must happen
+	mockCli := &mockAI1WMWPClient{
+		pluginVerFn: func(slug string) (string, bool) { return "", false },
+		runAI1WMFn: func() (string, error) {
+			return "Backup location: " + sourceWpress, nil
+		},
+	}
+	mockRes := &mockAI1WMResolver{}
+
+	if _, err := backup.RunAI1WMBackup(context.Background(), siteDir, "ext-site", backupDir, nil, mockRes, mockCli, nil); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The version-aware installer must resolve and install the extension plugin (activated)
+	foundInstall := false
+	for _, run := range mockCli.runs {
+		if strings.Contains(run, "plugin install") && strings.Contains(run, backup.AI1WMExtensionSlug) {
+			foundInstall = true
+			if !strings.Contains(run, "--activate") {
+				t.Errorf("expected extension install to activate the plugin, got: %s", run)
+			}
+		}
+	}
+	if !foundInstall {
+		t.Errorf("expected %s to be resolved and installed, calls: %v", backup.AI1WMExtensionSlug, mockCli.runs)
+	}
+}
+
+func TestRunAI1WMBackup_ResolverFailure(t *testing.T) {
+	siteDir := t.TempDir()
+	backupDir := filepath.Join(t.TempDir(), "backups")
+
+	mockRes := &mockAI1WMResolver{
+		resolveFn: func(ctx context.Context, ref packages.PackageRef, stageDir string) (*packages.Artifact, error) {
+			return nil, errors.New("package service unreachable")
+		},
+	}
+	mockCli := &mockAI1WMWPClient{}
+
+	_, err := backup.RunAI1WMBackup(context.Background(), siteDir, "fail-site", backupDir, nil, mockRes, mockCli, nil)
+	if err == nil {
+		t.Fatal("expected error when extension resolution fails, got nil")
+	}
+	if !strings.Contains(err.Error(), "package service unreachable") {
+		t.Errorf("expected resolver failure to propagate, got: %v", err)
+	}
+
+	// No backup command must run when the extension cannot be installed
+	for _, run := range mockCli.runs {
+		if strings.Contains(run, "ai1wm backup") {
+			t.Errorf("ai1wm backup must not run after extension failure, got: %s", run)
+		}
+	}
+}
+
+func TestRunAI1WMBackup_MissingBackupLocation(t *testing.T) {
+	siteDir := t.TempDir()
+	backupDir := filepath.Join(t.TempDir(), "backups")
+
+	mockCli := &mockAI1WMWPClient{
+		runAI1WMFn: func() (string, error) {
+			return "Backup in progress...\nSuccess: Backup complete.\n", nil
+		},
+	}
+
+	_, err := backup.RunAI1WMBackup(context.Background(), siteDir, "noloc-site", backupDir, nil, &mockAI1WMResolver{}, mockCli, nil)
+	if err == nil {
+		t.Fatal("expected error when 'Backup location:' is absent, got nil")
+	}
+	if !strings.Contains(err.Error(), "Backup location") {
+		t.Errorf("expected missing backup location error, got: %v", err)
 	}
 }
 

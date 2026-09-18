@@ -84,10 +84,8 @@ func CreateFullZipArchive(ctx context.Context, siteDir, destZipPath, backupPath 
 	if err != nil {
 		return fmt.Errorf("failed to create zip file at %s: %w", destZipPath, err)
 	}
-	defer zipFile.Close()
 
 	archive := zip.NewWriter(zipFile)
-	defer archive.Close()
 
 	destAbs, _ := filepath.Abs(destZipPath)
 	backupAbs, _ := filepath.Abs(backupPath)
@@ -154,11 +152,20 @@ func CreateFullZipArchive(ctx context.Context, siteDir, destZipPath, backupPath 
 		return err
 	})
 
+	closeArchiveErr := archive.Close()
+	closeFileErr := zipFile.Close()
+
 	if err != nil {
 		return err
 	}
+	if closeArchiveErr != nil {
+		return fmt.Errorf("failed to finalize zip archive: %w", closeArchiveErr)
+	}
+	if closeFileErr != nil {
+		return fmt.Errorf("failed to close zip file %s: %w", destZipPath, closeFileErr)
+	}
 
-	return archive.Close()
+	return nil
 }
 
 // safeRelocate moves a file from src to dest. If os.Rename fails across different drives/volumes,
@@ -180,25 +187,45 @@ func safeRelocate(src, dest string) error {
 	if err := os.Rename(src, dest); err == nil {
 		return nil
 	}
+
+	// Cross-volume fallback: copy into a temp file inside the destination directory,
+	// flush it to disk, then rename it into place so the destination is never partial.
+	destDir := filepath.Dir(dest)
+	tmpFile, err := os.CreateTemp(destDir, ".wptui-relocate-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temporary destination file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	defer os.Remove(tmpPath)
+
 	srcFile, err := os.Open(src)
 	if err != nil {
+		_ = tmpFile.Close()
 		return err
 	}
-	defer srcFile.Close()
 
-	destFile, err := os.Create(dest)
-	if err != nil {
-		return err
+	if _, err := io.Copy(tmpFile, srcFile); err != nil {
+		_ = srcFile.Close()
+		_ = tmpFile.Close()
+		return fmt.Errorf("failed to copy archive to destination: %w", err)
 	}
-	defer destFile.Close()
-
-	if _, err := io.Copy(destFile, srcFile); err != nil {
-		_ = os.Remove(dest)
-		return err
+	if err := srcFile.Close(); err != nil {
+		_ = tmpFile.Close()
+		return fmt.Errorf("failed to close source file: %w", err)
 	}
-	_ = destFile.Close()
-	_ = srcFile.Close()
-	_ = os.Remove(src)
+	if err := tmpFile.Sync(); err != nil {
+		_ = tmpFile.Close()
+		return fmt.Errorf("failed to flush destination file: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		return fmt.Errorf("failed to close destination file: %w", err)
+	}
+	if err := os.Rename(tmpPath, dest); err != nil {
+		return fmt.Errorf("failed to finalize relocated archive: %w", err)
+	}
+	if err := os.Remove(src); err != nil {
+		return fmt.Errorf("failed to remove source archive after relocation: %w", err)
+	}
 	return nil
 }
 
@@ -256,7 +283,9 @@ func RunFullBackup(ctx context.Context, siteDir, slug, backupPath string, exclud
 	if onProgress != nil {
 		onProgress(4, 4, "Cleaning up temporary database dump...")
 	}
-	_ = os.Remove(sqlPath)
+	if err := os.Remove(sqlPath); err != nil {
+		return nil, fmt.Errorf("backup archive created at %s but failed to remove temporary database dump %s: %w", finalDestPath, sqlPath, err)
+	}
 
 	info, err := os.Stat(finalDestPath)
 	var fileSize int64
