@@ -218,3 +218,56 @@ func TestRunFullBackup_RelocationFailureRetainsSQLDump(t *testing.T) {
 		t.Errorf("SQL dump %s must be retained when archive relocation fails", expectedSQL)
 	}
 }
+
+func TestRelocateFile_SuccessMovesContentAndRemovesSource(t *testing.T) {
+	tempDir := t.TempDir()
+	src := filepath.Join(tempDir, "source.zip")
+	dest := filepath.Join(tempDir, "destination.zip")
+	want := []byte("archive-content")
+	if err := os.WriteFile(src, want, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := backup.RelocateFile(src, dest); err != nil {
+		t.Fatalf("unexpected relocation error: %v", err)
+	}
+	if _, err := os.Stat(src); !os.IsNotExist(err) {
+		t.Errorf("expected source to be removed, stat err: %v", err)
+	}
+	got, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(want) {
+		t.Errorf("destination content = %q, want %q", got, want)
+	}
+}
+
+func TestRelocateFile_FailureRetainsSourceAndCleansTempDestination(t *testing.T) {
+	tempDir := t.TempDir()
+	src := filepath.Join(tempDir, "source.zip")
+	destDir := filepath.Join(tempDir, "existing-directory")
+	if err := os.WriteFile(src, []byte("archive-content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(destDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := backup.RelocateFile(src, destDir); err == nil {
+		t.Fatal("expected relocation error when destination is a directory")
+	}
+	if _, err := os.Stat(src); err != nil {
+		t.Errorf("source must remain after relocation failure: %v", err)
+	}
+
+	entries, err := os.ReadDir(tempDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".wptui-relocate-") {
+			t.Errorf("temporary destination file was not cleaned up: %s", entry.Name())
+		}
+	}
+}

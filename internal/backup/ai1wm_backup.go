@@ -127,7 +127,7 @@ func RunAI1WMBackup(ctx context.Context, siteDir, slug, backupPath string, exclu
 	archiveName := fmt.Sprintf("ai1wm_%s_%s.wpress", slug, timestamp)
 	destPath := filepath.Join(backupPath, archiveName)
 
-	if err := safeRelocate(sourceWpressPath, destPath); err != nil {
+	if err := RelocateFile(sourceWpressPath, destPath); err != nil {
 		return nil, fmt.Errorf("failed to relocate .wpress backup from %s to %s: %w", sourceWpressPath, destPath, err)
 	}
 

@@ -146,10 +146,16 @@ func CreateFullZipArchive(ctx context.Context, siteDir, destZipPath, backupPath 
 		if err != nil {
 			return fmt.Errorf("failed to open source file %s: %w", path, err)
 		}
-		defer file.Close()
 
-		_, err = io.Copy(writer, file)
-		return err
+		_, copyErr := io.Copy(writer, file)
+		closeErr := file.Close()
+		if copyErr != nil {
+			return copyErr
+		}
+		if closeErr != nil {
+			return fmt.Errorf("failed to close source file %s: %w", path, closeErr)
+		}
+		return nil
 	})
 
 	closeArchiveErr := archive.Close()
@@ -168,11 +174,10 @@ func CreateFullZipArchive(ctx context.Context, siteDir, destZipPath, backupPath 
 	return nil
 }
 
-// safeRelocate moves a file from src to dest. If os.Rename fails across different drives/volumes,
-// it falls back to copy-then-remove.
+// RelocatorFunc relocates a source file to a destination path.
 type RelocatorFunc func(src, dest string) error
 
-var defaultRelocator RelocatorFunc = safeRelocate
+var defaultRelocator RelocatorFunc = RelocateFile
 
 // SetRelocatorForTesting allows unit tests to simulate relocation failures.
 func SetRelocatorForTesting(fn RelocatorFunc) func() {
@@ -183,7 +188,10 @@ func SetRelocatorForTesting(fn RelocatorFunc) func() {
 	}
 }
 
-func safeRelocate(src, dest string) error {
+// RelocateFile moves src to dest. When both paths share a volume it uses os.Rename;
+// otherwise it copies into a temp file in the destination directory, flushes and closes it,
+// renames it into place, then removes the source. The destination is never left partially written.
+func RelocateFile(src, dest string) error {
 	if err := os.Rename(src, dest); err == nil {
 		return nil
 	}
