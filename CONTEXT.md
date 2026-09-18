@@ -84,3 +84,11 @@ _Avoid_: Preferences, options, app config
 The platform-aware subsystem responsible for safely launching external tools such as code editors and file managers.
 _Avoid_: Shell runner, process spawner
 
+**Website Backup**:
+The operation that captures the complete state of an existing Website—either by creating a consolidated zip archive containing database and source code, or by orchestrating an All-in-One WP Migration package export.
+_Avoid_: Snapshot, site dump, archive bundle
+
+**Backup Archive**:
+The final immutable backup artifact (`.zip` or `.wpress`) relocated to `backup_path` under standardized naming conventions.
+_Avoid_: Dump file, backup folder, zip target
+
