@@ -313,3 +313,37 @@ func TestApp_RunWithContext_DispatchesDelete(t *testing.T) {
 		t.Errorf("expected DeleteFn to be dispatched by RunWithContext when menu returned 'delete'")
 	}
 }
+
+func TestApp_RunWithContext_DispatchesRestore(t *testing.T) {
+	tempHome := t.TempDir()
+	cfgPath := filepath.Join(tempHome, ".config", "wptui", "config.json")
+	cfg := config.DefaultConfig(tempHome)
+	if err := config.Save(cfgPath, cfg); err != nil {
+		t.Fatalf("Save() failed: %v", err)
+	}
+
+	var restoreCalled bool
+	menuSelections := []string{"restore", "exit"}
+	menuIdx := 0
+
+	application := app.New(app.Options{
+		HomeDir: tempHome,
+		MenuFn: func() (string, error) {
+			sel := menuSelections[menuIdx]
+			menuIdx++
+			return sel, nil
+		},
+		RestoreFn: func(ctx context.Context, c *config.Config) error {
+			restoreCalled = true
+			return nil
+		},
+	})
+
+	if err := application.RunWithContext(context.Background()); err != nil {
+		t.Fatalf("RunWithContext failed: %v", err)
+	}
+
+	if !restoreCalled {
+		t.Errorf("expected RestoreFn to be dispatched by RunWithContext when menu returned 'restore'")
+	}
+}

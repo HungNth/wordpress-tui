@@ -27,6 +27,7 @@ type Options struct {
 	ConfigFn   func(ctx context.Context, cfg *config.Config) error
 	SettingsFn func(ctx context.Context, cfg *config.Config, onReload func(*config.Config)) error
 	BackupFn   func(ctx context.Context, cfg *config.Config) error
+	RestoreFn  func(ctx context.Context, cfg *config.Config) error
 }
 
 type App struct {
@@ -40,6 +41,7 @@ type App struct {
 	configFn   func(ctx context.Context, cfg *config.Config) error
 	settingsFn func(ctx context.Context, cfg *config.Config, onReload func(*config.Config)) error
 	backupFn   func(ctx context.Context, cfg *config.Config) error
+	restoreFn  func(ctx context.Context, cfg *config.Config) error
 }
 
 func New(opts Options) *App {
@@ -88,6 +90,11 @@ func New(opts Options) *App {
 		bFn = RunDefaultBackupFlow
 	}
 
+	rFn := opts.RestoreFn
+	if rFn == nil {
+		rFn = RunDefaultRestoreFlow
+	}
+
 	return &App{
 		homeDir:    home,
 		cfgPath:    cfgPath,
@@ -98,7 +105,9 @@ func New(opts Options) *App {
 		configFn:   cfgFn,
 		settingsFn: sFn,
 		backupFn:   bFn,
+		restoreFn:  rFn,
 	}
+
 }
 
 func (a *App) Config() *config.Config {
@@ -499,6 +508,10 @@ func (a *App) RunWithContext(ctx context.Context) error {
 		case "backup":
 			if err := a.backupFn(ctx, a.config); err != nil {
 				fmt.Printf("Error during backup: %v\n", err)
+			}
+		case "restore":
+			if err := a.restoreFn(ctx, a.config); err != nil {
+				fmt.Printf("Error during restore: %v\n", err)
 			}
 		default:
 			fmt.Printf("Option %q is coming soon.\n", action)
