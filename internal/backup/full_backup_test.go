@@ -27,6 +27,29 @@ func (m *mockWPClient) Run(ctx context.Context, dir, name string, args []string,
 	return "", "", nil
 }
 
+func TestCreateFullZipArchive_CanceledContextReturnsCanceledAndClosesArchive(t *testing.T) {
+	siteDir := t.TempDir()
+	destZip := filepath.Join(t.TempDir(), "canceled.zip")
+	if err := os.WriteFile(filepath.Join(siteDir, "index.php"), []byte("<?php"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	err := backup.CreateFullZipArchive(ctx, siteDir, destZip, "", nil, nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("CreateFullZipArchive error = %v, want context.Canceled", err)
+	}
+
+	// Cancellation must still finalize and close the archive before returning.
+	reader, openErr := zip.OpenReader(destZip)
+	if openErr != nil {
+		t.Fatalf("canceled archive was not finalized/closed: %v", openErr)
+	}
+	_ = reader.Close()
+}
+
 func TestRunFullBackup_SuccessAndSQLCleanup(t *testing.T) {
 	siteDir := t.TempDir()
 	slug := "test-site"

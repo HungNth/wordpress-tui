@@ -32,6 +32,7 @@ Implement Strategy 1 in package `internal/backup`:
 - [x] Relocation uses `os.Rename` on the same volume and a flush-then-rename copy fallback across volumes; failures propagate instead of reporting success.
 - [x] Relocation tests verify success removes the source, failure retains the source, and destination temp files are cleaned (`TestRelocateFile_SuccessMovesContentAndRemovesSource`, `TestRelocateFile_FailureRetainsSourceAndCleansTempDestination`).
 - [x] Archive finalization errors (`archive.Close`, `zipFile.Close`) and dump-deletion failure are returned rather than swallowed (`TestRunFullBackup_CleanupFailureReturnsError`).
+- [x] Cancellation is checked at the start of every Walk callback; `context.Canceled` is returned while archive/file handles are still finalized and closed (`TestCreateFullZipArchive_CanceledContextReturnsCanceledAndClosesArchive`).
 - [x] Zip entries use relative paths with forward slashes (`/`) for Windows/macOS extraction portability.
 - [x] Excludes properly skip `backup_excludes` patterns and previous backup archives.
 - [x] Comprehensive unit tests in `internal/backup/full_backup_test.go` verify:

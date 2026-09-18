@@ -91,6 +91,11 @@ func CreateFullZipArchive(ctx context.Context, siteDir, destZipPath, backupPath 
 	backupAbs, _ := filepath.Abs(backupPath)
 
 	err = filepath.Walk(siteDir, func(path string, info os.FileInfo, err error) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		if err != nil {
 			return err
 		}
