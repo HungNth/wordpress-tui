@@ -237,12 +237,12 @@ func (c *Creator) Create(ctx context.Context, req Request, progress ProgressFunc
 		Pass:   c.cfg.DBPassword,
 		Socket: c.cfg.DBSocket,
 	}
-	if err := c.wpClient.ConfigCreate(
+	if err := c.wpClient.ConfigCreateWithOptions(
 		ctx,
 		websitePath,
 		req.WebsiteSlug,
 		dbConn,
-		true,
+		wpcli.ConfigCreateOptions{SkipCheck: true},
 	); err != nil {
 		return nil, err
 	}
@@ -276,7 +276,6 @@ func (c *Creator) Create(ctx context.Context, req Request, progress ProgressFunc
 	); err != nil {
 		return nil, err
 	}
-
 
 	// Step 7: Apply tweaks if opted in
 	var failedTweaks []string
