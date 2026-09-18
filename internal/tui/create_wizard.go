@@ -48,8 +48,9 @@ func ResolveAndValidateSlug(websiteName, websiteSlug string, checker SlugAvailab
 	}
 	return slug, nil
 }
-// BuildCreateForm creates the unified Huh form collecting website parameters.
-func BuildCreateForm(inputs *CreateInputs, cfg *config.Config, checker ...SlugAvailabilityChecker) *huh.Form {
+
+// BuildWebsiteInputsForm creates the unified Huh form collecting website parameters with optional tweaks.
+func BuildWebsiteInputsForm(inputs *CreateInputs, cfg *config.Config, includeTweaks bool, checker ...SlugAvailabilityChecker) *huh.Form {
 	if inputs.AdminUsername == "" {
 		inputs.AdminUsername = cfg.DefaultAdminUsername
 	}
@@ -63,6 +64,39 @@ func BuildCreateForm(inputs *CreateInputs, cfg *config.Config, checker ...SlugAv
 	var check SlugAvailabilityChecker
 	if len(checker) > 0 && checker[0] != nil {
 		check = checker[0]
+	}
+
+	secondGroupFields := []huh.Field{
+		huh.NewInput().
+			Title("Admin Username").
+			Description("WordPress administrator username (default: " + cfg.DefaultAdminUsername + ")").
+			Value(&inputs.AdminUsername),
+
+		huh.NewInput().
+			Title("Admin Password").
+			Description("WordPress administrator password").
+			EchoMode(huh.EchoModePassword).
+			Value(&inputs.AdminPassword),
+
+		huh.NewInput().
+			Title("Admin Email").
+			Description("WordPress administrator email (default: " + cfg.DefaultAdminEmail + ")").
+			Value(&inputs.AdminEmail).
+			Validate(func(s string) error {
+				if strings.TrimSpace(s) == "" {
+					return nil
+				}
+				return config.ValidateEmail(s)
+			}),
+	}
+
+	if includeTweaks {
+		secondGroupFields = append(secondGroupFields,
+			huh.NewConfirm().
+				Title("Apply WordPress Tweaks?").
+				Description("Apply debug settings, custom permalinks, VN timezone, and locale").
+				Value(&inputs.ApplyTweaks),
+		)
 	}
 
 	return huh.NewForm(
@@ -91,35 +125,18 @@ func BuildCreateForm(inputs *CreateInputs, cfg *config.Config, checker ...SlugAv
 					return nil
 				}),
 		),
-		huh.NewGroup(
-			huh.NewInput().
-				Title("Admin Username").
-				Description("WordPress administrator username (default: " + cfg.DefaultAdminUsername + ")").
-				Value(&inputs.AdminUsername),
-
-			huh.NewInput().
-				Title("Admin Password").
-				Description("WordPress administrator password").
-				EchoMode(huh.EchoModePassword).
-				Value(&inputs.AdminPassword),
-
-			huh.NewInput().
-				Title("Admin Email").
-				Description("WordPress administrator email (default: " + cfg.DefaultAdminEmail + ")").
-				Value(&inputs.AdminEmail).
-				Validate(func(s string) error {
-					if strings.TrimSpace(s) == "" {
-						return nil
-					}
-					return config.ValidateEmail(s)
-				}),
-
-			huh.NewConfirm().
-				Title("Apply WordPress Tweaks?").
-				Description("Apply debug settings, custom permalinks, VN timezone, and locale").
-				Value(&inputs.ApplyTweaks),
-		),
+		huh.NewGroup(secondGroupFields...),
 	).WithTheme(CustomTheme())
+}
+
+// BuildCreateForm creates the unified Huh form collecting website parameters with tweaks.
+func BuildCreateForm(inputs *CreateInputs, cfg *config.Config, checker ...SlugAvailabilityChecker) *huh.Form {
+	return BuildWebsiteInputsForm(inputs, cfg, true, checker...)
+}
+
+// BuildRestoreForm creates the unified Huh form collecting website parameters without tweaks.
+func BuildRestoreForm(inputs *CreateInputs, cfg *config.Config, checker ...SlugAvailabilityChecker) *huh.Form {
+	return BuildWebsiteInputsForm(inputs, cfg, false, checker...)
 }
 
 // PromptCreateInputs prompts the user with the unified create form.

@@ -20,7 +20,7 @@ func GetMenuItems() []MenuItem {
 		{Key: "config", Title: "Config", Description: "Configure an existing website (tweaks, admin, packages)", Disabled: false},
 		{Key: "delete", Title: "Delete", Description: "De-provision and delete local WordPress websites", Disabled: false},
 		{Key: "backup", Title: "Backup", Description: "Backup an existing WordPress website (Full or AI1WM)", Disabled: false},
-		{Key: "restore", Title: "Restore", Description: "Restore website (Coming soon)", Disabled: true},
+		{Key: "restore", Title: "Restore", Description: "Restore website from backup (Full ZIP or AI1WM)", Disabled: false},
 		{Key: "settings", Title: "Settings", Description: "Application settings (edit config, open cache)", Disabled: false},
 		{Key: "exit", Title: "Exit", Description: "Exit WPTUI", Disabled: false},
 	}
@@ -37,7 +37,7 @@ func BuildMainMenuForm(choice *string) *huh.Form {
 		}
 	}
 
-	description := "Select an available action below.\nComing soon: Restore"
+	description := "Select an available action below."
 	return huh.NewForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
