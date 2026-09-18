@@ -45,9 +45,9 @@ Interactive backup workflow accessible from the WPTUI Main Menu under the `backu
        - The `backup_path` directory itself if located inside the website tree.
   3. Print progress: `[3/4] Moving backup archive to storage...`
      - Ensure `backup_path` exists (`os.MkdirAll`).
-     - Move the temporary zip archive to `backup_path` under `full_<website-slug>_YYYY-MM-DD_HH-mm-ss.zip`.
+     - Relocate the temporary zip archive to `backup_path` under `full_<website-slug>_YYYY-MM-DD_HH-mm-ss.zip`, using `os.Rename` on the same volume and a copy-to-temp-then-rename fallback across volumes.
   4. Print progress: `[4/4] Cleaning up temporary database dump...`
-     - **Strict Failure Invariant**: Delete temporary `<slug>.sql` file from the website directory **strictly after step 3 succeeds**. If zip creation, closing, or moving fails for any reason, retain `<slug>.sql` on disk and return the error.
+     - **Strict Failure Invariant**: Delete temporary `<slug>.sql` file from the website directory **strictly after step 3 succeeds**. If zip creation, archive finalization, relocation, or dump deletion fails for any reason, retain `<slug>.sql` on disk and return an explicit error.
   5. Print summary:
      - File path, size in MB/GB, elapsed time in seconds.
 ### 4. Strategy 2: All-in-One WP Migration Backup

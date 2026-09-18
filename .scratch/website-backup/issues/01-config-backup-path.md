@@ -15,6 +15,7 @@ Labels: ready-for-agent
    - Test JSON serialization and wizard input defaults for `backup_path`.
 
 ## Acceptance criteria
-- [x] `backup_path` is serialized/deserialized cleanly in `config.json`.
-- [x] Wizard defaults to `<websites_path>/backups` when user leaves the field blank.
+- [x] `backup_path` is serialized/deserialized cleanly in `config.json` (`TestConfig_BackupPathSerialization`).
+- [x] Wizard defaults to `<websites_path>/backups` when user leaves the field blank (`TestConvertInputsToConfig_BackupPath`).
+- [x] A legacy `config.json` with no `backup_path` key still loads, with no injected fallback (`TestConfig_LegacyLoadWithoutBackupPath`).
 - [x] Unit tests pass in `internal/config` and `internal/tui`.

@@ -17,6 +17,9 @@ Implement Strategy 2 in package `internal/backup`:
    - Leaves plugin installed on site.
 
 ## Acceptance criteria
+- [x] Extension plugin is resolved and installed activated through the version-aware installer (`TestRunAI1WMBackup_InstallsExtensionPlugin`).
+- [x] Resolver failure aborts before any `wp ai1wm backup` invocation (`TestRunAI1WMBackup_ResolverFailure`).
+- [x] Missing `Backup location:` in WP-CLI output is reported as an error (`TestRunAI1WMBackup_MissingBackupLocation`).
 - [x] Command arguments correctly include `--exclude-cache` and `--exclude-files=...`.
 - [x] Parses `Backup location: <path>` accurately across Windows and macOS path separators.
 - [x] Moves and renames file into `backupPath` according to `ai1wm_<slug>_YYYY-MM-DD_HH-mm-ss.wpress`.
