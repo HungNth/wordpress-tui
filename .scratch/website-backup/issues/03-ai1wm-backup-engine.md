@@ -1,5 +1,5 @@
 # Title: Strategy 2 All-in-One WP Migration backup engine
-Status: ready-for-agent
+Status: resolved
 Labels: ready-for-agent
 
 ## Parent spec
@@ -17,7 +17,7 @@ Implement Strategy 2 in package `internal/backup`:
    - Leaves plugin installed on site.
 
 ## Acceptance criteria
-- [ ] Command arguments correctly include `--exclude-cache` and `--exclude-files=...`.
-- [ ] Parses `Backup location: <path>` accurately across Windows and macOS path separators.
-- [ ] Moves and renames file into `backupPath` according to `ai1wm_<slug>_YYYY-MM-DD_HH-mm-ss.wpress`.
-- [ ] Unit tests with mock runner verifying command invocation and output parsing in `internal/backup/ai1wm_backup_test.go`.
+- [x] Command arguments correctly include `--exclude-cache` and `--exclude-files=...`.
+- [x] Parses `Backup location: <path>` accurately across Windows and macOS path separators.
+- [x] Moves and renames file into `backupPath` according to `ai1wm_<slug>_YYYY-MM-DD_HH-mm-ss.wpress`.
+- [x] Unit tests with mock runner verifying command invocation and output parsing in `internal/backup/ai1wm_backup_test.go`.

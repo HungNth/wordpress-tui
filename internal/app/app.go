@@ -26,6 +26,7 @@ type Options struct {
 	DeleteFn   func(ctx context.Context, cfg *config.Config) error
 	ConfigFn   func(ctx context.Context, cfg *config.Config) error
 	SettingsFn func(ctx context.Context, cfg *config.Config, onReload func(*config.Config)) error
+	BackupFn   func(ctx context.Context, cfg *config.Config) error
 }
 
 type App struct {
@@ -38,6 +39,7 @@ type App struct {
 	deleteFn   func(ctx context.Context, cfg *config.Config) error
 	configFn   func(ctx context.Context, cfg *config.Config) error
 	settingsFn func(ctx context.Context, cfg *config.Config, onReload func(*config.Config)) error
+	backupFn   func(ctx context.Context, cfg *config.Config) error
 }
 
 func New(opts Options) *App {
@@ -80,6 +82,12 @@ func New(opts Options) *App {
 	if sFn == nil {
 		sFn = RunDefaultSettingsFlow
 	}
+
+	bFn := opts.BackupFn
+	if bFn == nil {
+		bFn = RunDefaultBackupFlow
+	}
+
 	return &App{
 		homeDir:    home,
 		cfgPath:    cfgPath,
@@ -89,6 +97,7 @@ func New(opts Options) *App {
 		deleteFn:   dFn,
 		configFn:   cfgFn,
 		settingsFn: sFn,
+		backupFn:   bFn,
 	}
 }
 
@@ -486,6 +495,10 @@ func (a *App) RunWithContext(ctx context.Context) error {
 		case "settings":
 			if err := a.settingsFn(ctx, a.config, func(newCfg *config.Config) { a.config = newCfg }); err != nil {
 				fmt.Printf("Error in settings: %v\n", err)
+			}
+		case "backup":
+			if err := a.backupFn(ctx, a.config); err != nil {
+				fmt.Printf("Error during backup: %v\n", err)
 			}
 		default:
 			fmt.Printf("Option %q is coming soon.\n", action)

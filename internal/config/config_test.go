@@ -41,6 +41,30 @@ func TestDefaultConfig(t *testing.T) {
 	if len(cfg.DeleteExcludes) != 1 || cfg.DeleteExcludes[0] != "backups" {
 		t.Errorf("expected default DeleteExcludes to be ['backups'], got %v", cfg.DeleteExcludes)
 	}
+	expectedBackupPath := filepath.Join(expectedHerdPath, "backups")
+	if cfg.BackupPath != expectedBackupPath {
+		t.Errorf("expected default BackupPath %s, got %s", expectedBackupPath, cfg.BackupPath)
+	}
+}
+
+func TestConfig_BackupPathSerialization(t *testing.T) {
+	tempHome := t.TempDir()
+	cfg := config.DefaultConfig(tempHome)
+	cfg.BackupPath = "custom/backup/dir"
+
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("failed to marshal config: %v", err)
+	}
+
+	var loaded config.Config
+	if err := json.Unmarshal(data, &loaded); err != nil {
+		t.Fatalf("failed to unmarshal config: %v", err)
+	}
+
+	if loaded.BackupPath != "custom/backup/dir" {
+		t.Errorf("expected BackupPath 'custom/backup/dir', got %q", loaded.BackupPath)
+	}
 }
 
 func TestValidateConfig(t *testing.T) {

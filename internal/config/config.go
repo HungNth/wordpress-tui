@@ -57,6 +57,7 @@ type Config struct {
 	BackupExcludes        []string     `json:"backup_excludes"`
 	WPContentCopyExcludes []string     `json:"wp_content_copy_excludes"`
 	DeleteExcludes        []string     `json:"delete_excludes"`
+	BackupPath            string       `json:"backup_path"`
 }
 
 var ValidTweakTypes = map[TweakType]bool{
@@ -72,6 +73,7 @@ func DefaultConfig(homeDir string) *Config {
 	return &Config{
 		UsedHerd:             true,
 		WebsitesPath:         websitesPath,
+		BackupPath:           filepath.Join(websitesPath, "backups"),
 		PackagesAPIURL:       "",
 		PackagesAPIKey:       "",
 		DefaultAdminUsername: "admin",

@@ -1,5 +1,5 @@
 # Title: Strategy 1 Full source code and database backup engine
-Status: ready-for-agent
+Status: resolved
 Labels: ready-for-agent
 
 ## Parent spec
@@ -23,15 +23,14 @@ Implement Strategy 1 in package `internal/backup`:
      4. **Strict Cleanup Invariant**: Delete the temporary `<slug>.sql` file **strictly after both archive creation AND relocation to `backup_path` succeed**.
    - If zip creation, closing, or relocation fails for any reason, retains `<slug>.sql` on disk and returns the underlying error.
    - Calculates artifact size and elapsed execution duration.
-
 ## Acceptance criteria
-- [ ] Archive is constructed in a temporary folder outside `siteDir` to avoid recursive self-archiving.
-- [ ] Temporary SQL dump is deleted strictly after both successful zip creation and move into `backup_path`.
-- [ ] Temporary SQL dump is explicitly retained on disk if zip creation OR file move fails.
-- [ ] Safe relocation supports cross-volume moves between temp dir and `backup_path`.
-- [ ] Zip entries use relative paths with forward slashes (`/`) for Windows/macOS extraction portability.
-- [ ] Excludes properly skip `backup_excludes` patterns and previous backup archives.
-- [ ] Comprehensive unit tests in `internal/backup/full_backup_test.go` verify:
+- [x] Archive is constructed in a temporary folder outside `siteDir` to avoid recursive self-archiving.
+- [x] Temporary SQL dump is deleted strictly after both successful zip creation and move into `backup_path`.
+- [x] Temporary SQL dump is explicitly retained on disk if zip creation OR file move fails.
+- [x] Safe relocation supports cross-volume moves between temp dir and `backup_path`.
+- [x] Zip entries use relative paths with forward slashes (`/`) for Windows/macOS extraction portability.
+- [x] Excludes properly skip `backup_excludes` patterns and previous backup archives.
+- [x] Comprehensive unit tests in `internal/backup/full_backup_test.go` verify:
   - Cross-platform forward-slash path separators in zip headers.
   - Relocation failure preserves `<slug>.sql` on disk.
   - Successful backup cleans up `<slug>.sql`.

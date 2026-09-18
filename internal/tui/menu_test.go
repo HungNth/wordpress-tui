@@ -27,6 +27,10 @@ func TestMenuItems(t *testing.T) {
 			if item.Disabled {
 				t.Errorf("delete item must be enabled")
 			}
+		} else if item.Key == "backup" {
+			if item.Disabled {
+				t.Errorf("backup item must be enabled")
+			}
 		} else if item.Key == "settings" {
 			if item.Disabled {
 				t.Errorf("settings item must be enabled")

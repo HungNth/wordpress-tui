@@ -16,6 +16,7 @@ import (
 type WizardInputs struct {
 	UsedHerd             bool
 	WebsitesPath         string
+	BackupPath           string
 	PackagesAPIURL       string
 	PackagesAPIKey       string
 	DefaultAdminUsername string
@@ -85,6 +86,11 @@ func BuildMainWizardForm(inputs *WizardInputs, homeDir string) *huh.Form {
 					}
 					return nil
 				}),
+
+			huh.NewInput().
+				Title("Backup Storage Path (Optional)").
+				Description("Directory to store website backup archives (leave blank for <websites_path>/backups)").
+				Value(&inputs.BackupPath),
 		),
 
 		huh.NewGroup(
@@ -193,6 +199,11 @@ func ConvertInputsToConfig(inputs WizardInputs, homeDir string) (*config.Config,
 		}
 	}
 	cfg.WebsitesPath = targetPath
+	backupPath := strings.TrimSpace(inputs.BackupPath)
+	if backupPath == "" {
+		backupPath = filepath.Join(targetPath, "backups")
+	}
+	cfg.BackupPath = backupPath
 	cfg.PackagesAPIURL = strings.TrimSpace(inputs.PackagesAPIURL)
 	cfg.PackagesAPIKey = strings.TrimSpace(inputs.PackagesAPIKey)
 	cfg.DefaultAdminUsername = strings.TrimSpace(inputs.DefaultAdminUsername)

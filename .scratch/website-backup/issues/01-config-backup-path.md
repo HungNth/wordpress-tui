@@ -1,5 +1,5 @@
 # Title: Configuration field backup_path and wizard prompt
-Status: ready-for-agent
+Status: resolved
 Labels: ready-for-agent
 
 ## Parent spec
@@ -15,6 +15,6 @@ Labels: ready-for-agent
    - Test JSON serialization and wizard input defaults for `backup_path`.
 
 ## Acceptance criteria
-- [ ] `backup_path` is serialized/deserialized cleanly in `config.json`.
-- [ ] Wizard defaults to `<websites_path>/backups` when user leaves the field blank.
-- [ ] Unit tests pass in `internal/config` and `internal/tui`.
+- [x] `backup_path` is serialized/deserialized cleanly in `config.json`.
+- [x] Wizard defaults to `<websites_path>/backups` when user leaves the field blank.
+- [x] Unit tests pass in `internal/config` and `internal/tui`.
