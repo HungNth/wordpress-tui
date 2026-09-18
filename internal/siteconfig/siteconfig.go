@@ -24,6 +24,7 @@ type DBConfig struct {
 	Password    string
 	Host        string
 	Port        int
+	Socket      string
 	TablePrefix string
 }
 
@@ -77,9 +78,13 @@ func ExtractDBConfig(ctx context.Context, siteDir string, client WPClient) (*DBC
 	}
 
 	rawHost := vals["DB_HOST"]
+	var socket string
 	host := rawHost
 	port := 3306
-	if strings.Contains(rawHost, ":") {
+	if strings.HasPrefix(rawHost, "localhost:") && !strings.Contains(rawHost[10:], ":") && strings.Contains(rawHost[10:], "/") {
+		host = "localhost"
+		socket = rawHost[10:]
+	} else if strings.Contains(rawHost, ":") {
 		h, p, err := net.SplitHostPort(rawHost)
 		if err == nil {
 			host = h
@@ -95,6 +100,7 @@ func ExtractDBConfig(ctx context.Context, siteDir string, client WPClient) (*DBC
 		Password:    vals["DB_PASSWORD"],
 		Host:        host,
 		Port:        port,
+		Socket:      socket,
 		TablePrefix: prefix,
 	}, nil
 }
@@ -150,9 +156,13 @@ func UpdateAdminCredentials(ctx context.Context, siteDir string, dbCfg *DBConfig
 			return fmt.Errorf("invalid table_prefix %q", dbCfg.TablePrefix)
 		}
 
-		addr := fmt.Sprintf("%s:%d", dbCfg.Host, dbCfg.Port)
-		dsn := fmt.Sprintf("%s:%s@tcp(%s)/%s?timeout=5s", dbCfg.User, dbCfg.Password, addr, dbCfg.Name)
-
+		var dsn string
+		if dbCfg.Socket != "" {
+			dsn = fmt.Sprintf("%s:%s@unix(%s)/%s?timeout=5s", dbCfg.User, dbCfg.Password, dbCfg.Socket, dbCfg.Name)
+		} else {
+			addr := fmt.Sprintf("%s:%d", dbCfg.Host, dbCfg.Port)
+			dsn = fmt.Sprintf("%s:%s@tcp(%s)/%s?timeout=5s", dbCfg.User, dbCfg.Password, addr, dbCfg.Name)
+		}
 		db, err := connector("mysql", dsn)
 		if err != nil {
 			return fmt.Errorf("failed to open database connection: %w", err)
