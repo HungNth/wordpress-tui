@@ -53,7 +53,7 @@ func TestWPCLIClient_Flow(t *testing.T) {
 		User: "root",
 		Pass: "secret",
 	}
-	if err := client.ConfigCreate(ctx, dir, "test-db", conn, true); err != nil {
+	if err := client.ConfigCreateWithOptions(ctx, dir, "test-db", conn, wpcli.ConfigCreateOptions{SkipCheck: true}); err != nil {
 		t.Fatal(err)
 	}
 	created, err := client.DBCreate(ctx, dir)
@@ -156,5 +156,58 @@ func TestWPCLIClient_ConfigGet(t *testing.T) {
 	}
 	if val != "site_db" {
 		t.Errorf("expected DB_NAME 'site_db', got %q", val)
+	}
+}
+
+func TestWPCLIClient_RestoreOperations(t *testing.T) {
+	runner := &mockRunner{}
+	client := wpcli.NewClientWithRunner(runner)
+	ctx := t.Context()
+	dir := "/var/www/test-site"
+
+	if err := client.DBImport(ctx, dir, "/tmp/backup.sql"); err != nil {
+		t.Fatalf("DBImport failed: %v", err)
+	}
+	if err := client.SearchReplace(ctx, dir, "http://old.test", "https://new.test"); err != nil {
+		t.Fatalf("SearchReplace failed: %v", err)
+	}
+	if err := client.AI1WMRestore(ctx, dir, "backup.wpress"); err != nil {
+		t.Fatalf("AI1WMRestore failed: %v", err)
+	}
+	val, err := client.OptionGet(ctx, dir, "siteurl")
+	if err != nil {
+		t.Fatalf("OptionGet failed: %v", err)
+	}
+	if val == "" {
+		t.Fatal("expected non-empty OptionGet result")
+	}
+
+	var foundImport, foundSearchReplace, foundAI1WMRestore, foundOptionGet bool
+	for _, call := range runner.calls {
+		if strings.Contains(call, "wp db import /tmp/backup.sql") {
+			foundImport = true
+		}
+		if strings.Contains(call, "wp search-replace http://old.test https://new.test --all-tables-with-prefix --precise") {
+			foundSearchReplace = true
+		}
+		if strings.Contains(call, "wp ai1wm restore backup.wpress --yes") {
+			foundAI1WMRestore = true
+		}
+		if strings.Contains(call, "wp option get siteurl") {
+			foundOptionGet = true
+		}
+	}
+
+	if !foundImport {
+		t.Error("expected wp db import call")
+	}
+	if !foundSearchReplace {
+		t.Error("expected wp search-replace call")
+	}
+	if !foundAI1WMRestore {
+		t.Error("expected wp ai1wm restore call")
+	}
+	if !foundOptionGet {
+		t.Error("expected wp option get call")
 	}
 }

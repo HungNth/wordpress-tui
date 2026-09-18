@@ -65,7 +65,6 @@ func (c *Client) Run(ctx context.Context, dir string, name string, args []string
 	return c.runner.Run(ctx, dir, name, args, stdin)
 }
 
-
 func (c *Client) CheckDependencies(usedHerd bool) error {
 	required := []string{"php", "wp", "mysql"}
 	if usedHerd {
@@ -102,7 +101,13 @@ func (c *Client) CoreDownload(ctx context.Context, dir, locale string) error {
 	return nil
 }
 
-func (c *Client) ConfigCreate(ctx context.Context, dir, dbName string, conn DBConnection, skipCheck bool) error {
+type ConfigCreateOptions struct {
+	SkipCheck bool
+	Force     bool
+	DBPrefix  string
+}
+
+func (c *Client) ConfigCreateWithOptions(ctx context.Context, dir, dbName string, conn DBConnection, opts ConfigCreateOptions) error {
 	hostVal := conn.Host
 	if conn.Socket != "" {
 		hostVal = "localhost:" + conn.Socket
@@ -117,13 +122,21 @@ func (c *Client) ConfigCreate(ctx context.Context, dir, dbName string, conn DBCo
 		"--dbhost=" + hostVal,
 	}
 
+	if opts.DBPrefix != "" {
+		args = append(args, "--dbprefix="+opts.DBPrefix)
+	}
+
+	if opts.Force {
+		args = append(args, "--force")
+	}
+
 	var stdin string
 	if conn.Pass != "" {
 		args = append(args, "--prompt=dbpass")
 		stdin = conn.Pass + "\n"
 	}
 
-	if skipCheck {
+	if opts.SkipCheck {
 		args = append(args, "--skip-check")
 	}
 
@@ -353,4 +366,40 @@ func (c *Client) LanguageCore(ctx context.Context, dir, action, value string) er
 		return fmt.Errorf("wp language core %s %s failed: %w (output: %s)", action, value, err, strings.TrimSpace(stderr))
 	}
 	return nil
+}
+
+func (c *Client) DBImport(ctx context.Context, dir, sqlFilePath string) error {
+	cleanPath := strings.ReplaceAll(sqlFilePath, "\\", "/")
+	args := []string{"db", "import", cleanPath}
+	_, stderr, err := c.runner.Run(ctx, dir, "wp", args, "")
+	if err != nil {
+		return fmt.Errorf("wp db import failed: %w (output: %s)", err, strings.TrimSpace(stderr))
+	}
+	return nil
+}
+
+func (c *Client) SearchReplace(ctx context.Context, dir, search, replace string) error {
+	args := []string{"search-replace", search, replace, "--all-tables-with-prefix", "--precise"}
+	_, stderr, err := c.runner.Run(ctx, dir, "wp", args, "")
+	if err != nil {
+		return fmt.Errorf("wp search-replace failed: %w (output: %s)", err, strings.TrimSpace(stderr))
+	}
+	return nil
+}
+
+func (c *Client) AI1WMRestore(ctx context.Context, dir, archiveFileName string) error {
+	args := []string{"ai1wm", "restore", archiveFileName, "--yes"}
+	_, stderr, err := c.runner.Run(ctx, dir, "wp", args, "")
+	if err != nil {
+		return fmt.Errorf("wp ai1wm restore failed: %w (output: %s)", err, strings.TrimSpace(stderr))
+	}
+	return nil
+}
+
+func (c *Client) OptionGet(ctx context.Context, dir, key string) (string, error) {
+	stdout, stderr, err := c.runner.Run(ctx, dir, "wp", []string{"option", "get", key}, "")
+	if err != nil {
+		return "", fmt.Errorf("wp option get %s failed: %w (output: %s)", key, err, strings.TrimSpace(stderr))
+	}
+	return strings.TrimSpace(stdout), nil
 }
