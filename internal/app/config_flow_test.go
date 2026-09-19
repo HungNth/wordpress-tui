@@ -134,9 +134,6 @@ func TestRunConfigFlowWithDeps_ApplyTweaks(t *testing.T) {
 			}
 			return tui.ActionBack, nil
 		},
-		PromptContinue: func() (bool, error) {
-			return false, nil // exit site loop
-		},
 	}
 	err := app.RunConfigFlowWithDeps(context.Background(), cfg, deps)
 	if err != nil {

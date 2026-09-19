@@ -2,10 +2,12 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
+	"charm.land/huh/v2"
 	"wptui/internal/config"
 	"wptui/internal/launcher"
 	"wptui/internal/tui"
@@ -57,9 +59,11 @@ func RunSettingsFlowWithDeps(ctx context.Context, cfg *config.Config, deps Setti
 	for {
 		action, err := promptAction()
 		if err != nil {
+			if errors.Is(err, huh.ErrUserAborted) || errors.Is(err, ErrUserCancelled) {
+				return nil
+			}
 			return err
 		}
-
 		if action == tui.ActionSettingsBack || action == "" {
 			return nil
 		}

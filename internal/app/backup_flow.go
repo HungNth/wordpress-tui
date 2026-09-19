@@ -41,7 +41,7 @@ func RunDefaultBackupFlow(ctx context.Context, cfg *config.Config) error {
 func RunBackupFlowWithDeps(ctx context.Context, cfg *config.Config, deps BackupFlowDependencies) error {
 	selectWebsite := deps.SelectWebsite
 	if selectWebsite == nil {
-		selectWebsite = tui.SelectWebsiteForConfig
+		selectWebsite = tui.SelectWebsiteForBackup
 	}
 
 	selectStrategy := deps.SelectStrategy

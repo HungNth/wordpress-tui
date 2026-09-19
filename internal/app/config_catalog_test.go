@@ -52,9 +52,6 @@ func TestRunConfigFlowWithDeps_CatalogAvailableForSearch(t *testing.T) {
 			}
 			return nil, nil, nil
 		},
-		PromptContinue: func() (bool, error) {
-			return false, nil
-		},
 	}
 
 	err := app.RunConfigFlowWithDeps(context.Background(), cfg, deps)

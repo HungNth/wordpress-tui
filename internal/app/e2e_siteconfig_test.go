@@ -192,12 +192,6 @@ func TestE2E_ComposedSiteConfiguration(t *testing.T) {
 		PromptThemeAct: func() (bool, error) {
 			return false, nil // install without activation
 		},
-		PromptContinue: func() (bool, error) {
-			if actionIdx < len(actionsToRun) {
-				return true, nil // continue configuring site
-			}
-			return false, nil // finish configuring site
-		},
 	}
 
 	err := app.RunConfigFlowWithDeps(context.Background(), cfg, deps)

@@ -294,3 +294,17 @@ func TestRunSettingsFlowWithDeps_OpenCache(t *testing.T) {
 		t.Errorf("expected cache directory launcher call, got: %v", mockLaunch.runs)
 	}
 }
+
+func TestRunSettingsFlowWithDeps_CancellationReturnsNeutrally(t *testing.T) {
+	deps := app.SettingsFlowDependencies{
+		ConfigPath: filepath.Join(t.TempDir(), "config.json"),
+		PromptAction: func() (tui.SettingsAction, error) {
+			return "", app.ErrUserCancelled
+		},
+	}
+
+	err := app.RunSettingsFlowWithDeps(context.Background(), &config.Config{}, deps)
+	if err != nil {
+		t.Fatalf("expected cancellation to return nil, got error: %v", err)
+	}
+}

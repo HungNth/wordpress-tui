@@ -7,9 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
 	"charm.land/huh/v2"
-	"charm.land/lipgloss/v2"
 	"wptui/internal/config"
 	"wptui/internal/create"
 	"wptui/internal/deprovision"
@@ -17,6 +15,7 @@ import (
 	"wptui/internal/tui"
 	"wptui/internal/wpcli"
 )
+var ErrUserCancelled = errors.New("user cancelled")
 
 type Options struct {
 	HomeDir    string
@@ -263,7 +262,7 @@ func RunCreateFlowWithDeps(ctx context.Context, cfg *config.Config, deps CreateF
 		defaultThemeSkipped := false
 		if cfg.DefaultThemeSlug != "" {
 			if strings.TrimSpace(cfg.PackagesAPIURL) != "" && deps.Resolver != nil {
-				fmt.Printf("→ Resolving default theme %s...\n", cfg.DefaultThemeSlug)
+				tui.PrintProgress(0, 0, fmt.Sprintf("Resolving default theme %s...", cfg.DefaultThemeSlug))
 				art, err := deps.Resolver.ResolvePackage(ctx, packages.PackageRef{Type: packages.PackageTypeTheme, Slug: cfg.DefaultThemeSlug}, stageDir)
 				if err != nil {
 					return fmt.Errorf("failed to resolve default theme %q: %w", cfg.DefaultThemeSlug, err)
@@ -277,7 +276,7 @@ func RunCreateFlowWithDeps(ctx context.Context, cfg *config.Config, deps CreateF
 		var pluginArts []packages.Artifact
 		if deps.Resolver != nil && len(plugins) > 0 {
 			for _, p := range plugins {
-				fmt.Printf("→ Resolving plugin %s...\n", p)
+				tui.PrintProgress(0, 0, fmt.Sprintf("Resolving plugin %s...", p))
 				art, err := deps.Resolver.ResolvePackage(ctx, packages.PackageRef{Type: packages.PackageTypePlugin, Slug: p}, stageDir)
 				if err != nil {
 					return fmt.Errorf("failed to resolve plugin %q: %w", p, err)
@@ -292,7 +291,7 @@ func RunCreateFlowWithDeps(ctx context.Context, cfg *config.Config, deps CreateF
 				if cfg.DefaultThemeSlug != "" && th == cfg.DefaultThemeSlug {
 					continue
 				}
-				fmt.Printf("→ Resolving theme %s...\n", th)
+				tui.PrintProgress(0, 0, fmt.Sprintf("Resolving theme %s...", th))
 				art, err := deps.Resolver.ResolvePackage(ctx, packages.PackageRef{Type: packages.PackageTypeTheme, Slug: th}, stageDir)
 				if err != nil {
 					return fmt.Errorf("failed to resolve theme %q: %w", th, err)
@@ -317,7 +316,7 @@ func RunCreateFlowWithDeps(ctx context.Context, cfg *config.Config, deps CreateF
 		var currentStep string
 		progress := func(step, detail string) {
 			currentStep = detail
-			fmt.Printf("→ %s\n", detail)
+			tui.PrintProgress(0, 0, detail)
 		}
 
 		result, createErr := creator.Create(ctx, req, progress)
@@ -331,10 +330,10 @@ func RunCreateFlowWithDeps(ctx context.Context, cfg *config.Config, deps CreateF
 			return fmt.Errorf("creation failed at step %q: %w", currentStep, createErr)
 		}
 		_ = os.RemoveAll(stageDir)
-		successStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575")).Bold(true)
-		highlightStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#00FFFF")).Bold(true)
-		warningStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFA500")).Bold(true)
-		errorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF4444")).Bold(true)
+		successStyle := tui.StyleSuccess
+		highlightStyle := tui.StyleHighlight
+		warningStyle := tui.StyleWarning
+		errorStyle := tui.StyleError
 
 		fmt.Println("\n" + successStyle.Render("=== Website Provisioned Successfully! ==="))
 		fmt.Printf("Path: %s\n", highlightStyle.Render(result.WebsitePath))

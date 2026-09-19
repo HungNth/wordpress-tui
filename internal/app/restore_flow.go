@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"charm.land/huh/v2/spinner"
 	"wptui/internal/config"
 	"wptui/internal/restore"
 	"wptui/internal/tui"
@@ -27,7 +26,9 @@ func RunDefaultRestoreFlow(ctx context.Context, cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
-
+	if strategy == tui.StrategyBack || strategy == "" {
+		return nil
+	}
 	if strategy == restore.StrategyAI1WM && strings.TrimSpace(cfg.PackagesAPIURL) == "" {
 		return errors.New("cannot perform AI1WM restore: packages_api_url is not configured in config.json")
 	}
@@ -79,24 +80,10 @@ func RunDefaultRestoreFlow(ctx context.Context, cfg *config.Config) error {
 		AdminEmail:  inputs.AdminEmail,
 	}
 
-	var result *restore.Result
-
-	action := func(actionCtx context.Context) error {
-		res, err := restorer.Restore(actionCtx, req, func(step, description string) {
-			tui.PrintRestoreProgress(step, description)
-		})
-		if err != nil {
-			return err
-		}
-		result = res
-		return nil
-	}
-
-	if err := spinner.New().
-		Title("Restoring website from backup archive...").
-		Context(ctx).
-		ActionWithErr(action).
-		Run(); err != nil {
+	result, err := restorer.Restore(ctx, req, func(step, description string) {
+		tui.PrintRestoreProgress(step, description)
+	})
+	if err != nil {
 		return err
 	}
 

@@ -25,7 +25,6 @@ type ConfigFlowDependencies struct {
 	PromptPackages func(context.Context, *config.Config, []packages.CatalogItem) ([]string, []string, error)
 	PromptThemes   func(context.Context, *config.Config, []packages.CatalogItem) ([]string, []string, error)
 	PromptThemeAct func() (bool, error)
-	PromptContinue func() (bool, error)
 	Connector      siteconfig.DBConnector
 }
 
@@ -78,10 +77,6 @@ func RunConfigFlowWithDeps(ctx context.Context, cfg *config.Config, deps ConfigF
 		promptThemeAct = tui.PromptThemeActivation
 	}
 
-	promptContinue := deps.PromptContinue
-	if promptContinue == nil {
-		promptContinue = tui.PromptContinueConfiguring
-	}
 
 	for {
 		candidates, err := deprovision.DiscoverCandidates(ctx, cfg.WebsitesPath, cfg.DeleteExcludes)
@@ -257,10 +252,6 @@ func RunConfigFlowWithDeps(ctx context.Context, cfg *config.Config, deps ConfigF
 				tui.PrintPackageInstallSummary(results)
 			}
 
-			cont, err := promptContinue()
-			if err != nil || !cont {
-				siteLoop = false
-			}
 		}
 	}
 }
