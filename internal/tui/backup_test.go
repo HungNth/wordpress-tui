@@ -32,11 +32,13 @@ func TestPrintBackupSummary(t *testing.T) {
 	var buf bytes.Buffer
 	_, _ = io.Copy(&buf, r)
 	out := buf.String()
-
 	if !strings.Contains(out, "Backup Complete: Full Source & Database") {
 		t.Errorf("expected summary title, got: %q", out)
 	}
-	if !strings.Contains(out, "full_my-site_2026-09-18_10-00-00.zip") {
+	if strings.Contains(out, "[✓] Archive Location") {
+		t.Errorf("expected clean metadata without decorative [✓] checkmark, got: %q", out)
+	}
+	if !strings.Contains(out, "/path/to/backups/full_my-site_2026-09-18_10-00-00.zip") {
 		t.Errorf("expected file path in output, got: %q", out)
 	}
 	if !strings.Contains(out, "10.00 MB") {

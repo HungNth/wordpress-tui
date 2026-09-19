@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"charm.land/huh/v2"
-	"charm.land/lipgloss/v2"
 	"wptui/internal/config"
 	"wptui/internal/restore"
 )
@@ -17,18 +16,21 @@ const CustomPathOption = "[Enter custom path...]"
 
 type RestoreInputs = CreateInputs
 
+const StrategyBack restore.Strategy = "back"
+
 // PromptRestoreStrategy displays an interactive sub-menu to choose between Full Zip and AI1WM.
 func PromptRestoreStrategy() (restore.Strategy, error) {
 	options := []huh.Option[restore.Strategy]{
-		huh.NewOption("1. Full source code & database (.zip)", restore.StrategyFullZIP),
-		huh.NewOption("2. All-in-One WP Migration (.wpress)", restore.StrategyAI1WM),
+		huh.NewOption("Full source code & database (.zip)", restore.StrategyFullZIP),
+		huh.NewOption("All-in-One WP Migration (.wpress)", restore.StrategyAI1WM),
+		huh.NewOption("Back to Main Menu", StrategyBack),
 	}
 
 	var choice restore.Strategy
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewSelect[restore.Strategy]().
-				Title("Select Restore Strategy").
+				Title("WPTUI / Restore").
 				Description("Choose the backup format you want to restore").
 				Options(options...).
 				Value(&choice),
@@ -36,6 +38,9 @@ func PromptRestoreStrategy() (restore.Strategy, error) {
 	).WithTheme(CustomTheme())
 
 	if err := form.Run(); err != nil {
+		if errors.Is(err, huh.ErrUserAborted) {
+			return StrategyBack, nil
+		}
 		return "", err
 	}
 
@@ -219,28 +224,27 @@ func PromptArchiveSelection(backupPath string, strategy restore.Strategy) (strin
 
 // PrintRestoreSummary prints the completed restoration summary.
 func PrintRestoreSummary(res *restore.Result) {
-	cyan := lipgloss.NewStyle().Foreground(lipgloss.Color("#00FFFF")).Bold(true)
-	green := lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575")).Bold(true)
-	yellow := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFCC00")).Bold(true)
-	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("#666666"))
-
-	fmt.Println("\n" + cyan.Render("=== Website Restoration Complete ==="))
-	fmt.Printf("  %s %s: %s\n", green.Render("[✓]"), "Website Name", res.WebsiteName)
-	fmt.Printf("  %s %s: %s\n", green.Render("[✓]"), "Website Directory", res.SitePath)
-	fmt.Printf("  %s %s: %s\n", green.Render("[✓]"), "Website URL", res.SiteURL)
-	fmt.Printf("  %s %s: %s\n", green.Render("[✓]"), "Database Name", res.Database)
-	fmt.Printf("  %s %s: %s\n", green.Render("[✓]"), "Admin User", res.AdminUser)
-
+	title := "=== Website Restoration Complete ==="
 	if res.TLSError != "" {
-		fmt.Printf("  %s %s\n", yellow.Render("[!]"), res.TLSError)
+		title = "=== Website Restoration Completed with Warnings ==="
 	}
 
-	fmt.Println(dim.Render("  Your restored website is ready for local development."))
+	fmt.Println("\n" + StyleHighlight.Render(title))
+	fmt.Printf("  Website Name:      %s\n", res.WebsiteName)
+	fmt.Printf("  Website Directory: %s\n", StyleHighlight.Render(res.SitePath))
+	fmt.Printf("  Website URL:       %s\n", StyleHighlight.Render(res.SiteURL))
+	fmt.Printf("  Database Name:     %s\n", res.Database)
+	fmt.Printf("  Admin User:        %s\n", res.AdminUser)
+
+	if res.TLSError != "" {
+		fmt.Printf("  %s %s\n", StyleWarning.Render("[!]"), res.TLSError)
+	}
+
+	fmt.Println(StyleMuted.Render("  Your restored website is ready for local development."))
 	fmt.Println()
 }
 
 // PrintRestoreProgress prints a single progress step line.
 func PrintRestoreProgress(step, description string) {
-	cyan := lipgloss.NewStyle().Foreground(lipgloss.Color("#00FFFF")).Bold(true)
-	fmt.Printf("  %s %s\n", cyan.Render("[-]"), description)
+	fmt.Printf("  %s %s\n", StyleHighlight.Render("[-]"), description)
 }

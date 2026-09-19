@@ -22,6 +22,7 @@ type LiveSearchModel struct {
 	selectedOrder []string
 	submitted     bool
 	aborted       bool
+	cancelled     bool
 }
 
 // NewLiveSearchModel initializes a new live search model with initial selections.
@@ -60,14 +61,15 @@ func (m *LiveSearchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		str := msg.String()
 		switch str {
-		case "ctrl+c", "esc":
+		case "ctrl+c":
+			m.cancelled = true
+			return m, tea.Quit
+		case "esc":
 			m.aborted = true
 			return m, tea.Quit
-
 		case "enter":
 			m.submitted = true
 			return m, tea.Quit
-
 		case "up":
 			if m.cursor > 0 {
 				m.cursor--
@@ -124,7 +126,7 @@ func (m *LiveSearchModel) View() tea.View {
 	highlightStyle := lipgloss.NewStyle().Foreground(cyan).Bold(true)
 	checkedStyle := lipgloss.NewStyle().Foreground(green).Bold(true)
 	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
-	sb.WriteString(titleStyle.Render(fmt.Sprintf("🔍 Live %s Catalog Search", strings.Title(string(m.itemType)))))
+	sb.WriteString(titleStyle.Render(fmt.Sprintf("Live %s Catalog Search", strings.Title(string(m.itemType)))))
 	sb.WriteString("\n")
 
 	// Summary bar
@@ -199,7 +201,17 @@ func (m *LiveSearchModel) ViewString() string {
 	return m.View().Content
 }
 
-// FinalSelected returns the deduplicated list of selected slugs in deterministic selection order.
+// IsAborted returns true if user aborted with Esc.
+func (m *LiveSearchModel) IsAborted() bool {
+	return m.aborted
+}
+
+// IsCancelled returns true if user cancelled with Ctrl+C.
+func (m *LiveSearchModel) IsCancelled() bool {
+	return m.cancelled
+}
+
+// FinalSelected returns the accumulated list of selected package slugs.
 func (m *LiveSearchModel) FinalSelected() []string {
 	var out []string
 	for _, s := range m.selectedOrder {
@@ -207,10 +219,5 @@ func (m *LiveSearchModel) FinalSelected() []string {
 			out = append(out, s)
 		}
 	}
-	return deduplicateStrings(out)
-}
-
-// IsAborted returns true if the user cancelled the search.
-func (m *LiveSearchModel) IsAborted() bool {
-	return m.aborted
+	return out
 }

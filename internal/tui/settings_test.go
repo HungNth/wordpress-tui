@@ -47,3 +47,20 @@ func TestPrintSettingsError(t *testing.T) {
 		t.Errorf("expected error output, got %q", out)
 	}
 }
+
+func TestPromptSettingsAction_LabelsMatchDesignContract(t *testing.T) {
+	options := tui.GetSettingsOptions()
+	if len(options) == 0 {
+		t.Fatal("expected non-empty settings options")
+	}
+	for _, opt := range options {
+		// Must not have numeric prefixes like "1. " or "2. "
+		if strings.HasPrefix(opt.Label, "1. ") || strings.HasPrefix(opt.Label, "2. ") {
+			t.Errorf("expected plain label without numeric accelerator prefix, got %q", opt.Label)
+		}
+		// Must not have emoji or arrow symbols
+		if strings.Contains(opt.Label, "←") {
+			t.Errorf("expected plain label without arrow symbols, got %q", opt.Label)
+		}
+	}
+}

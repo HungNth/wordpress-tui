@@ -22,7 +22,7 @@ func BuildPackageOptions(defaultOptions []huh.Option[string], hasCatalog bool) [
 	}
 
 	opts := make([]huh.Option[string], 0, len(defaultOptions)+1)
-	opts = append(opts, huh.NewOption("🔍 Type to search catalog...", SearchOptionKey))
+	opts = append(opts, huh.NewOption("Search catalog...", SearchOptionKey))
 	opts = append(opts, defaultOptions...)
 	return opts
 }
@@ -99,11 +99,16 @@ func SelectPackagesFlow(
 	}
 
 	liveM, ok := finalModel.(*LiveSearchModel)
-	if !ok || liveM.IsAborted() {
-		// User aborted via Esc/Ctrl+C; retain choices made before search
+	if !ok {
 		return deduplicateStrings(selected), nil
 	}
-
+	if liveM.IsCancelled() {
+		return nil, huh.ErrUserAborted
+	}
+	if liveM.IsAborted() {
+		// User closed search via Esc: retain choices made before search
+		return deduplicateStrings(selected), nil
+	}
 	return liveM.FinalSelected(), nil
 }
 

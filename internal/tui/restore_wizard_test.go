@@ -1,8 +1,11 @@
 package tui_test
 
 import (
+	"bytes"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"wptui/internal/restore"
@@ -59,5 +62,42 @@ func TestValidateArchivePath(t *testing.T) {
 	_ = os.WriteFile(invalidExt, []byte("data"), 0644)
 	if err := tui.ValidateArchivePath(invalidExt, restore.StrategyFullZIP); err == nil {
 		t.Error("expected error for non-zip extension")
+	}
+}
+
+func TestPrintRestoreSummary_MetadataFormatting(t *testing.T) {
+	orig := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	res := &restore.Result{
+		WebsiteName: "My Site",
+		SitePath:    "/sites/my-site",
+		SiteURL:     "https://my-site.test",
+		Database:    "my_site_db",
+		AdminUser:   "admin",
+		TLSError:    "failed to register cert",
+	}
+
+	tui.PrintRestoreSummary(res)
+
+	_ = w.Close()
+	os.Stdout = orig
+
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+	out := buf.String()
+
+	if strings.Contains(out, "[✓]") {
+		t.Errorf("expected clean metadata without decorative [✓] checkmark, got: %q", out)
+	}
+	if !strings.Contains(out, "Website Name:      My Site") {
+		t.Errorf("expected Website Name in summary, got: %q", out)
+	}
+	if !strings.Contains(out, "https://my-site.test") {
+		t.Errorf("expected URL in summary, got: %q", out)
+	}
+	if !strings.Contains(out, "[!]") || !strings.Contains(out, "failed to register cert") {
+		t.Errorf("expected [!] warning in summary, got: %q", out)
 	}
 }

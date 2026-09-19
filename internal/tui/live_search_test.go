@@ -109,6 +109,18 @@ func TestLiveSearchModel_EscapeAborts(t *testing.T) {
 	if !m.IsAborted() {
 		t.Errorf("expected Esc to abort search")
 	}
+	if m.IsCancelled() {
+		t.Errorf("expected Esc not to cancel workflow")
+	}
+}
+
+func TestLiveSearchModel_CtrlCCancels(t *testing.T) {
+	m := tui.NewLiveSearchModel(packages.PackageTypePlugin, nil, []string{"init"})
+	newM, _ := m.Update(tea.KeyPressMsg{Text: "ctrl+c"})
+	m = newM.(*tui.LiveSearchModel)
+	if !m.IsCancelled() {
+		t.Errorf("expected ctrl+c to cancel search workflow")
+	}
 }
 
 func TestLiveSearchModel_SmallResultNoNegativeOverflow(t *testing.T) {

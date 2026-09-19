@@ -4,9 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-
 	"charm.land/huh/v2"
-	"charm.land/lipgloss/v2"
 	"wptui/internal/config"
 	"wptui/internal/deprovision"
 	"wptui/internal/siteconfig"
@@ -29,12 +27,10 @@ func SelectWebsiteForConfig(websites []deprovision.Candidate) (*deprovision.Cand
 	}
 
 	options := make([]huh.Option[string], 0, len(websites)+1)
-	options = append(options, huh.NewOption("← Back to Main Menu", "back"))
-
 	for _, w := range websites {
 		options = append(options, huh.NewOption(fmt.Sprintf("%s (%s)", w.Slug, w.Path), w.Slug))
 	}
-
+	options = append(options, huh.NewOption("Back to Main Menu", "back"))
 	var choice string
 	form := huh.NewForm(
 		huh.NewGroup(
@@ -66,13 +62,12 @@ func SelectWebsiteForConfig(websites []deprovision.Candidate) (*deprovision.Cand
 // SelectConfigAction displays the sub-menu for the selected website.
 func SelectConfigAction(siteSlug string) (ConfigAction, error) {
 	options := []huh.Option[ConfigAction]{
-		huh.NewOption("1. Apply wp_tweaks from config.json", ActionApplyTweaks),
-		huh.NewOption("2. Change administrator credentials", ActionChangeAdmin),
-		huh.NewOption("3. Install plugins", ActionInstallPlugins),
-		huh.NewOption("4. Install themes", ActionInstallThemes),
-		huh.NewOption("← Back (Select another website)", ActionBack),
+		huh.NewOption("Apply wp_tweaks from config.json", ActionApplyTweaks),
+		huh.NewOption("Change administrator credentials", ActionChangeAdmin),
+		huh.NewOption("Install plugins", ActionInstallPlugins),
+		huh.NewOption("Install themes", ActionInstallThemes),
+		huh.NewOption("Back to Website Selection", ActionBack),
 	}
-
 	var choice ConfigAction
 	form := huh.NewForm(
 		huh.NewGroup(
@@ -202,70 +197,41 @@ func PromptThemeActivation() (bool, error) {
 	return activate, nil
 }
 
-// PromptContinueConfiguring asks if the user wants to continue with another action on the same site.
-func PromptContinueConfiguring() (bool, error) {
-	var cont bool
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewConfirm().
-				Title("Continue configuring this website?").
-				Affirmative("Yes").
-				Negative("No").
-				Value(&cont),
-		),
-	).WithTheme(CustomTheme())
-
-	if err := form.Run(); err != nil {
-		return false, err
-	}
-	return cont, nil
-}
 func PrintProgress(step, total int, message string) {
-	cyan := lipgloss.NewStyle().Foreground(lipgloss.Color("#00FFFF")).Bold(true)
 	if total > 0 {
-		fmt.Printf("  %s %s\n", cyan.Render(fmt.Sprintf("[%d/%d]", step, total)), message)
+		fmt.Printf("  %s %s\n", StyleHighlight.Render(fmt.Sprintf("[%d/%d]", step, total)), message)
 	} else {
-		fmt.Printf("  %s %s\n", cyan.Render("[-]"), message)
+		fmt.Printf("  %s %s\n", StyleHighlight.Render("[-]"), message)
 	}
 }
 
-
-// PrintTweakSummary prints the status of applied tweaks in color.
+// PrintTweakSummary prints the results of applying tweaks.
 func PrintTweakSummary(results []siteconfig.TweakStatus) {
-	cyan := lipgloss.NewStyle().Foreground(lipgloss.Color("#00FFFF")).Bold(true)
-	green := lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575")).Bold(true)
-	red := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF3333")).Bold(true)
-
-	fmt.Println("\n" + cyan.Render("=== WP Tweaks Summary ==="))
+	fmt.Println("\n" + StyleHighlight.Render("=== WP Tweaks Summary ==="))
 	for _, r := range results {
 		desc := fmt.Sprintf("[%s] %s=%s", r.Tweak.Type, r.Tweak.Key, r.Tweak.Value)
 		if r.Success {
-			fmt.Printf("  %s %s\n", green.Render("[✓]"), desc)
+			fmt.Printf("  %s %s\n", StyleSuccess.Render("[✓]"), desc)
 		} else {
-			fmt.Printf("  %s %s: %s\n", red.Render("[✗]"), desc, r.Err)
+			fmt.Printf("  %s %s: %s\n", StyleError.Render("[✗]"), desc, r.Err)
 		}
 	}
 	fmt.Println()
 }
 
 func PrintPackageInstallSummary(results []siteconfig.PackageStatus) {
-	cyan := lipgloss.NewStyle().Foreground(lipgloss.Color("#00FFFF")).Bold(true)
-	green := lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575")).Bold(true)
-	yellow := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFF00")).Bold(true)
-	red := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF3333")).Bold(true)
-
-	fmt.Println("\n" + cyan.Render("=== Package Installation Summary ==="))
+	fmt.Println("\n" + StyleHighlight.Render("=== Package Installation Summary ==="))
 	for _, r := range results {
 		act := ""
 		if r.Activated {
 			act = " (Activated)"
 		}
 		if r.Skipped {
-			fmt.Printf("  %s %s: %s — %s\n", yellow.Render("[-]"), r.Type, r.Slug, r.SkipReason)
+			fmt.Printf("  %s %s: %s — %s\n", StyleWarning.Render("[-]"), r.Type, r.Slug, r.SkipReason)
 		} else if r.Success {
-			fmt.Printf("  %s %s: %s%s\n", green.Render("[✓]"), r.Type, r.Slug, act)
+			fmt.Printf("  %s %s: %s%s\n", StyleSuccess.Render("[✓]"), r.Type, r.Slug, act)
 		} else {
-			fmt.Printf("  %s %s: %s: %s\n", red.Render("[✗]"), r.Type, r.Slug, r.Err)
+			fmt.Printf("  %s %s: %s: %s\n", StyleError.Render("[✗]"), r.Type, r.Slug, r.Err)
 		}
 	}
 	fmt.Println()

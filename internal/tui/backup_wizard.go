@@ -1,11 +1,12 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 
 	"charm.land/huh/v2"
-	"charm.land/lipgloss/v2"
 	"wptui/internal/backup"
+	"wptui/internal/deprovision"
 )
 
 type BackupStrategyAction string
@@ -16,26 +17,71 @@ const (
 	ActionBackupBack  BackupStrategyAction = "back"
 )
 
-// PromptBackupStrategy displays an interactive sub-menu to choose between Full Zip and AI1WM.
-func PromptBackupStrategy(siteSlug string) (BackupStrategyAction, error) {
-	options := []huh.Option[BackupStrategyAction]{
-		huh.NewOption("1. Full source code & database (.zip)", ActionBackupFull),
-		huh.NewOption("2. All-in-One WP Migration (.wpress)", ActionBackupAI1WM),
-		huh.NewOption("← Back (Select another website)", ActionBackupBack),
+// SelectWebsiteForBackup displays a single-select menu of candidate websites to back up, with Back to Main Menu at the end.
+func SelectWebsiteForBackup(websites []deprovision.Candidate) (*deprovision.Candidate, error) {
+	if len(websites) == 0 {
+		return nil, errors.New("no existing websites found to backup")
 	}
 
-	var choice BackupStrategyAction
+	options := make([]huh.Option[string], 0, len(websites)+1)
+	for _, w := range websites {
+		options = append(options, huh.NewOption(fmt.Sprintf("%s (%s)", w.Slug, w.Path), w.Slug))
+	}
+	options = append(options, huh.NewOption("Back to Main Menu", "back"))
+
+	var choice string
 	form := huh.NewForm(
 		huh.NewGroup(
-			huh.NewSelect[BackupStrategyAction]().
-				Title(fmt.Sprintf("Backup Website: %s", siteSlug)).
-				Description("Choose a backup strategy").
+			huh.NewSelect[string]().
+				Title("WPTUI / Backup").
+				Description("Select a website to back up").
 				Options(options...).
 				Value(&choice),
 		),
 	).WithTheme(CustomTheme())
 
 	if err := form.Run(); err != nil {
+		if errors.Is(err, huh.ErrUserAborted) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	if choice == "back" || choice == "" {
+		return nil, nil // graceful back navigation
+	}
+
+	for _, w := range websites {
+		if w.Slug == choice {
+			return &w, nil
+		}
+	}
+	return nil, nil
+}
+
+// PromptBackupStrategy displays an interactive sub-menu to choose between Full Zip and AI1WM.
+func PromptBackupStrategy(siteSlug string) (BackupStrategyAction, error) {
+	options := []huh.Option[BackupStrategyAction]{
+		huh.NewOption("Full source code & database (.zip)", ActionBackupFull),
+		huh.NewOption("All-in-One WP Migration (.wpress)", ActionBackupAI1WM),
+		huh.NewOption("Back to Website Selection", ActionBackupBack),
+	}
+
+	var choice BackupStrategyAction
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[BackupStrategyAction]().
+				Title("WPTUI / Backup").
+				Description(fmt.Sprintf("Choose a backup format for %s", siteSlug)).
+				Options(options...).
+				Value(&choice),
+		),
+	).WithTheme(CustomTheme())
+
+	if err := form.Run(); err != nil {
+		if errors.Is(err, huh.ErrUserAborted) {
+			return ActionBackupBack, nil
+		}
 		return "", err
 	}
 
@@ -44,20 +90,16 @@ func PromptBackupStrategy(siteSlug string) (BackupStrategyAction, error) {
 
 // PrintBackupSummary prints the completed backup archive details in color.
 func PrintBackupSummary(res *backup.BackupResult) {
-	cyan := lipgloss.NewStyle().Foreground(lipgloss.Color("#00FFFF")).Bold(true)
-	green := lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575")).Bold(true)
-	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("#666666"))
-
 	strategyTitle := "Full Source & Database"
 	if res.Strategy == backup.StrategyAI1WM {
 		strategyTitle = "All-in-One WP Migration"
 	}
 
-	fmt.Println("\n" + cyan.Render(fmt.Sprintf("=== Backup Complete: %s ===", strategyTitle)))
-	fmt.Printf("  %s %s: %s\n", green.Render("[✓]"), "Archive Location", res.FilePath)
-	fmt.Printf("  %s %s: %s\n", green.Render("[✓]"), "Archive Size", formatBytes(res.FileSize))
-	fmt.Printf("  %s %s: %v\n", green.Render("[✓]"), "Time Elapsed", res.Duration.Round(100*1000000))
-	fmt.Println(dim.Render("  Artifact is ready in your backup storage."))
+	fmt.Println("\n" + StyleHighlight.Render(fmt.Sprintf("=== Backup Complete: %s ===", strategyTitle)))
+	fmt.Printf("  Archive Location: %s\n", StyleHighlight.Render(res.FilePath))
+	fmt.Printf("  Archive Size:     %s\n", formatBytes(res.FileSize))
+	fmt.Printf("  Time Elapsed:     %v\n", res.Duration.Round(100*1000000))
+	fmt.Println(StyleMuted.Render("  Artifact is ready in your backup storage."))
 	fmt.Println()
 }
 

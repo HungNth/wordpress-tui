@@ -51,14 +51,18 @@ func BuildMainMenuForm(choice *string) *huh.Form {
 
 // RunMainMenu displays the interactive main menu and returns the selected action key.
 func RunMainMenu() (string, error) {
-	var choice string
-	form := BuildMainMenuForm(&choice)
-	err := form.Run()
-	if err != nil {
-		if errors.Is(err, huh.ErrUserAborted) {
-			return "exit", nil
+	for {
+		var choice string
+		form := BuildMainMenuForm(&choice)
+		err := form.Run()
+		if err != nil {
+			if errors.Is(err, huh.ErrUserAborted) {
+				// Per DESIGN.md: "Esc on the main menu stays on the menu; Exit or Ctrl+C exits."
+				// Staying in the loop keeps the menu active when user presses Esc.
+				continue
+			}
+			return "", err
 		}
-		return "", err
+		return choice, nil
 	}
-	return choice, nil
 }
