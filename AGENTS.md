@@ -1,5 +1,9 @@
 # AGENTS.md
 
+## Terminal UI
+
+Before changing terminal menus, forms, keyboard interactions, progress, or result output, read and follow [DESIGN.md](DESIGN.md). Keep detailed UI rules in that document.
+
 ## Engineering
 
 Apply these principles within the assigned role and approved scope. During ticket delivery, treat the approved spec and tickets as settled requirements; report gaps for a planning decision before changing them.

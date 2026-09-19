@@ -1,5 +1,7 @@
 # 0010: High-Contrast Dynamic UI Palette and Summary Visual System
 
+Current presentation follows [DESIGN.md](../../DESIGN.md), which consolidates the color alternatives below into one dark-background palette and standardizes summaries across all workflows. The high-contrast semantic roles remain unchanged; the historical implementation details below are not a second design contract.
+
 ## Context
 
 WPTUI previously rendered interactive Select / MultiSelect form options with muted monochrome text, causing significant navigation ambiguity when moving with Up/Down arrows (the active cursor option did not highlight). Additionally, checked items (`[x]`) did not stand out visually from unselected items, and post-execution terminal summaries (provisioning and de-provisioning results) lacked color coding, making warnings, URLs, and errors difficult to scan quickly.

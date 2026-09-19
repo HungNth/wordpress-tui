@@ -1,5 +1,7 @@
 # 0009: Head Search Option and Interactive Live Package Catalog Selection
 
+Current presentation follows [DESIGN.md](../../DESIGN.md), including plain-text action labels in place of the decorative search emoji recorded below. The search-first placement and selection-accumulation behavior remain unchanged.
+
 ## Context
 
 When selecting Packages (plugins or themes) during Website Provisioning, the search option was previously placed at the bottom of the default choices list. In addition, catalog search required a multi-step form workflow (input search term -> submit -> render static result multiselect -> confirm -> ask to search again). This created significant interaction friction for developers who want to quickly find and install multiple non-default packages without losing previously chosen selections or repeatedly restarting the search flow.
