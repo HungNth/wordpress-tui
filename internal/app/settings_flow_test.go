@@ -45,11 +45,15 @@ func (m *mockSettingsLauncher) Start(ctx context.Context, name string, args ...s
 
 func TestApp_SettingsMenuRouting(t *testing.T) {
 	tempDir := t.TempDir()
-	cfg := &config.Config{
-		WebsitesPath: tempDir,
+	cfg := config.DefaultConfig(tempDir)
+	cfg.WebsitesPath = tempDir
+	cfgPath, err := config.ConfigPath(tempDir)
+	if err != nil {
+		t.Fatal(err)
 	}
-	cfgPath, _ := config.ConfigPath(tempDir)
-	_ = config.Save(cfgPath, cfg)
+	if err := config.Save(cfgPath, cfg); err != nil {
+		t.Fatal(err)
+	}
 
 	settingsCalled := false
 	menuCalls := 0
@@ -69,7 +73,7 @@ func TestApp_SettingsMenuRouting(t *testing.T) {
 		},
 	})
 
-	err := application.RunWithContext(context.Background())
+	err = application.RunWithContext(t.Context())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -269,6 +273,7 @@ func TestRunSettingsFlowWithDeps_OpenCache(t *testing.T) {
 			return cacheDir, nil
 		},
 		Launcher: mockLaunch,
+		TargetOS: "windows",
 		PromptAction: func() (tui.SettingsAction, error) {
 			actionCalls++
 			if actionCalls == 1 {
@@ -278,7 +283,7 @@ func TestRunSettingsFlowWithDeps_OpenCache(t *testing.T) {
 		},
 	}
 
-	err := app.RunSettingsFlowWithDeps(context.Background(), &config.Config{}, deps)
+	err := app.RunSettingsFlowWithDeps(t.Context(), &config.Config{}, deps)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

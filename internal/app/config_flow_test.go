@@ -68,11 +68,15 @@ func (m *mockSiteWPClient) Run(ctx context.Context, dir, name string, args []str
 
 func TestApp_ConfigMenuRouting(t *testing.T) {
 	tempDir := t.TempDir()
-	cfg := &config.Config{
-		WebsitesPath: tempDir,
+	cfg := config.DefaultConfig(tempDir)
+	cfg.WebsitesPath = tempDir
+	cfgPath, err := config.ConfigPath(tempDir)
+	if err != nil {
+		t.Fatal(err)
 	}
-	cfgPath, _ := config.ConfigPath(tempDir)
-	_ = config.Save(cfgPath, cfg)
+	if err := config.Save(cfgPath, cfg); err != nil {
+		t.Fatal(err)
+	}
 
 	configCalled := false
 	menuCalls := 0
@@ -92,7 +96,7 @@ func TestApp_ConfigMenuRouting(t *testing.T) {
 		},
 	})
 
-	err := application.RunWithContext(context.Background())
+	err = application.RunWithContext(t.Context())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

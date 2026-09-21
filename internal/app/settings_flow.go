@@ -17,6 +17,7 @@ type SettingsFlowDependencies struct {
 	ConfigPath     string
 	CacheDir       func() (string, error)
 	Launcher       launcher.ProcessRunner
+	TargetOS       string
 	PromptAction   func() (tui.SettingsAction, error)
 	OnReloadConfig func(*config.Config)
 }
@@ -94,7 +95,7 @@ func RunSettingsFlowWithDeps(ctx context.Context, cfg *config.Config, deps Setti
 				tui.PrintSettingsError(fmt.Sprintf("Failed to locate user cache directory: %v", err))
 				break
 			}
-			if err := launcher.OpenDirectory(ctx, dir, deps.Launcher); err != nil {
+			if err := launcher.OpenDirectory(ctx, dir, deps.Launcher, deps.TargetOS); err != nil {
 				tui.PrintSettingsError(fmt.Sprintf("%v", err))
 				break
 			}
