@@ -26,8 +26,8 @@ WPTUI orchestrates native tools on your machine. Ensure the following runtime de
 - **PHP** (`php`)
 - **WP-CLI** (`wp`)
 - **MySQL Client / Server** (`mysql`)
-- **Laravel Herd** (`herd`) *(optional, required only when Herd integration is enabled)*
-- **Visual Studio Code** (`code`) *(optional, required only for editing configuration from Settings)*
+- **Laravel Herd** (`herd`) _(optional, required only when Herd integration is enabled)_
+- **Visual Studio Code** (`code`) _(optional, required only for editing configuration from Settings)_
 
 ## Installation
 
@@ -52,18 +52,22 @@ curl -fsSL https://raw.githubusercontent.com/HungNth/wordpress-tui/main/scripts/
 Open PowerShell and run:
 
 ```powershell
-powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/HungNth/wordpress-tui/main/scripts/install/install.ps1 | iex"
+irm https://raw.githubusercontent.com/HungNth/wordpress-tui/main/scripts/install/install.ps1 -OutFile install.ps1
+powershell -NoProfile -ExecutionPolicy RemoteSigned -File .\install.ps1
+Remove-Item install.ps1
 ```
 
 By default, WPTUI installs to `%LOCALAPPDATA%\Programs\wptui\wptui.exe` and updates your User `PATH`. To customize the install location, download and run the script with `-InstallDir`:
 
 ```powershell
 irm https://raw.githubusercontent.com/HungNth/wordpress-tui/main/scripts/install/install.ps1 -OutFile install.ps1
-powershell -ExecutionPolicy ByPass -File .\install.ps1 -InstallDir 'C:\Tools\wptui'
+powershell -NoProfile -ExecutionPolicy RemoteSigned -File .\install.ps1 -InstallDir 'C:\Tools\wptui'
 Remove-Item install.ps1
 ```
+
 > [!WARNING]
 > Always review remote scripts before executing them in your shell:
+>
 > - [`scripts/install/install.sh`](scripts/install/install.sh)
 > - [`scripts/install/install.ps1`](scripts/install/install.ps1)
 
