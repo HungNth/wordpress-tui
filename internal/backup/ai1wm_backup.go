@@ -24,7 +24,10 @@ type PackageResolver interface {
 // It installs or updates it via the version-aware package installer if needed.
 func EnsureAI1WMExtension(ctx context.Context, siteDir string, resolver PackageResolver, client siteconfig.WPClient, onProgress ProgressFunc) error {
 	if resolver == nil {
-		return errors.New("package resolver is not configured")
+		if _, installed := siteconfig.GetInstalledVersion(ctx, siteDir, packages.PackageTypePlugin, AI1WMExtensionSlug, client); installed {
+			return nil
+		}
+		return errors.New("package resolver is not configured (Packages API URL missing) and all-in-one-wp-migration-unlimited-extension is not installed")
 	}
 
 	stageDir, err := os.MkdirTemp("", "wptui-ai1wm-stage-*")
