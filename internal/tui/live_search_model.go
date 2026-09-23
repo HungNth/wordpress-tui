@@ -150,7 +150,7 @@ func (m *LiveSearchModel) View() tea.View {
 
 	// Filtered results list
 	if len(m.filtered) == 0 {
-		sb.WriteString(dimStyle.Render("  [No matching packages found. Modify query or press Enter to finish / Esc to cancel.]\n"))
+		sb.WriteString(dimStyle.Render("  [No matching packages found. Modify query or press Enter to finish / Esc to cancel.]") + "\n")
 	} else {
 		maxItems := 10
 		start := 0
@@ -190,7 +190,7 @@ func (m *LiveSearchModel) View() tea.View {
 			sb.WriteString(fmt.Sprintf("%s%s %s\n", cursorPrefix, check, itemText))
 		}
 		if len(m.filtered) > maxItems {
-			sb.WriteString(dimStyle.Render(fmt.Sprintf("  ... and %d more (scroll with Up/Down)\n", len(m.filtered)-maxItems)))
+			sb.WriteString(dimStyle.Render(fmt.Sprintf("  ... and %d more (scroll with Up/Down)", len(m.filtered)-maxItems)) + "\n")
 		}
 	}
 	return tea.NewView(sb.String())

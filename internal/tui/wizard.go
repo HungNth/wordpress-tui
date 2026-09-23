@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
 	"wptui/internal/config"
 )
@@ -236,12 +237,17 @@ func RunConfigWizard(homeDir string) (*config.Config, error) {
 		UsedHerd: true,
 	}
 
-	envForm := BuildEnvironmentForm(&inputs)
+	altScreenHook := func(v tea.View) tea.View {
+		v.AltScreen = true
+		return v
+	}
+
+	envForm := BuildEnvironmentForm(&inputs).WithViewHook(altScreenHook)
 	if err := envForm.Run(); err != nil {
 		return nil, err
 	}
 
-	mainForm := BuildMainWizardForm(&inputs, homeDir)
+	mainForm := BuildMainWizardForm(&inputs, homeDir).WithViewHook(altScreenHook)
 	if err := mainForm.Run(); err != nil {
 		return nil, err
 	}

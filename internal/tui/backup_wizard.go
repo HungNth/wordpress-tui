@@ -97,13 +97,13 @@ func PrintBackupSummary(res *backup.BackupResult) {
 
 	fmt.Println("\n" + StyleHighlight.Render(fmt.Sprintf("=== Backup Complete: %s ===", strategyTitle)))
 	fmt.Printf("  Archive Location: %s\n", StyleHighlight.Render(res.FilePath))
-	fmt.Printf("  Archive Size:     %s\n", formatBytes(res.FileSize))
+	fmt.Printf("  Archive Size:     %s\n", FormatBytes(res.FileSize))
 	fmt.Printf("  Time Elapsed:     %v\n", res.Duration.Round(100*1000000))
 	fmt.Println(StyleMuted.Render("  Artifact is ready in your backup storage."))
 	fmt.Println()
 }
 
-func formatBytes(b int64) string {
+func FormatBytes(b int64) string {
 	const unit = 1024
 	if b < unit {
 		return fmt.Sprintf("%d B", b)
@@ -114,4 +114,8 @@ func formatBytes(b int64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.2f %cB", float64(b)/float64(div), "KMGTPE"[exp])
+}
+
+func formatBytes(b int64) string {
+	return FormatBytes(b)
 }
