@@ -1,0 +1,3 @@
+# Full-screen Master-Detail Bubble Tea TUI architecture
+
+WPTUI replaces the standalone Huh linear inline buffer interface (superseding ADR-0001) with a full-screen alternate-screen Bubble Tea application (`tea.WithAltScreen()`) implementing a two-column Master-Detail layout. The persistent left Sidebar manages top-level application navigation (`Websites`, `Create`, `Restore`, `Settings`, `Exit`), while the right Content Pane renders context-specific interactive views, multi-step wizards, and an in-pane progress monitor with scrollable logs. Focus alternates between the Sidebar and Content Pane via Enter, Esc, and Tab/Shift-Tab, accompanied by high-contrast border and title highlighting.

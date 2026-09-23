@@ -108,3 +108,27 @@ _Avoid_: Wpress runner, migration importer
 The specific directory inside an archive that represents the root of the WordPress core installation.
 _Avoid_: App root, site root, extracted folder
 
+**Master-Detail Layout**:
+The two-column full-screen terminal architecture partitioning WPTUI into a persistent navigation Sidebar and an operational Content Pane.
+_Avoid_: Split screen, multi-window layout, two-box view
+
+**Sidebar Navigation**:
+The primary application navigation menu occupying the left pane, managing top-level application destinations (`Websites`, `Create`, `Restore`, `Settings`, `Exit`).
+_Avoid_: Side menu, left drawer, option list
+
+**Content Pane**:
+The primary interactive surface occupying the right pane, rendering context-specific views, wizards, forms, and progress monitors.
+_Avoid_: Right pane, detail box, body area
+
+**Focus Mode**:
+The exclusive input target state designating whether keyboard events drive Sidebar Navigation or the active Content Pane view.
+_Avoid_: Active panel, current focus, window state
+
+**Websites Hub**:
+The centralized website inventory view in the Content Pane providing instant local Website discovery and contextual actions without synchronous database round-trips.
+_Avoid_: Site browser, project explorer, website manager
+
+**In-Pane Progress Monitor**:
+The dual-section execution interface inside the Content Pane combining a task stepper with an interactive, scrollable log viewport.
+_Avoid_: Console output, loading modal, terminal logger
+

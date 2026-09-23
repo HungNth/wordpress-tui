@@ -8,11 +8,11 @@ Apply the same design conventions to Create, Config, Delete, Backup, Restore, Se
 
 ## Terminal presentation
 
-Use inline interfaces in the normal terminal buffer rather than a full-screen dashboard. Preserve completed progress lines and reports in scrollback for review and copying.
+Use a full-screen alternate-screen buffer (`tea.WithAltScreen()`) with a two-column Master-Detail layout. When exiting, restore the terminal screen cleanly.
 
 Optimize for dark terminal backgrounds only. Inherit the terminal background; a light palette and a theme-selection menu are outside scope. Output remains understandable without ANSI color.
 
-Use a left-aligned, single-column layout that fits the terminal width. Wrap long descriptions and report values, and scroll long option lists within the available height. Preserve complete paths and URLs in final reports rather than replacing them with ellipses.
+Require a minimum terminal geometry of 80 columns by 24 rows. When terminal dimensions fall below this threshold, display a polite resize notice (`Terminal window too small (minimum 80x24 required)`) and restore the layout when resized.
 
 ## Language
 
@@ -20,28 +20,32 @@ Use English consistently for UI titles, descriptions, labels, validation message
 
 ## Screen layout and wording
 
-Use the same hierarchy on each screen:
+Partition the display into three primary vertical zones:
 
-1. Contextual title, such as `WPTUI / Backup`.
-2. A short description naming the current task or Website where relevant.
-3. The form fields or choice list.
-4. Keyboard help for actions available on that screen.
+1. **Header**: Application title `WPTUI — WordPress Local Manager` and active system context.
+2. **Body (Master-Detail columns)**:
+   - **Sidebar Navigation** (left column, fixed width ~28 chars): Top-level navigation items (`Websites`, `Create`, `Restore`, `Settings`, `Exit`).
+   - **Content Pane** (right column, remaining width): Active operational view, multi-step wizard, website action panel, or in-pane progress monitor.
+3. **Footer**: Contextual keyboard help reflecting the currently active Focus Mode (Sidebar vs Content).
 
-Use consistent spacing, with two-space indentation for report details. Prefer concise headings over decorative banners, and plain labels over decorative emoji or numbered menu options that have no numeric shortcut. Numbered progress counts still communicate real progress.
-
-Place Search Catalog and Enter Custom Path actions first in their respective lists, and an explicit Back action last in navigation menus. Keep Back out of selectable data in multi-select lists; expose it through keyboard help instead. Shared controls must use task-specific wording: a Backup picker describes backup, not configuration.
+Visual focus is indicated by high-contrast border and title highlighting:
+- **Active pane**: Bright Cyan (`#00FFFF`) border and bold cyan title.
+- **Inactive pane**: Muted Gray (`#888888`) border and muted title.
 
 For example:
 
 ```text
-WPTUI / Backup
-Choose a backup format for narrow01.
-
-> Full ZIP
-  All-in-One WP Migration
-  Back
-
-Up/Down Navigate · Enter Select · Esc Back · Ctrl+C Cancel
+┌─ WPTUI ──────────────────┬─ Websites Hub ─────────────────────────────────────┐
+│                          │ narrow01                                           │
+│ > Websites               │   URL:       http://narrow01.test                  │
+│   Create                 │   Directory: F:/laravel-herd/wordpress/narrow01    │
+│   Restore                │                                                    │
+│   Settings               │ demo-site                                          │
+│   Exit                   │   URL:       http://demo-site.test                 │
+│                          │   Directory: F:/laravel-herd/wordpress/demo-site   │
+│                          │                                                    │
+└──────────────────────────┴────────────────────────────────────────────────────┘
+  Up/Down Navigate · Enter Open Details · Space Multi-Select · q Exit
 ```
 
 ## Visual Theme Palette
@@ -69,35 +73,23 @@ Use conventional field and list controls with context-specific help:
 
 | Key | Behavior |
 | --- | --- |
-| Up / Down | Navigate list items |
-| Left / Right | Change a confirmation choice |
-| Tab / Shift+Tab | Move between form fields |
-| Space | Toggle a multi-select item |
-| Enter | Select, continue, or submit as stated in the current help |
-| Esc | Close an active filter/search first; otherwise return to the previous screen |
-| Ctrl+C | Cancel the current workflow; exit at the main menu or during first-run setup |
+| Up / Down or k / j | Navigate menu choices or list items in the active pane |
+| Left / Right | Toggle focus between panes, or change confirmation choices |
+| Tab / Shift+Tab | Move focus between Sidebar and Content Pane, or between form fields |
+| Space | Toggle multi-select items (e.g., batch selecting Websites or Packages) |
+| Enter | Activate/drill into Content Pane from Sidebar; advance or submit within Content Pane |
+| Esc | Return focus to Sidebar Navigation from Content Pane (prompts discard confirmation if form is dirty); dismiss active filter |
+| q / Ctrl+C | Exit application when on Sidebar Navigation; cancel running background workflow |
 
-Back preserves entered values and Package selections within the current workflow. Query changes retain accumulated Package selections. Cancelling the workflow abandons pending input. At the first screen of an operation, Back returns to the main menu; at the main menu, Esc stays on the menu and Exit or Ctrl+C exits.
-
-User cancellation is a neutral outcome, not an operation failure. During execution, request cancellation and wait for the operation and its applicable cleanup to finish before returning to the main menu. Keep the display active while stopping. Report cleanup failures separately; never claim cancellation or rollback completed while work is still running.
-
-Back navigation does not undo mutations. A prompt needed during execution temporarily replaces progress output; aborting that execution-stage prompt cancels the workflow rather than navigating across already-applied mutations. Delete retains its explicit confirmation, defaults to No, and identifies the affected directories and databases. Already deleted resources cannot be restored by cancellation; report which resources were removed and which were retained or failed.
-
-After successful execution, preserve the report and return directly to the following destination, without an extra `Press Enter to continue` prompt:
-
-| Workflow | Destination |
-| --- | --- |
-| Create / Restore / Delete | Main menu |
-| Config | Action menu for the current Website |
-| Backup | Website selection |
-| Settings | Settings menu |
-| First-run setup | Main menu |
+Navigating back to the Sidebar preserves entered form values until explicitly submitted or discarded. Dirty forms prompt `Discard changes? (y/n)` upon Esc to prevent accidental data loss. User cancellation during execution stops background tasks gracefully before re-enabling navigation.
 
 ## Progress
 
-Combine a single spinner for the running step with persistent result lines for completed steps. Mark a step successful only after its work succeeds. Show `[n/total]` only when the total is known; omit fabricated percentages or estimates.
+Display ongoing operations inside the Content Pane via the In-Pane Progress Monitor, leaving the Sidebar visible with muted styling and locked navigation.
 
-Give one renderer ownership of terminal output at a time. Coordinate progress and external-command output through that owner rather than mixing animated rendering with independent writes. Pause progress rendering and keyboard handling while an interactive prompt is active, including SQL dump selection during Restore, and resume after the answer.
+Partition the progress view into two distinct vertical sections:
+1. **Task Stepper**: Shows a single spinner for the currently executing step alongside persistent checkmarks (`[✓]`, `[!]`, `[✗]`) for completed steps.
+2. **Log Viewport**: A scrollable viewport (`bubbles/viewport`) streaming real-time WP-CLI, database, and archive logs.
 
 ## Results and errors
 
