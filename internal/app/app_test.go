@@ -381,31 +381,37 @@ func TestApp_RunWithContext_MasterDetail_AllSections(t *testing.T) {
 				t.Errorf("expected section SectionCreate after down arrow, got %v", appModel.ActiveSection())
 			}
 
-			// 3. Navigate down to Restore
+			// 3. Navigate down to Delete
+			appModel.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+			if appModel.ActiveSection() != tui.SectionDelete {
+				t.Errorf("expected section SectionDelete after down arrow, got %v", appModel.ActiveSection())
+			}
+
+			// 4. Navigate down to Restore
 			appModel.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 			if appModel.ActiveSection() != tui.SectionRestore {
 				t.Errorf("expected section SectionRestore after down arrow, got %v", appModel.ActiveSection())
 			}
 
-			// 4. Navigate down to Settings
+			// 5. Navigate down to Settings
 			appModel.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 			if appModel.ActiveSection() != tui.SectionSettings {
 				t.Errorf("expected section SectionSettings after down arrow, got %v", appModel.ActiveSection())
 			}
 
-			// 5. Navigate down to Exit
+			// 6. Navigate down to Exit
 			appModel.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 			if appModel.ActiveSection() != tui.SectionExit {
 				t.Errorf("expected section SectionExit after down arrow, got %v", appModel.ActiveSection())
 			}
 
-			// 6. Enter on Exit returns tea.Quit
+			// 7. Enter on Exit returns tea.Quit
 			_, cmd := appModel.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 			if cmd == nil {
 				t.Errorf("expected tea.Quit cmd on Exit enter, got nil")
 			}
 
-			// 7. Verify clean teardown with 'q'
+			// 8. Verify clean teardown with 'q'
 			_, qCmd := appModel.Update(tea.KeyPressMsg{Code: 'q', Text: "q"})
 			if qCmd == nil {
 				t.Errorf("expected tea.Quit cmd on 'q', got nil")
@@ -448,6 +454,7 @@ func TestApp_RunWithContext_MasterDetail_RestoreFlow(t *testing.T) {
 
 			// Navigate down to Restore
 			appModel.Update(tea.KeyPressMsg{Code: tea.KeyDown}) // Create
+			appModel.Update(tea.KeyPressMsg{Code: tea.KeyDown}) // Delete
 			appModel.Update(tea.KeyPressMsg{Code: tea.KeyDown}) // Restore
 			if appModel.ActiveSection() != tui.SectionRestore {
 				t.Fatalf("expected SectionRestore, got %v", appModel.ActiveSection())
@@ -506,6 +513,59 @@ func TestApp_RunWithContext_MasterDetail_RestoreFlow(t *testing.T) {
 	}
 }
 
+func TestApp_RunWithContext_MasterDetail_DeleteFlow(t *testing.T) {
+	tempHome := t.TempDir()
+	cfgPath := filepath.Join(tempHome, ".config", "wptui", "config.json")
+	cfg := config.DefaultConfig(tempHome)
+	sitesDir := filepath.Join(tempHome, "sites")
+	_ = os.MkdirAll(filepath.Join(sitesDir, "del-site"), 0755)
+	_ = os.WriteFile(filepath.Join(sitesDir, "del-site", "wp-config.php"), []byte("<?php"), 0644)
+	cfg.WebsitesPath = sitesDir
+	if err := config.Save(cfgPath, cfg); err != nil {
+		t.Fatalf("Save() failed: %v", err)
+	}
+
+	application := app.New(app.Options{
+		HomeDir: tempHome,
+		AppRunner: func(ctx context.Context, model tea.Model) error {
+			appModel := model.(*tui.AppModel)
+
+			// Navigate down to Delete
+			appModel.Update(tea.KeyPressMsg{Code: tea.KeyDown}) // Create
+			appModel.Update(tea.KeyPressMsg{Code: tea.KeyDown}) // Delete
+			if appModel.ActiveSection() != tui.SectionDelete {
+				t.Fatalf("expected SectionDelete, got %v", appModel.ActiveSection())
+			}
+
+			// Enter content pane
+			appModel.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+			if appModel.Focus() != tui.FocusContent {
+				t.Fatalf("expected FocusContent, got %v", appModel.Focus())
+			}
+
+			dm := appModel.DeleteModel()
+			if dm == nil {
+				t.Fatalf("expected DeleteModel to be initialized")
+			}
+			if dm.State() != tui.DeleteModelList {
+				t.Errorf("expected DeleteModelList state, got %v", dm.State())
+			}
+
+			// Esc returns to Sidebar
+			appModel.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+			if appModel.Focus() != tui.FocusSidebar {
+				t.Errorf("expected focus to return to FocusSidebar, got %v", appModel.Focus())
+			}
+
+			return nil
+		},
+	})
+
+	if err := application.RunWithContext(context.Background()); err != nil {
+		t.Fatalf("RunWithContext failed: %v", err)
+	}
+}
+
 func TestApp_RunWithContext_MasterDetail_SettingsFlow(t *testing.T) {
 	tempHome := t.TempDir()
 	cfgPath := filepath.Join(tempHome, ".config", "wptui", "config.json")
@@ -523,6 +583,7 @@ func TestApp_RunWithContext_MasterDetail_SettingsFlow(t *testing.T) {
 
 			// Navigate to Settings
 			appModel.Update(tea.KeyPressMsg{Code: tea.KeyDown}) // Create
+			appModel.Update(tea.KeyPressMsg{Code: tea.KeyDown}) // Delete
 			appModel.Update(tea.KeyPressMsg{Code: tea.KeyDown}) // Restore
 			appModel.Update(tea.KeyPressMsg{Code: tea.KeyDown}) // Settings
 			if appModel.ActiveSection() != tui.SectionSettings {

@@ -33,8 +33,8 @@ func TestAppModel_InitialLayoutAndDimensions(t *testing.T) {
 	if !strings.Contains(view, "WPTUI — WordPress Local Manager") {
 		t.Errorf("expected view to contain header title, got:\n%s", view)
 	}
-	if !strings.Contains(view, "Websites") || !strings.Contains(view, "Create") || !strings.Contains(view, "Restore") || !strings.Contains(view, "Settings") || !strings.Contains(view, "Exit") {
-		t.Errorf("expected view to contain all 5 sidebar items, got:\n%s", view)
+	if !strings.Contains(view, "Websites") || !strings.Contains(view, "Create") || !strings.Contains(view, "Delete") || !strings.Contains(view, "Restore") || !strings.Contains(view, "Settings") || !strings.Contains(view, "Exit") {
+		t.Errorf("expected view to contain all 6 sidebar items, got:\n%s", view)
 	}
 }
 
@@ -70,25 +70,39 @@ func TestAppModel_SidebarNavigationAndFocusSwitching(t *testing.T) {
 	newM, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	model := newM.(*tui.AppModel)
 
-	// Navigate down with "j"
+	// Navigate down with "j" -> SectionCreate
 	newM, _ = model.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
 	model = newM.(*tui.AppModel)
 	if model.ActiveSection() != tui.SectionCreate {
 		t.Errorf("expected active section to be SectionCreate after 'j', got %v", model.ActiveSection())
 	}
 
-	// Navigate down with "down"
+	// Navigate down with "down" -> SectionDelete
+	newM, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	model = newM.(*tui.AppModel)
+	if model.ActiveSection() != tui.SectionDelete {
+		t.Errorf("expected active section to be SectionDelete after 'down', got %v", model.ActiveSection())
+	}
+
+	// Navigate down with "down" -> SectionRestore
 	newM, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	model = newM.(*tui.AppModel)
 	if model.ActiveSection() != tui.SectionRestore {
-		t.Errorf("expected active section to be SectionRestore after 'down', got %v", model.ActiveSection())
+		t.Errorf("expected active section to be SectionRestore after second 'down', got %v", model.ActiveSection())
 	}
 
-	// Navigate up with "k"
+	// Navigate up with "k" -> SectionDelete
+	newM, _ = model.Update(tea.KeyPressMsg{Code: 'k', Text: "k"})
+	model = newM.(*tui.AppModel)
+	if model.ActiveSection() != tui.SectionDelete {
+		t.Errorf("expected active section to be SectionDelete after 'k', got %v", model.ActiveSection())
+	}
+
+	// Navigate up with "k" -> SectionCreate
 	newM, _ = model.Update(tea.KeyPressMsg{Code: 'k', Text: "k"})
 	model = newM.(*tui.AppModel)
 	if model.ActiveSection() != tui.SectionCreate {
-		t.Errorf("expected active section to be SectionCreate after 'k', got %v", model.ActiveSection())
+		t.Errorf("expected active section to be SectionCreate after second 'k', got %v", model.ActiveSection())
 	}
 
 	// Press Enter to focus Content Pane
@@ -147,8 +161,8 @@ func TestAppModel_QuitSignals(t *testing.T) {
 	// 3. Selecting Exit item and pressing Enter quits
 	m3 := tui.NewAppModel(cfg)
 	m3.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
-	// Navigate to Exit (4 down steps)
-	for range 4 {
+	// Navigate to Exit (5 down steps)
+	for range 5 {
 		newM, _ := m3.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 		m3 = newM.(*tui.AppModel)
 	}
@@ -251,10 +265,28 @@ func TestAppModel_VisualAlignment(t *testing.T) {
 		}
 	}
 
-	// 3. Test Restore Wizard Alignment
+	// 3. Test Delete Alignment
+	mDelete := tui.NewAppModel(cfg)
+	mDelete.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	mDelete.Update(tea.KeyPressMsg{Code: tea.KeyDown}) // Create
+	mDelete.Update(tea.KeyPressMsg{Code: tea.KeyDown}) // Delete
+	mDelete.Update(tea.KeyPressMsg{Code: tea.KeyEnter}) // Focus Content
+
+	deleteView := mDelete.ViewString()
+	for _, line := range strings.Split(deleteView, "\n") {
+		if strings.Contains(line, "Batch Website De-provisioning") {
+			spaces := contentLeadingSpaces(line)
+			if spaces > 6 {
+				t.Errorf("Delete view title has excessive leading spaces (%d): %q", spaces, line)
+			}
+		}
+	}
+
+	// 4. Test Restore Wizard Alignment
 	m3 := tui.NewAppModel(cfg)
 	m3.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	m3.Update(tea.KeyPressMsg{Code: tea.KeyDown}) // Create
+	m3.Update(tea.KeyPressMsg{Code: tea.KeyDown}) // Delete
 	m3.Update(tea.KeyPressMsg{Code: tea.KeyDown}) // Restore
 	m3.Update(tea.KeyPressMsg{Code: tea.KeyEnter}) // Focus Content
 
@@ -268,10 +300,11 @@ func TestAppModel_VisualAlignment(t *testing.T) {
 		}
 	}
 
-	// 4. Test Settings Alignment
+	// 5. Test Settings Alignment
 	m4 := tui.NewAppModel(cfg)
 	m4.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	m4.Update(tea.KeyPressMsg{Code: tea.KeyDown}) // Create
+	m4.Update(tea.KeyPressMsg{Code: tea.KeyDown}) // Delete
 	m4.Update(tea.KeyPressMsg{Code: tea.KeyDown}) // Restore
 	m4.Update(tea.KeyPressMsg{Code: tea.KeyDown}) // Settings
 	m4.Update(tea.KeyPressMsg{Code: tea.KeyEnter}) // Focus Content

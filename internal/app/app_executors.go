@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	tea "charm.land/bubbletea/v2"
 	"wptui/internal/backup"
@@ -545,33 +546,58 @@ func (a *App) runDeleteExecution(ctx context.Context, cands []deprovision.Candid
 
 	client := wpcli.NewClient()
 	ch <- tui.StepStartMsg{ID: "deprovision", Title: "Resolving databases and de-provisioning..."}
-	for i := range cands {
-		deprovision.ResolveCandidateDB(ctx, &cands[i], client)
-		ch <- tui.LogLineMsg(fmt.Sprintf("De-provisioning site: %s (DB: %s)...", cands[i].Slug, cands[i].DetectedDB))
+
+	n := len(cands)
+	limit := 4
+	if limit > n {
+		limit = n
+	}
+	if limit > 0 {
+		sem := make(chan struct{}, limit)
+		var wg sync.WaitGroup
+		for i := range cands {
+			wg.Add(1)
+			go func(idx int) {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+				deprovision.ResolveCandidateDB(ctx, &cands[idx], client)
+				dbDesc := cands[idx].DetectedDB
+				if dbDesc == "" {
+					dbDesc = "none"
+				}
+				ch <- tui.LogLineMsg(fmt.Sprintf("Target: %s (DB: %s)", cands[idx].Slug, dbDesc))
+			}(i)
+		}
+		wg.Wait()
 	}
 
 	results := deprovision.Deprovision(ctx, cands, client, deprovision.DeprovisionOptions{
 		UsedHerd:    a.config.UsedHerd,
 		Concurrency: 4,
+		OnProgress: func(r deprovision.Result) {
+			if r.HerdErr != nil || r.DBErr != nil || r.DirErr != nil {
+				var errMsgs []string
+				if r.HerdErr != nil {
+					errMsgs = append(errMsgs, fmt.Sprintf("herd: %v", r.HerdErr))
+				}
+				if r.DBErr != nil {
+					errMsgs = append(errMsgs, fmt.Sprintf("db: %v", r.DBErr))
+				}
+				if r.DirErr != nil {
+					errMsgs = append(errMsgs, fmt.Sprintf("dir: %v", r.DirErr))
+				}
+				ch <- tui.LogLineMsg(fmt.Sprintf("Error deleting %s: %s", r.Candidate.Slug, strings.Join(errMsgs, ", ")))
+			} else {
+				ch <- tui.LogLineMsg(fmt.Sprintf("Successfully deleted %s", r.Candidate.Slug))
+			}
+		},
 	})
 
 	failedCount := 0
 	for _, r := range results {
 		if r.HerdErr != nil || r.DBErr != nil || r.DirErr != nil {
 			failedCount++
-			var errMsgs []string
-			if r.HerdErr != nil {
-				errMsgs = append(errMsgs, fmt.Sprintf("herd: %v", r.HerdErr))
-			}
-			if r.DBErr != nil {
-				errMsgs = append(errMsgs, fmt.Sprintf("db: %v", r.DBErr))
-			}
-			if r.DirErr != nil {
-				errMsgs = append(errMsgs, fmt.Sprintf("dir: %v", r.DirErr))
-			}
-			ch <- tui.LogLineMsg(fmt.Sprintf("Error deleting %s: %s", r.Candidate.Slug, strings.Join(errMsgs, ", ")))
-		} else {
-			ch <- tui.LogLineMsg(fmt.Sprintf("Successfully deleted %s", r.Candidate.Slug))
 		}
 	}
 

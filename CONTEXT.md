@@ -56,6 +56,10 @@ _Avoid_: Setup, scaffolding
 The operation that destroys one or more existing Websites, safely unsecuring Herd TLS, dropping the accurately extracted database, and removing the Website directory.
 _Avoid_: Cleanup, wipe, uninstall
 
+**Batch De-provisioning**:
+The concurrent de-provisioning of multiple selected Websites executed under a single unified confirmation prompt.
+_Avoid_: Multi-wipe, bulk delete loop
+
 **Visual Theme Palette**:
 The unified terminal color system that styles focus navigation, selected items, and status indicators across interactive forms and completion summaries.
 _Avoid_: Skin, custom CSS
@@ -113,7 +117,7 @@ The two-column full-screen terminal architecture partitioning WPTUI into a persi
 _Avoid_: Split screen, multi-window layout, two-box view
 
 **Sidebar Navigation**:
-The primary application navigation menu occupying the left pane, managing top-level application destinations (`Websites`, `Create`, `Restore`, `Settings`, `Exit`).
+The primary application navigation menu occupying the left pane, managing top-level application destinations (`Websites`, `Create`, `Delete`, `Restore`, `Settings`, `Exit`).
 _Avoid_: Side menu, left drawer, option list
 
 **Content Pane**:

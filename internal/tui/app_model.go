@@ -35,6 +35,7 @@ type Section int
 const (
 	SectionWebsites Section = iota
 	SectionCreate
+	SectionDelete
 	SectionRestore
 	SectionSettings
 	SectionExit
@@ -55,6 +56,7 @@ type SidebarItem struct {
 var DefaultSidebarItems = []SidebarItem{
 	{Section: SectionWebsites, Title: "Websites", Description: "Local WordPress websites hub"},
 	{Section: SectionCreate, Title: "Create", Description: "Provision a new WordPress site"},
+	{Section: SectionDelete, Title: "Delete", Description: "Batch de-provision local websites"},
 	{Section: SectionRestore, Title: "Restore", Description: "Restore site from backup archive"},
 	{Section: SectionSettings, Title: "Settings", Description: "Application settings & maintenance"},
 	{Section: SectionExit, Title: "Exit", Description: "Exit WPTUI"},
@@ -70,6 +72,7 @@ type AppModel struct {
 	sidebarIndex    int
 	sidebarItems    []SidebarItem
 	websitesHub     *WebsitesHubModel
+	deleteModel     *DeleteModel
 	createWizard    *CreateWizardModel
 	restoreWizard   *RestoreWizardModel
 	settingsModel   *SettingsModel
@@ -97,6 +100,7 @@ func NewAppModel(cfg *config.Config) *AppModel {
 		sidebarIndex:    0,
 		sidebarItems:    DefaultSidebarItems,
 		websitesHub:     NewWebsitesHubModel(cfg),
+		deleteModel:     NewDeleteModel(cfg),
 		createWizard:    NewCreateWizardModel(cfg, nil, nil),
 		restoreWizard:   NewRestoreWizardModel(cfg, nil),
 		settingsModel:   NewSettingsModel(cfg, "", nil),
@@ -104,7 +108,20 @@ func NewAppModel(cfg *config.Config) *AppModel {
 		isExecuting:     false,
 	}
 	m.wireHubCallbacks()
+	m.wireDeleteCallbacks()
 	return m
+}
+
+func (m *AppModel) wireDeleteCallbacks() {
+	if m.deleteModel == nil {
+		return
+	}
+	m.deleteModel.OnDelete = func(cands []deprovision.Candidate) tea.Cmd {
+		if m.onDelete != nil {
+			return m.onDelete(cands)
+		}
+		return nil
+	}
 }
 
 func (m *AppModel) wireHubCallbacks() {
@@ -158,6 +175,10 @@ func (m *AppModel) WebsitesHub() *WebsitesHubModel {
 	return m.websitesHub
 }
 
+func (m *AppModel) DeleteModel() *DeleteModel {
+	return m.deleteModel
+}
+
 func (m *AppModel) CreateWizard() *CreateWizardModel {
 	return m.createWizard
 }
@@ -202,6 +223,7 @@ func (m *AppModel) SetBackupHandler(fn BackupHandlerFunc) {
 
 func (m *AppModel) SetDeleteHandler(fn DeleteHandlerFunc) {
 	m.onDelete = fn
+	m.wireDeleteCallbacks()
 }
 
 func (m *AppModel) SetConfigHandler(fn ConfigHandlerFunc) {
@@ -299,12 +321,19 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.websitesHub != nil {
 					m.websitesHub.Refresh()
 				}
+				if m.deleteModel != nil {
+					m.deleteModel.Refresh()
+					m.deleteModel.ResetSelection()
+				}
 				if m.activeSec == SectionCreate {
 					m.createWizard = NewCreateWizardModel(m.cfg, m.catalog, m.checker)
 					m.focus = FocusSidebar
 				}
 				if m.activeSec == SectionRestore {
 					m.restoreWizard = NewRestoreWizardModel(m.cfg, m.checker)
+					m.focus = FocusSidebar
+				}
+				if m.activeSec == SectionDelete {
 					m.focus = FocusSidebar
 				}
 			}
@@ -365,6 +394,16 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, cmd
 			}
 
+			if m.activeSec == SectionDelete && m.deleteModel != nil {
+				if m.deleteModel.State() == DeleteModelList && (str == "esc" || str == "shift+tab" || str == "backtab") {
+					m.focus = FocusSidebar
+					return m, nil
+				}
+				newDM, cmd := m.deleteModel.Update(msg)
+				m.deleteModel = newDM.(*DeleteModel)
+				return m, cmd
+			}
+
 			if m.activeSec == SectionRestore && m.restoreWizard != nil {
 				newRW, cmd := m.restoreWizard.Update(msg)
 				m.restoreWizard = newRW.(*RestoreWizardModel)
@@ -405,6 +444,10 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.opEventChan = nil
 				if m.websitesHub != nil {
 					m.websitesHub.Refresh()
+				}
+				if m.deleteModel != nil {
+					m.deleteModel.Refresh()
+					m.deleteModel.ResetSelection()
 				}
 			}
 			return m, cmd
@@ -510,6 +553,8 @@ func (m *AppModel) View() tea.View {
 		contentBody = m.websitesHub.Render(contentWidth, bodyHeight)
 	} else if m.activeSec == SectionCreate && m.createWizard != nil {
 		contentBody = m.createWizard.Render(contentWidth, bodyHeight)
+	} else if m.activeSec == SectionDelete && m.deleteModel != nil {
+		contentBody = m.deleteModel.Render(contentWidth, bodyHeight)
 	} else if m.activeSec == SectionRestore && m.restoreWizard != nil {
 		contentBody = m.restoreWizard.Render(contentWidth, bodyHeight)
 	} else if m.activeSec == SectionSettings && m.settingsModel != nil {
@@ -536,7 +581,7 @@ func (m *AppModel) View() tea.View {
 		if m.activeSec == SectionWebsites && m.websitesHub != nil {
 			switch m.websitesHub.State() {
 			case WebsitesHubList:
-				footerHelp = "  Up/Down (j/k) Navigate · Space Select · Enter Details · d Batch Delete · Esc Sidebar"
+				footerHelp = "  Up/Down (j/k) Navigate · Space Select · a Toggle All · Enter Details/Delete · Esc Sidebar"
 			case WebsitesHubActions:
 				footerHelp = "  Up/Down (j/k) Select Action · Enter Run · Esc Back to List"
 			default:
@@ -550,6 +595,13 @@ func (m *AppModel) View() tea.View {
 				footerHelp = "  Up/Down Navigate · Space Select · Enter Confirm · Esc Back to Form"
 			default:
 				footerHelp = "  y Discard Changes · n Keep Editing"
+			}
+		} else if m.activeSec == SectionDelete && m.deleteModel != nil {
+			switch m.deleteModel.State() {
+			case DeleteModelList:
+				footerHelp = "  Up/Down (j/k) Navigate · Space Select · a Toggle All · Enter Proceed · Esc Sidebar"
+			default:
+				footerHelp = "  Left/Right Toggle Choice · Enter Confirm · Esc Cancel"
 			}
 		} else if m.activeSec == SectionRestore && m.restoreWizard != nil {
 			switch m.restoreWizard.Step() {

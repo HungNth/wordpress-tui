@@ -505,3 +505,70 @@ func TestWebsitesHub_Render_RespectsUsedHerd(t *testing.T) {
 		t.Errorf("did not expect view to contain https://%s.test when UsedHerd is false, got:\n%s", slugs[0], viewNoHerd)
 	}
 }
+
+func TestWebsitesHub_SelectAllAndEnterBatchDelete(t *testing.T) {
+	sitesDir, slugs := createTestWebsites(t, 3)
+	cfg := config.DefaultConfig(sitesDir)
+	cfg.WebsitesPath = sitesDir
+
+	hub := tui.NewWebsitesHubModel(cfg)
+
+	// 1. Press 'a' to select all
+	hub.Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
+	if hub.SelectedCount() != 3 {
+		t.Fatalf("expected 3 selected after 'a', got %d", hub.SelectedCount())
+	}
+	for _, slug := range slugs {
+		if !hub.IsSelected(slug) {
+			t.Errorf("expected %s to be selected", slug)
+		}
+	}
+
+	// 2. Press 'a' again to deselect all
+	hub.Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
+	if hub.SelectedCount() != 0 {
+		t.Fatalf("expected 0 selected after second 'a', got %d", hub.SelectedCount())
+	}
+
+	// 3. When SelectedCount <= 1, Enter opens single website details
+	hub.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if hub.State() != tui.WebsitesHubActions {
+		t.Fatalf("expected WebsitesHubActions when SelectedCount <= 1, got %v", hub.State())
+	}
+
+	// Return to list
+	hub.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if hub.State() != tui.WebsitesHubList {
+		t.Fatalf("expected WebsitesHubList after Esc, got %v", hub.State())
+	}
+
+	// 4. Select 2 sites with Space
+	hub.Update(tea.KeyPressMsg{Code: ' ', Text: " "}) // site 1
+	hub.Update(tea.KeyPressMsg{Code: 'j', Text: "j"}) // down
+	hub.Update(tea.KeyPressMsg{Code: ' ', Text: " "}) // site 2
+	if hub.SelectedCount() != 2 {
+		t.Fatalf("expected 2 selected sites, got %d", hub.SelectedCount())
+	}
+
+	// 5. Press Enter with 2 sites selected -> directly goes to WebsitesHubBatchDeleteConfirm
+	hub.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if hub.State() != tui.WebsitesHubBatchDeleteConfirm {
+		t.Fatalf("expected WebsitesHubBatchDeleteConfirm when Enter pressed with 2 sites selected, got %v", hub.State())
+	}
+
+	// Verify single confirmation execution
+	var deleted []deprovision.Candidate
+	hub.OnBatchDelete = func(cands []deprovision.Candidate) tea.Cmd {
+		deleted = cands
+		return nil
+	}
+
+	// Toggle choice to Yes (Right arrow) and press Enter
+	hub.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+	hub.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+
+	if len(deleted) != 2 {
+		t.Fatalf("expected OnBatchDelete to be called with 2 candidates, got %d", len(deleted))
+	}
+}
+

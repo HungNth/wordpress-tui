@@ -359,3 +359,36 @@ func TestDeprovision_CancellationAbortsRemaining(t *testing.T) {
 		}
 	}
 }
+
+func TestDeprovision_OnProgressCallback(t *testing.T) {
+	tempDir := t.TempDir()
+	var candidates []deprovision.Candidate
+	for i := 1; i <= 3; i++ {
+		slug := "prog-site-" + string(rune('0'+i))
+		siteDir := filepath.Join(tempDir, slug)
+		_ = os.MkdirAll(siteDir, 0755)
+		candidates = append(candidates, deprovision.Candidate{
+			Slug: slug,
+			Path: siteDir,
+		})
+	}
+
+	var mu sync.Mutex
+	var reported []string
+
+	results := deprovision.Deprovision(context.Background(), candidates, nil, deprovision.DeprovisionOptions{
+		Concurrency: 2,
+		OnProgress: func(r deprovision.Result) {
+			mu.Lock()
+			reported = append(reported, r.Candidate.Slug)
+			mu.Unlock()
+		},
+	})
+
+	if len(results) != 3 {
+		t.Fatalf("expected 3 results, got %d", len(results))
+	}
+	if len(reported) != 3 {
+		t.Fatalf("expected 3 progress reports, got %d", len(reported))
+	}
+}

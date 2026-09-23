@@ -194,6 +194,18 @@ func (m *WebsitesHubModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 				return m, nil
+			case "a":
+				if len(m.candidates) > 0 {
+					allSelected := len(m.SelectedCandidates()) == len(m.candidates)
+					if allSelected {
+						m.selectedMap = make(map[string]bool)
+					} else {
+						for _, cand := range m.candidates {
+							m.selectedMap[cand.Slug] = true
+						}
+					}
+				}
+				return m, nil
 			case "d":
 				if m.SelectedCount() > 0 {
 					m.state = WebsitesHubBatchDeleteConfirm
@@ -201,6 +213,11 @@ func (m *WebsitesHubModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			case "enter":
+				if m.SelectedCount() > 1 {
+					m.state = WebsitesHubBatchDeleteConfirm
+					m.deleteConfirmChoice = false
+					return m, nil
+				}
 				if len(m.candidates) > 0 {
 					m.state = WebsitesHubActions
 					m.actionCursor = 0

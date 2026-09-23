@@ -24,7 +24,7 @@ Partition the display into three primary vertical zones:
 
 1. **Header**: Application title `WPTUI — WordPress Local Manager` and active system context.
 2. **Body (Master-Detail columns)**:
-   - **Sidebar Navigation** (left column, fixed width ~28 chars): Top-level navigation items (`Websites`, `Create`, `Restore`, `Settings`, `Exit`).
+   - **Sidebar Navigation** (left column, fixed width ~28 chars): Top-level navigation items (`Websites`, `Create`, `Delete`, `Restore`, `Settings`, `Exit`).
    - **Content Pane** (right column, remaining width): Active operational view, multi-step wizard, website action panel, or in-pane progress monitor.
 3. **Footer**: Contextual keyboard help reflecting the currently active Focus Mode (Sidebar vs Content).
 

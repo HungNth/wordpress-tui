@@ -110,6 +110,7 @@ func ResolveCandidateDB(ctx context.Context, c *Candidate, client WPClient) {
 type DeprovisionOptions struct {
 	UsedHerd    bool
 	Concurrency int
+	OnProgress  func(r Result)
 }
 
 // DeprovisionSingle deletes a single candidate site, executing:
@@ -201,7 +202,11 @@ func Deprovision(ctx context.Context, candidates []Candidate, client WPClient, o
 				wg.Done()
 			}()
 
-			results[idx] = DeprovisionSingle(ctx, cand, client, opts.UsedHerd)
+			res := DeprovisionSingle(ctx, cand, client, opts.UsedHerd)
+			results[idx] = res
+			if opts.OnProgress != nil {
+				opts.OnProgress(res)
+			}
 		}(i, c)
 	}
 
