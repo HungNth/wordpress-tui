@@ -455,8 +455,13 @@ func (r *Restorer) restoreAI1WM(ctx context.Context, req Request, progress Progr
 
 	// 5. Core install minimal foundation
 	progress("core_install", "Installing foundation WordPress...")
-	tempURL := "http://" + req.WebsiteSlug + ".test"
-	if err := r.wpClient.CoreInstall(ctx, targetDir, tempURL, "Temporary", "temp", "temp", "temp@example.com"); err != nil {
+	var targetURL string
+	if r.cfg.UsedHerd {
+		targetURL = "https://" + req.WebsiteSlug + ".test"
+	} else {
+		targetURL = "http://" + req.WebsiteSlug + ".test"
+	}
+	if err := r.wpClient.CoreInstall(ctx, targetDir, targetURL, "Temporary", "temp", "temp", "temp@example.com"); err != nil {
 		return nil, fmt.Errorf("failed to install foundation core: %w", err)
 	}
 
@@ -495,7 +500,25 @@ func (r *Restorer) restoreAI1WM(ctx context.Context, req Request, progress Progr
 	if err := os.Remove(stagedArchive); err != nil && !os.IsNotExist(err) {
 		return nil, fmt.Errorf("failed to clean up staged migration archive %s: %w", stagedArchive, err)
 	}
-	// 10. Update Admin credentials strictly AFTER AI1WM restore completes
+
+	// 10. Discover prior siteurl and execute search-replace to reconcile target URL
+	progress("search_replace", "Updating site URLs...")
+	oldURL, err := r.wpClient.OptionGet(ctx, targetDir, "siteurl")
+	if err != nil {
+		return nil, fmt.Errorf("failed to discover prior siteurl: %w", err)
+	}
+	oldURL = strings.TrimSpace(oldURL)
+	if oldURL == "" {
+		return nil, errors.New("prior siteurl is empty in imported database")
+	}
+	newURL := targetURL
+	if oldURL != "" && oldURL != newURL {
+		if err := r.wpClient.SearchReplace(ctx, targetDir, oldURL, newURL); err != nil {
+			return nil, fmt.Errorf("failed to replace site URL: %w", err)
+		}
+	}
+
+	// 11. Update Admin credentials strictly AFTER AI1WM restore completes
 	adminUser := req.AdminUser
 	if adminUser == "" {
 		adminUser = r.cfg.DefaultAdminUsername
@@ -514,19 +537,21 @@ func (r *Restorer) restoreAI1WM(ctx context.Context, req Request, progress Progr
 		return nil, fmt.Errorf("failed to update admin credentials: %w", err)
 	}
 
-	// 11. Configure Herd TLS
+	// 12. Configure Herd TLS
 	var tlsWarning string
-	newURL := "http://" + req.WebsiteSlug + ".test"
 	if r.cfg.UsedHerd {
 		alreadySecured, _ := r.wpClient.IsSiteSecured(ctx, req.WebsiteSlug)
 		progress("secure_herd", "Securing domain with Herd TLS...")
 		if err := r.wpClient.HerdSecure(ctx, targetDir, req.WebsiteSlug); err != nil {
 			tlsWarning = fmt.Sprintf("Herd TLS warning: %v", err)
-		} else {
-			newURL = "https://" + req.WebsiteSlug + ".test"
-			if !alreadySecured {
-				tracker.createdTLS = true
+			httpURL := "http://" + req.WebsiteSlug + ".test"
+			if srErr := r.wpClient.SearchReplace(ctx, targetDir, newURL, httpURL); srErr != nil {
+				tlsWarning = fmt.Sprintf("Herd TLS warning: %v (failed to revert URL to HTTP: %v)", err, srErr)
+			} else {
+				newURL = httpURL
 			}
+		} else if !alreadySecured {
+			tracker.createdTLS = true
 		}
 	}
 	success = true

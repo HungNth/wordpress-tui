@@ -1,6 +1,7 @@
 package tui_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -409,5 +410,98 @@ func TestWebsitesHub_BackupStrategySelection(t *testing.T) {
 	}
 	if capturedStrategy != backup.StrategyAI1WM {
 		t.Errorf("expected StrategyAI1WM, got %v", capturedStrategy)
+	}
+}
+
+type mockLauncherRunner struct {
+	started []string
+}
+
+func (m *mockLauncherRunner) LookPath(file string) (string, error) {
+	return "/bin/" + file, nil
+}
+
+func (m *mockLauncherRunner) Run(ctx context.Context, name string, args ...string) error {
+	return nil
+}
+
+func (m *mockLauncherRunner) Start(ctx context.Context, name string, args ...string) error {
+	m.started = append(m.started, name+" "+strings.Join(args, " "))
+	return nil
+}
+
+func TestWebsitesHub_OpenInBrowser_RespectsUsedHerd(t *testing.T) {
+	sitesDir, slugs := createTestWebsites(t, 1)
+
+	// Herd true -> launches https://
+	cfgHerd := config.DefaultConfig(sitesDir)
+	cfgHerd.WebsitesPath = sitesDir
+	cfgHerd.UsedHerd = true
+	hubHerd := tui.NewWebsitesHubModel(cfgHerd)
+	runnerHerd := &mockLauncherRunner{}
+	hubHerd.SetRunner(runnerHerd)
+
+	// Navigate to Browser action (index 5)
+	hubHerd.Update(tea.KeyPressMsg{Code: tea.KeyEnter}) // Open actions
+	for range 5 {
+		hubHerd.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	}
+	hubHerd.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+
+	if len(runnerHerd.started) != 1 {
+		t.Fatalf("expected 1 browser launch, got %d", len(runnerHerd.started))
+	}
+	expectedHerdURL := "https://" + slugs[0] + ".test"
+	if !strings.Contains(runnerHerd.started[0], expectedHerdURL) {
+		t.Errorf("expected launch command to contain %s, got: %s", expectedHerdURL, runnerHerd.started[0])
+	}
+
+	// Herd false -> launches http://
+	cfgNoHerd := config.DefaultConfig(sitesDir)
+	cfgNoHerd.WebsitesPath = sitesDir
+	cfgNoHerd.UsedHerd = false
+	hubNoHerd := tui.NewWebsitesHubModel(cfgNoHerd)
+	runnerNoHerd := &mockLauncherRunner{}
+	hubNoHerd.SetRunner(runnerNoHerd)
+
+	hubNoHerd.Update(tea.KeyPressMsg{Code: tea.KeyEnter}) // Open actions
+	for range 5 {
+		hubNoHerd.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	}
+	hubNoHerd.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+
+	if len(runnerNoHerd.started) != 1 {
+		t.Fatalf("expected 1 browser launch, got %d", len(runnerNoHerd.started))
+	}
+	expectedNoHerdURL := "http://" + slugs[0] + ".test"
+	if !strings.Contains(runnerNoHerd.started[0], expectedNoHerdURL) {
+		t.Errorf("expected launch command to contain %s, got: %s", expectedNoHerdURL, runnerNoHerd.started[0])
+	}
+}
+
+func TestWebsitesHub_Render_RespectsUsedHerd(t *testing.T) {
+	sitesDir, slugs := createTestWebsites(t, 1)
+
+	// Herd true -> renders https://
+	cfgHerd := config.DefaultConfig(sitesDir)
+	cfgHerd.WebsitesPath = sitesDir
+	cfgHerd.UsedHerd = true
+	hubHerd := tui.NewWebsitesHubModel(cfgHerd)
+	viewHerd := hubHerd.Render(80, 24)
+	if !strings.Contains(viewHerd, "https://"+slugs[0]+".test") {
+		t.Errorf("expected view to contain https://%s.test, got:\n%s", slugs[0], viewHerd)
+	}
+
+	// Herd false -> renders http://
+	cfgNoHerd := config.DefaultConfig(sitesDir)
+	cfgNoHerd.WebsitesPath = sitesDir
+	cfgNoHerd.UsedHerd = false
+	hubNoHerd := tui.NewWebsitesHubModel(cfgNoHerd)
+	viewNoHerd := hubNoHerd.Render(80, 24)
+	if !strings.Contains(viewNoHerd, "http://"+slugs[0]+".test") {
+		t.Errorf("expected view to contain http://%s.test, got:\n%s", slugs[0], viewNoHerd)
+	}
+	if strings.Contains(viewNoHerd, "https://"+slugs[0]+".test") {
+		t.Errorf("did not expect view to contain https://%s.test when UsedHerd is false, got:\n%s", slugs[0], viewNoHerd)
 	}
 }

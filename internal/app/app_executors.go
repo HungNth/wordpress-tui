@@ -26,6 +26,13 @@ func defaultAppRunner(ctx context.Context, model tea.Model) error {
 	return err
 }
 
+func (a *App) siteURL(slug string) string {
+	if a.config != nil && a.config.UsedHerd {
+		return fmt.Sprintf("https://%s.test", slug)
+	}
+	return fmt.Sprintf("http://%s.test", slug)
+}
+
 // BuildAppModel constructs and configures the root Bubble Tea AppModel with all operational handlers.
 func (a *App) BuildAppModel(ctx context.Context) *tui.AppModel {
 	m := tui.NewAppModel(a.config)
@@ -477,7 +484,7 @@ func (a *App) runBackupExecution(ctx context.Context, cand deprovision.Candidate
 
 		ch <- tui.StepCompleteMsg{ID: "relocate", Status: tui.StepStatusSuccess, Detail: "Relocated"}
 		summaryLines := []string{
-			fmt.Sprintf("URL:          https://%s.test", cand.Slug),
+			fmt.Sprintf("URL:          %s", a.siteURL(cand.Slug)),
 			fmt.Sprintf("Directory:    %s", cand.Path),
 			"Format:       All-in-One WP Migration (.wpress)",
 			fmt.Sprintf("Archive:      %s", res.FilePath),
@@ -520,7 +527,7 @@ func (a *App) runBackupExecution(ctx context.Context, cand deprovision.Candidate
 
 	ch <- tui.StepCompleteMsg{ID: "cleanup", Status: tui.StepStatusSuccess, Detail: "Cleaned"}
 	summaryLines := []string{
-		fmt.Sprintf("URL:          https://%s.test", cand.Slug),
+		fmt.Sprintf("URL:          %s", a.siteURL(cand.Slug)),
 		fmt.Sprintf("Directory:    %s", cand.Path),
 		"Format:       Full Source Code & Database (.zip)",
 		fmt.Sprintf("Archive:      %s", res.FilePath),
@@ -625,7 +632,7 @@ func (a *App) runConfigExecution(ctx context.Context, cand deprovision.Candidate
 		ch <- tui.OperationCompleteMsg{
 			Title:   "Website Configured Successfully",
 			Success: true,
-			Summary: fmt.Sprintf("URL:          https://%s.test\nDirectory:    %s\nTweaks:       0 configured in config.json", cand.Slug, cand.Path),
+			Summary: fmt.Sprintf("URL:          %s\nDirectory:    %s\nTweaks:       0 configured in config.json", a.siteURL(cand.Slug), cand.Path),
 		}
 		return
 	}
@@ -650,7 +657,7 @@ func (a *App) runConfigExecution(ctx context.Context, cand deprovision.Candidate
 	}
 
 	summaryLines := []string{
-		fmt.Sprintf("URL:          https://%s.test", cand.Slug),
+		fmt.Sprintf("URL:          %s", a.siteURL(cand.Slug)),
 		fmt.Sprintf("Directory:    %s", cand.Path),
 		fmt.Sprintf("Tweaks:       %d applied", appliedCount),
 	}
@@ -758,7 +765,7 @@ func (a *App) runChangeAdminExecution(ctx context.Context, cand deprovision.Cand
 	ch <- tui.StepCompleteMsg{ID: "update", Status: tui.StepStatusSuccess, Detail: "Updated successfully"}
 
 	summaryLines := []string{
-		fmt.Sprintf("URL:          https://%s.test", cand.Slug),
+		fmt.Sprintf("URL:          %s", a.siteURL(cand.Slug)),
 		fmt.Sprintf("Directory:    %s", cand.Path),
 		fmt.Sprintf("Admin User:   %s (ID: %d)", username, targetAdmin.ID),
 		fmt.Sprintf("Admin Email:  %s", email),
@@ -878,7 +885,7 @@ func (a *App) runInstallPackagesExecution(ctx context.Context, cand deprovision.
 	}
 
 	summaryLines := []string{
-		fmt.Sprintf("URL:          https://%s.test", cand.Slug),
+		fmt.Sprintf("URL:          %s", a.siteURL(cand.Slug)),
 		fmt.Sprintf("Directory:    %s", cand.Path),
 		fmt.Sprintf("Package Type: %s", typeLabel),
 		fmt.Sprintf("Installed:    %d", successCount),

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"wptui/internal/config"
@@ -178,5 +179,67 @@ func TestRestorer_AI1WM_RollbackOnRestoreFailure(t *testing.T) {
 	// Source archive MUST remain intact
 	if _, err := os.Stat(archivePath); err != nil {
 		t.Errorf("expected source archive to be preserved: %v", err)
+	}
+}
+
+func TestRestorer_AI1WM_HerdHTTPS_ReconcilesSiteURL(t *testing.T) {
+	tempRoot := t.TempDir()
+	websitesPath := filepath.Join(tempRoot, "websites")
+	_ = os.MkdirAll(websitesPath, 0755)
+
+	archivePath := filepath.Join(tempRoot, "ai1wm_mysite_2026-09-18_12-00-00.wpress")
+	if err := os.WriteFile(archivePath, []byte("wpress binary content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.Config{
+		UsedHerd:     true,
+		WebsitesPath: websitesPath,
+		DatabaseHost: "localhost",
+		DatabasePort: 3306,
+		DBUsername:   "root",
+	}
+
+	mockClient := &mockRestoreWPClient{
+		siteURL: "http://old-domain.com",
+	}
+	adminUpdater := &mockAdminUpdater{}
+	extInstaller := &mockExtensionInstaller{}
+	coreExtractor := &mockCoreExtractor{}
+
+	res := restore.NewRestorer(cfg, mockClient)
+	res.SetAdminUpdater(adminUpdater)
+	res.SetExtensionInstaller(extInstaller)
+	res.SetCoreExtractor(coreExtractor)
+
+	req := restore.Request{
+		Strategy:    restore.StrategyAI1WM,
+		ArchivePath: archivePath,
+		WebsiteName: "My AI1WM Site",
+		WebsiteSlug: "my-ai1wm-site",
+	}
+
+	result, err := res.Restore(context.Background(), req, nil)
+	if err != nil {
+		t.Fatalf("unexpected restore error: %v", err)
+	}
+	if result.SiteURL != "https://my-ai1wm-site.test" {
+		t.Fatalf("got SiteURL %q, want 'https://my-ai1wm-site.test'", result.SiteURL)
+	}
+
+	var hasCoreInstallHTTPS, hasSearchReplaceHTTPS bool
+	for _, call := range mockClient.calls {
+		if strings.Contains(call, "CoreInstall https://my-ai1wm-site.test") {
+			hasCoreInstallHTTPS = true
+		}
+		if strings.Contains(call, "SearchReplace http://old-domain.com -> https://my-ai1wm-site.test") {
+			hasSearchReplaceHTTPS = true
+		}
+	}
+	if !hasCoreInstallHTTPS {
+		t.Errorf("expected CoreInstall to use https://my-ai1wm-site.test, calls: %v", mockClient.calls)
+	}
+	if !hasSearchReplaceHTTPS {
+		t.Errorf("expected SearchReplace to update database siteurl to https://my-ai1wm-site.test, calls: %v", mockClient.calls)
 	}
 }

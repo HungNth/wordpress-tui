@@ -108,6 +108,13 @@ func (m *WebsitesHubModel) Refresh() {
 	}
 }
 
+func (m *WebsitesHubModel) siteURL(slug string) string {
+	if m.cfg != nil && m.cfg.UsedHerd {
+		return fmt.Sprintf("https://%s.test", slug)
+	}
+	return fmt.Sprintf("http://%s.test", slug)
+}
+
 func (m *WebsitesHubModel) SetRunner(r launcher.ProcessRunner) {
 	m.runner = r
 }
@@ -265,7 +272,7 @@ func (m *WebsitesHubModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.deleteConfirmChoice = false
 					return m, nil
 				case WebsiteActionBrowser:
-					url := fmt.Sprintf("http://%s.test", cand.Slug)
+					url := m.siteURL(cand.Slug)
 					err := launcher.OpenURL(context.Background(), url, m.runner)
 					if err != nil {
 						m.statusMsg = StyleError.Render(fmt.Sprintf("Failed to open browser: %v", err))
@@ -574,7 +581,7 @@ func (m *WebsitesHubModel) Render(width, height int) string {
 				itemTitle = StyleFocus.Render(itemTitle)
 			}
 
-			urlText := StyleMuted.Render(fmt.Sprintf("https://%s.test", cand.Slug))
+			urlText := StyleMuted.Render(m.siteURL(cand.Slug))
 			pathText := StyleMuted.Render(cand.Path)
 
 			sb.WriteString(fmt.Sprintf("%s%s %s\n      URL:  %s\n      Path: %s\n\n", cursor, check, itemTitle, urlText, pathText))
@@ -584,7 +591,7 @@ func (m *WebsitesHubModel) Render(width, height int) string {
 		cand := m.SelectedCandidate()
 		sb.WriteString(StyleFocus.Render("  Website Details") + "\n")
 		sb.WriteString(fmt.Sprintf("    Name/Slug: %s\n", cand.Slug))
-		sb.WriteString(fmt.Sprintf("    URL:       https://%s.test\n", cand.Slug))
+		sb.WriteString(fmt.Sprintf("    URL:       %s\n", m.siteURL(cand.Slug)))
 		sb.WriteString(fmt.Sprintf("    Directory: %s\n\n", cand.Path))
 
 		sb.WriteString(lipgloss.NewStyle().Bold(true).Render("  Select Action:") + "\n")
@@ -628,7 +635,7 @@ func (m *WebsitesHubModel) Render(width, height int) string {
 		cand := m.SelectedCandidate()
 		sb.WriteString(StyleError.Render(fmt.Sprintf("  ⚠ Delete Website %s?", cand.Slug)) + "\n\n")
 		sb.WriteString(fmt.Sprintf("  Directory: %s\n", cand.Path))
-		sb.WriteString(fmt.Sprintf("  URL:       https://%s.test\n\n", cand.Slug))
+		sb.WriteString(fmt.Sprintf("  URL:       %s\n\n", m.siteURL(cand.Slug)))
 
 		yesStyle := StyleMuted
 		noStyle := StyleMuted
@@ -732,7 +739,7 @@ func (m *WebsitesHubModel) Render(width, height int) string {
 		cand := m.SelectedCandidate()
 		sb.WriteString(StyleFocus.Render("  Backup Website: "+cand.Slug) + "\n")
 		sb.WriteString(fmt.Sprintf("    Directory: %s\n", cand.Path))
-		sb.WriteString(fmt.Sprintf("    URL:       https://%s.test\n\n", cand.Slug))
+		sb.WriteString(fmt.Sprintf("    URL:       %s\n\n", m.siteURL(cand.Slug)))
 
 		sb.WriteString(lipgloss.NewStyle().Bold(true).Render("  Select Backup Format:") + "\n")
 		opts := []string{
