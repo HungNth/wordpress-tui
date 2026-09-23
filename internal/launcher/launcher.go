@@ -84,3 +84,37 @@ func OpenDirectory(ctx context.Context, dirPath string, runner ProcessRunner, ta
 		return fmt.Errorf("unsupported operating system %q: only Windows and macOS are supported", goos)
 	}
 }
+
+// OpenURL opens targetURL in the default web browser.
+func OpenURL(ctx context.Context, targetURL string, runner ProcessRunner, targetOS ...string) error {
+	if runner == nil {
+		runner = &DefaultRunner{}
+	}
+
+	goos := runtime.GOOS
+	if len(targetOS) > 0 && targetOS[0] != "" {
+		goos = targetOS[0]
+	}
+
+	switch goos {
+	case "windows":
+		return runner.Start(ctx, "cmd.exe", "/c", "start", targetURL)
+	case "darwin":
+		return runner.Start(ctx, "open", targetURL)
+	default:
+		return runner.Start(ctx, "xdg-open", targetURL)
+	}
+}
+
+// OpenInEditorNonBlocking launches the code editor asynchronously without blocking.
+func OpenInEditorNonBlocking(ctx context.Context, targetPath string, runner ProcessRunner) error {
+	if runner == nil {
+		runner = &DefaultRunner{}
+	}
+
+	if _, err := runner.LookPath("code"); err != nil {
+		return errors.New("VS Code ('code' CLI) not found in PATH")
+	}
+
+	return runner.Start(ctx, "code", targetPath)
+}
