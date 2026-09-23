@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
 	"wptui/internal/config"
 	"wptui/internal/create"
@@ -20,6 +21,7 @@ var ErrUserCancelled = errors.New("user cancelled")
 type Options struct {
 	HomeDir    string
 	WizardFn   func(homeDir string) (*config.Config, error)
+	AppRunner  func(ctx context.Context, model tea.Model) error
 	MenuFn     func() (string, error)
 	CreateFn   func(ctx context.Context, cfg *config.Config) error
 	DeleteFn   func(ctx context.Context, cfg *config.Config) error
@@ -34,6 +36,7 @@ type App struct {
 	cfgPath    string
 	config     *config.Config
 	wizardFn   func(homeDir string) (*config.Config, error)
+	appRunner  func(ctx context.Context, model tea.Model) error
 	menuFn     func() (string, error)
 	createFn   func(ctx context.Context, cfg *config.Config) error
 	deleteFn   func(ctx context.Context, cfg *config.Config) error
@@ -59,9 +62,9 @@ func New(opts Options) *App {
 		wFn = tui.RunConfigWizard
 	}
 
-	mFn := opts.MenuFn
-	if mFn == nil {
-		mFn = tui.RunMainMenu
+	runner := opts.AppRunner
+	if runner == nil {
+		runner = defaultAppRunner
 	}
 
 	cFn := opts.CreateFn
@@ -98,7 +101,8 @@ func New(opts Options) *App {
 		homeDir:    home,
 		cfgPath:    cfgPath,
 		wizardFn:   wFn,
-		menuFn:     mFn,
+		appRunner:  runner,
+		menuFn:     opts.MenuFn,
 		createFn:   cFn,
 		deleteFn:   dFn,
 		configFn:   cfgFn,
@@ -106,7 +110,6 @@ func New(opts Options) *App {
 		backupFn:   bFn,
 		restoreFn:  rFn,
 	}
-
 }
 
 func (a *App) Config() *config.Config {
@@ -472,6 +475,15 @@ func (a *App) RunWithContext(ctx context.Context) error {
 	}
 	a.config = cfg
 
+	if a.menuFn != nil {
+		return a.runLegacyMenuLoop(ctx)
+	}
+
+	appModel := a.BuildAppModel(ctx)
+	return a.appRunner(ctx, appModel)
+}
+
+func (a *App) runLegacyMenuLoop(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():

@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"wptui/internal/app"
 	"wptui/internal/config"
 	"wptui/internal/deprovision"
@@ -347,3 +348,324 @@ func TestApp_RunWithContext_DispatchesRestore(t *testing.T) {
 		t.Errorf("expected RestoreFn to be dispatched by RunWithContext when menu returned 'restore'")
 	}
 }
+
+func TestApp_RunWithContext_MasterDetail_AllSections(t *testing.T) {
+	tempHome := t.TempDir()
+	cfgPath := filepath.Join(tempHome, ".config", "wptui", "config.json")
+	cfg := config.DefaultConfig(tempHome)
+	if err := config.Save(cfgPath, cfg); err != nil {
+		t.Fatalf("Save() failed: %v", err)
+	}
+
+	var runnerInvoked bool
+	application := app.New(app.Options{
+		HomeDir: tempHome,
+		AppRunner: func(ctx context.Context, model tea.Model) error {
+			runnerInvoked = true
+			appModel, ok := model.(*tui.AppModel)
+			if !ok {
+				t.Fatalf("expected model to be *tui.AppModel, got %T", model)
+			}
+
+			// 1. Initial section is Websites
+			if appModel.ActiveSection() != tui.SectionWebsites {
+				t.Errorf("expected initial section SectionWebsites, got %v", appModel.ActiveSection())
+			}
+			if appModel.Focus() != tui.FocusSidebar {
+				t.Errorf("expected initial focus FocusSidebar, got %v", appModel.Focus())
+			}
+
+			// 2. Navigate down to Create
+			appModel.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+			if appModel.ActiveSection() != tui.SectionCreate {
+				t.Errorf("expected section SectionCreate after down arrow, got %v", appModel.ActiveSection())
+			}
+
+			// 3. Navigate down to Restore
+			appModel.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+			if appModel.ActiveSection() != tui.SectionRestore {
+				t.Errorf("expected section SectionRestore after down arrow, got %v", appModel.ActiveSection())
+			}
+
+			// 4. Navigate down to Settings
+			appModel.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+			if appModel.ActiveSection() != tui.SectionSettings {
+				t.Errorf("expected section SectionSettings after down arrow, got %v", appModel.ActiveSection())
+			}
+
+			// 5. Navigate down to Exit
+			appModel.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+			if appModel.ActiveSection() != tui.SectionExit {
+				t.Errorf("expected section SectionExit after down arrow, got %v", appModel.ActiveSection())
+			}
+
+			// 6. Enter on Exit returns tea.Quit
+			_, cmd := appModel.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+			if cmd == nil {
+				t.Errorf("expected tea.Quit cmd on Exit enter, got nil")
+			}
+
+			// 7. Verify clean teardown with 'q'
+			_, qCmd := appModel.Update(tea.KeyPressMsg{Code: 'q', Text: "q"})
+			if qCmd == nil {
+				t.Errorf("expected tea.Quit cmd on 'q', got nil")
+			}
+
+			return nil
+		},
+	})
+
+	if err := application.RunWithContext(context.Background()); err != nil {
+		t.Fatalf("RunWithContext failed: %v", err)
+	}
+
+	if !runnerInvoked {
+		t.Errorf("expected AppRunner to be invoked by RunWithContext")
+	}
+}
+
+func TestApp_RunWithContext_MasterDetail_RestoreFlow(t *testing.T) {
+	tempHome := t.TempDir()
+	cfgPath := filepath.Join(tempHome, ".config", "wptui", "config.json")
+	cfg := config.DefaultConfig(tempHome)
+	cfg.BackupPath = filepath.Join(tempHome, "backups")
+	if err := os.MkdirAll(cfg.BackupPath, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Create dummy zip
+	dummyZip := filepath.Join(cfg.BackupPath, "test-backup.zip")
+	if err := os.WriteFile(dummyZip, []byte("dummy zip content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.Save(cfgPath, cfg); err != nil {
+		t.Fatalf("Save() failed: %v", err)
+	}
+
+	application := app.New(app.Options{
+		HomeDir: tempHome,
+		AppRunner: func(ctx context.Context, model tea.Model) error {
+			appModel := model.(*tui.AppModel)
+
+			// Navigate down to Restore
+			appModel.Update(tea.KeyPressMsg{Code: tea.KeyDown}) // Create
+			appModel.Update(tea.KeyPressMsg{Code: tea.KeyDown}) // Restore
+			if appModel.ActiveSection() != tui.SectionRestore {
+				t.Fatalf("expected SectionRestore, got %v", appModel.ActiveSection())
+			}
+
+			// Enter content pane
+			appModel.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+			if appModel.Focus() != tui.FocusContent {
+				t.Fatalf("expected FocusContent, got %v", appModel.Focus())
+			}
+
+			rw := appModel.RestoreWizard()
+			if rw == nil {
+				t.Fatalf("expected RestoreWizard to be initialized")
+			}
+			if rw.Step() != tui.RestoreWizardStepFormat {
+				t.Errorf("expected RestoreWizardStepFormat, got %v", rw.Step())
+			}
+
+			// Step 1: Select format (Enter)
+			appModel.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+			if rw.Step() != tui.RestoreWizardStepArchive {
+				t.Errorf("expected RestoreWizardStepArchive, got %v", rw.Step())
+			}
+
+			// Step 2: Select archive (Enter)
+			appModel.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+			if rw.Step() != tui.RestoreWizardStepInputs {
+				t.Errorf("expected RestoreWizardStepInputs, got %v", rw.Step())
+			}
+
+			// Esc returns back to archive
+			appModel.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+			if rw.Step() != tui.RestoreWizardStepArchive {
+				t.Errorf("expected RestoreWizardStepArchive after Esc, got %v", rw.Step())
+			}
+
+			// Esc returns to format
+			appModel.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+			if rw.Step() != tui.RestoreWizardStepFormat {
+				t.Errorf("expected RestoreWizardStepFormat after Esc, got %v", rw.Step())
+			}
+
+			// Esc returns to Sidebar
+			appModel.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+			if appModel.Focus() != tui.FocusSidebar {
+				t.Errorf("expected focus to return to FocusSidebar, got %v", appModel.Focus())
+			}
+
+			return nil
+		},
+	})
+
+	if err := application.RunWithContext(context.Background()); err != nil {
+		t.Fatalf("RunWithContext failed: %v", err)
+	}
+}
+
+func TestApp_RunWithContext_MasterDetail_SettingsFlow(t *testing.T) {
+	tempHome := t.TempDir()
+	cfgPath := filepath.Join(tempHome, ".config", "wptui", "config.json")
+	cfg := config.DefaultConfig(tempHome)
+	cfg.DefaultAdminUsername = "initial_admin"
+	if err := config.Save(cfgPath, cfg); err != nil {
+		t.Fatalf("Save() failed: %v", err)
+	}
+
+	var application *app.App
+	application = app.New(app.Options{
+		HomeDir: tempHome,
+		AppRunner: func(ctx context.Context, model tea.Model) error {
+			appModel := model.(*tui.AppModel)
+
+			// Navigate to Settings
+			appModel.Update(tea.KeyPressMsg{Code: tea.KeyDown}) // Create
+			appModel.Update(tea.KeyPressMsg{Code: tea.KeyDown}) // Restore
+			appModel.Update(tea.KeyPressMsg{Code: tea.KeyDown}) // Settings
+			if appModel.ActiveSection() != tui.SectionSettings {
+				t.Fatalf("expected SectionSettings, got %v", appModel.ActiveSection())
+			}
+
+			// Enter content pane
+			appModel.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+			if appModel.Focus() != tui.FocusContent {
+				t.Fatalf("expected FocusContent, got %v", appModel.Focus())
+			}
+
+			sm := appModel.SettingsModel()
+			if sm == nil {
+				t.Fatalf("expected SettingsModel to be initialized")
+			}
+
+			// Modify config file on disk to simulate external edit
+			cfg.DefaultAdminUsername = "updated_admin"
+			if err := config.Save(cfgPath, cfg); err != nil {
+				t.Fatal(err)
+			}
+
+			// Move to Reload Configuration (index 2)
+			appModel.Update(tea.KeyPressMsg{Code: tea.KeyDown}) // Cache
+			appModel.Update(tea.KeyPressMsg{Code: tea.KeyDown}) // Reload
+			appModel.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+
+			// Verify reloaded config
+			if application.Config().DefaultAdminUsername != "updated_admin" {
+				t.Errorf("expected application config to be reloaded with 'updated_admin', got %s", application.Config().DefaultAdminUsername)
+			}
+
+			// Esc returns to sidebar
+			appModel.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+			if appModel.Focus() != tui.FocusSidebar {
+				t.Errorf("expected FocusSidebar after Esc, got %v", appModel.Focus())
+			}
+
+			return nil
+		},
+	})
+
+	if err := application.RunWithContext(context.Background()); err != nil {
+		t.Fatalf("RunWithContext failed: %v", err)
+	}
+}
+
+func TestApp_RunWithContext_FirstRun_MissingConfigRunsWizard(t *testing.T) {
+	tempHome := t.TempDir()
+	cfgPath := filepath.Join(tempHome, ".config", "wptui", "config.json")
+
+	var wizardCalled bool
+	var runnerCalled bool
+
+	application := app.New(app.Options{
+		HomeDir: tempHome,
+		WizardFn: func(homeDir string) (*config.Config, error) {
+			wizardCalled = true
+			c := config.DefaultConfig(homeDir)
+			c.DefaultAdminUsername = "wizard_user"
+			return c, nil
+		},
+		AppRunner: func(ctx context.Context, model tea.Model) error {
+			runnerCalled = true
+			return nil
+		},
+	})
+
+	if err := application.RunWithContext(context.Background()); err != nil {
+		t.Fatalf("RunWithContext failed: %v", err)
+	}
+
+	if !wizardCalled {
+		t.Errorf("expected WizardFn to be called when config.json is missing")
+	}
+	if !runnerCalled {
+		t.Errorf("expected AppRunner to be called after wizard saves config")
+	}
+
+	// Verify config file was saved to disk
+	if _, err := os.Stat(cfgPath); os.IsNotExist(err) {
+		t.Errorf("expected config file to be saved to %s", cfgPath)
+	}
+
+	if application.Config().DefaultAdminUsername != "wizard_user" {
+		t.Errorf("expected saved config admin username to be 'wizard_user', got %s", application.Config().DefaultAdminUsername)
+	}
+}
+
+func TestApp_RunWithContext_MasterDetail_WebsitesHub_ConfigAction(t *testing.T) {
+	tempHome := t.TempDir()
+	cfgPath := filepath.Join(tempHome, ".config", "wptui", "config.json")
+	cfg := config.DefaultConfig(tempHome)
+	siteDir := filepath.Join(tempHome, "sites", "mysite")
+	cfg.WebsitesPath = filepath.Join(tempHome, "sites")
+	if err := os.MkdirAll(siteDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(siteDir, "wp-config.php"), []byte("<?php // dummy"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.Save(cfgPath, cfg); err != nil {
+		t.Fatalf("Save() failed: %v", err)
+	}
+
+	var executedConfig bool
+	application := app.New(app.Options{
+		HomeDir: tempHome,
+		AppRunner: func(ctx context.Context, model tea.Model) error {
+			appModel := model.(*tui.AppModel)
+
+			// Initial state: SectionWebsites
+			if appModel.ActiveSection() != tui.SectionWebsites {
+				t.Fatalf("expected SectionWebsites, got %v", appModel.ActiveSection())
+			}
+
+			// Focus Content Pane
+			appModel.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+
+			// Focus Action Menu on mysite
+			appModel.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+
+			// Action menu cursor is at index 0 (Config). Press Enter to trigger Config.
+			_, cmd := appModel.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+
+			if cmd == nil {
+				t.Fatalf("expected non-nil cmd when selecting Config on website, but got nil (wptui standing still)")
+			}
+			if !appModel.IsExecuting() {
+				t.Errorf("expected appModel.IsExecuting() to be true after selecting Config")
+			}
+			executedConfig = true
+			return nil
+		},
+	})
+
+	if err := application.RunWithContext(context.Background()); err != nil {
+		t.Fatalf("RunWithContext failed: %v", err)
+	}
+
+	if !executedConfig {
+		t.Errorf("expected AppRunner to execute Config action test")
+	}
+}
+
