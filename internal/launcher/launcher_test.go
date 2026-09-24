@@ -142,12 +142,27 @@ func TestOpenDirectory_MacOS(t *testing.T) {
 	}
 }
 
-func TestOpenDirectory_UnsupportedOS(t *testing.T) {
+func TestOpenDirectory_Linux(t *testing.T) {
 	tempDir := t.TempDir()
 	mock := &mockRunner{}
 	ctx := context.Background()
 
 	err := launcher.OpenDirectory(ctx, tempDir, mock, "linux")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(mock.calls) != 1 || mock.calls[0] != "start:xdg-open "+tempDir {
+		t.Errorf("expected 'start:xdg-open %s', got: %v", tempDir, mock.calls)
+	}
+}
+
+func TestOpenDirectory_UnsupportedOS(t *testing.T) {
+	tempDir := t.TempDir()
+	mock := &mockRunner{}
+	ctx := context.Background()
+
+	err := launcher.OpenDirectory(ctx, tempDir, mock, "unsupported-os")
 	if err == nil {
 		t.Fatal("expected error on unsupported OS, got nil")
 	}

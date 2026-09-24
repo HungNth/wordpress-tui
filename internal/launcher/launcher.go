@@ -52,7 +52,7 @@ func OpenInVSCode(ctx context.Context, filePath string, runner ProcessRunner) er
 	return nil
 }
 
-// OpenDirectory opens dirPath in the native operating system file manager on Windows or macOS.
+// OpenDirectory opens dirPath in the native operating system file manager on Windows, macOS, or Linux.
 // If dirPath does not exist, it returns an error instead of creating empty directories.
 func OpenDirectory(ctx context.Context, dirPath string, runner ProcessRunner, targetOS ...string) error {
 	if runner == nil {
@@ -80,8 +80,10 @@ func OpenDirectory(ctx context.Context, dirPath string, runner ProcessRunner, ta
 		return runner.Start(ctx, "explorer.exe", dirPath)
 	case "darwin":
 		return runner.Start(ctx, "open", dirPath)
+	case "linux":
+		return runner.Start(ctx, "xdg-open", dirPath)
 	default:
-		return fmt.Errorf("unsupported operating system %q: only Windows and macOS are supported", goos)
+		return fmt.Errorf("unsupported operating system %q: only Windows, macOS, and Linux are supported", goos)
 	}
 }
 
