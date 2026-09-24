@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -96,14 +97,14 @@ func (m *LiveSearchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "backspace":
 			if len(m.query) > 0 {
-				m.query = m.query[:len(m.query)-1]
+				m.query = deleteLastRune(m.query)
 				m.updateFilter()
 			}
 			return m, nil
 
 		default:
 			text := msg.Text
-			if text == "" && len(str) == 1 {
+			if text == "" && utf8.RuneCountInString(str) == 1 {
 				text = str
 			}
 			if text != "" && !strings.Contains(str, "+") && str != "tab" {
