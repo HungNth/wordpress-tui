@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"wptui/internal/config"
@@ -242,4 +243,63 @@ func TestCreateWizard_TweaksEnterAdvancesToSubmit(t *testing.T) {
 		t.Errorf("expected Enter on Submit to advance to StepPackages, got %v", wizard.Step())
 	}
 }
+
+func TestCreateWizard_VietnameseIMEInputAndBackspace(t *testing.T) {
+	cfg := config.DefaultConfig(t.TempDir())
+	wizard := tui.NewCreateWizardModel(cfg, nil, nil)
+
+	// User types "t", then "e"
+	wizard.Update(tea.KeyPressMsg{Code: 't', Text: "t"})
+	wizard.Update(tea.KeyPressMsg{Code: 'e', Text: "e"})
+
+	// User types 's' in Vietnamese Telex IME:
+	// IME sends Backspace to erase 'e', then sends 'é'
+	wizard.Update(tea.KeyPressMsg{Code: tea.KeyBackspace})
+	wizard.Update(tea.KeyPressMsg{Code: 'é', Text: "é"})
+
+	if wizard.Inputs().WebsiteName != "té" {
+		t.Fatalf("expected WebsiteName 'té', got %q", wizard.Inputs().WebsiteName)
+	}
+
+	// User types 's' again to undo acute accent to "tes":
+	// IME sends Backspace to erase 'é', then sends 'e', then 's'
+	wizard.Update(tea.KeyPressMsg{Code: tea.KeyBackspace})
+	wizard.Update(tea.KeyPressMsg{Code: 'e', Text: "e"})
+	wizard.Update(tea.KeyPressMsg{Code: 's', Text: "s"})
+
+	name := wizard.Inputs().WebsiteName
+	// 1. WebsiteName must be valid UTF-8, no corrupted bytes
+	if !utf8.ValidString(name) {
+		t.Errorf("expected valid UTF-8 string, but WebsiteName contains corrupted bytes: %q (bytes: % x)", name, []byte(name))
+	}
+
+	// 2. WebsiteName must be exactly "tes"
+	if name != "tes" {
+		t.Errorf("expected WebsiteName 'tes', got %q (bytes: % x)", name, []byte(name))
+	}
+
+	// 3. Derived slug must be "tes", NOT "t-es" or "t--es"
+	slug, err := tui.ResolveAndValidateSlug(name, "", nil)
+	if err != nil {
+		t.Fatalf("unexpected validation error: %v", err)
+	}
+	if slug != "tes" {
+		t.Errorf("expected slug 'tes', got %q", slug)
+	}
+
+	// 4. Backspace on 3-byte Vietnamese character (e.g. "Việt" -> backspace -> "Việ" -> backspace -> "Vi")
+	w2 := tui.NewCreateWizardModel(cfg, nil, nil)
+	for _, r := range "Việt" {
+		w2.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	w2.Update(tea.KeyPressMsg{Code: tea.KeyBackspace})
+	if w2.Inputs().WebsiteName != "Việ" {
+		t.Errorf("expected 'Việ' after single backspace on 'Việt', got %q", w2.Inputs().WebsiteName)
+	}
+	w2.Update(tea.KeyPressMsg{Code: tea.KeyBackspace})
+	if w2.Inputs().WebsiteName != "Vi" {
+		t.Errorf("expected 'Vi' after second backspace, got %q", w2.Inputs().WebsiteName)
+	}
+}
+
 

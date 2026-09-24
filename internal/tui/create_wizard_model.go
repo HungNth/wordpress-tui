@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -177,7 +178,7 @@ func (m *CreateWizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			default:
 				text := msg.Text
-				if text == "" && len(str) == 1 {
+				if text == "" && utf8.RuneCountInString(str) == 1 {
 					text = str
 				}
 				if text != "" && !strings.Contains(str, "+") {
@@ -237,25 +238,15 @@ func (m *CreateWizardModel) appendChar(text string) {
 func (m *CreateWizardModel) deleteLastChar() {
 	switch m.fieldIndex {
 	case createFieldWebsiteName:
-		if len(m.inputs.WebsiteName) > 0 {
-			m.inputs.WebsiteName = m.inputs.WebsiteName[:len(m.inputs.WebsiteName)-1]
-		}
+		m.inputs.WebsiteName = deleteLastRune(m.inputs.WebsiteName)
 	case createFieldWebsiteSlug:
-		if len(m.inputs.WebsiteSlug) > 0 {
-			m.inputs.WebsiteSlug = m.inputs.WebsiteSlug[:len(m.inputs.WebsiteSlug)-1]
-		}
+		m.inputs.WebsiteSlug = deleteLastRune(m.inputs.WebsiteSlug)
 	case createFieldUsername:
-		if len(m.inputs.AdminUsername) > 0 {
-			m.inputs.AdminUsername = m.inputs.AdminUsername[:len(m.inputs.AdminUsername)-1]
-		}
+		m.inputs.AdminUsername = deleteLastRune(m.inputs.AdminUsername)
 	case createFieldPassword:
-		if len(m.inputs.AdminPassword) > 0 {
-			m.inputs.AdminPassword = m.inputs.AdminPassword[:len(m.inputs.AdminPassword)-1]
-		}
+		m.inputs.AdminPassword = deleteLastRune(m.inputs.AdminPassword)
 	case createFieldEmail:
-		if len(m.inputs.AdminEmail) > 0 {
-			m.inputs.AdminEmail = m.inputs.AdminEmail[:len(m.inputs.AdminEmail)-1]
-		}
+		m.inputs.AdminEmail = deleteLastRune(m.inputs.AdminEmail)
 	}
 }
 
