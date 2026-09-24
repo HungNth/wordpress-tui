@@ -64,6 +64,7 @@ func TestApp_DeleteExecution_ExecutionRemovesDirectories(t *testing.T) {
 	cfg := config.DefaultConfig(tempHome)
 	sitesDir := filepath.Join(tempHome, "sites")
 	cfg.WebsitesPath = sitesDir
+	cfg.UsedHerd = false
 	if err := config.Save(cfgPath, cfg); err != nil {
 		t.Fatal(err)
 	}
