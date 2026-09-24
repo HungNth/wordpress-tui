@@ -49,6 +49,9 @@ var multiHyphenRegex = regexp.MustCompile(`-+`)
 func Slugify(input string) string {
 	var sb strings.Builder
 	for _, r := range input {
+		if r == unicode.ReplacementChar {
+			continue
+		}
 		if mapped, ok := vietnameseMap[r]; ok {
 			sb.WriteRune(mapped)
 		} else if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' {
