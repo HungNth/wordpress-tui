@@ -2,6 +2,7 @@ package tui_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,7 +21,8 @@ func createTestWebsites(t *testing.T, count int) (string, []string) {
 	dir := t.TempDir()
 	var slugs []string
 	for i := 1; i <= count; i++ {
-		slug := filepath.Join(dir, "site"+string(rune('0'+i)))
+		slugName := fmt.Sprintf("site%d", i)
+		slug := filepath.Join(dir, slugName)
 		if err := os.MkdirAll(slug, 0755); err != nil {
 			t.Fatal(err)
 		}
@@ -28,7 +30,7 @@ func createTestWebsites(t *testing.T, count int) (string, []string) {
 		if err := os.WriteFile(filepath.Join(slug, "wp-config.php"), []byte("<?php"), 0644); err != nil {
 			t.Fatal(err)
 		}
-		slugs = append(slugs, "site"+string(rune('0'+i)))
+		slugs = append(slugs, slugName)
 	}
 	return dir, slugs
 }
@@ -571,4 +573,44 @@ func TestWebsitesHub_SelectAllAndEnterBatchDelete(t *testing.T) {
 		t.Fatalf("expected OnBatchDelete to be called with 2 candidates, got %d", len(deleted))
 	}
 }
+
+func TestWebsitesHub_ScrollingAndCompactLayout(t *testing.T) {
+	sitesDir, _ := createTestWebsites(t, 25)
+	cfg := config.DefaultConfig(sitesDir)
+	cfg.WebsitesPath = sitesDir
+
+	hub := tui.NewWebsitesHubModel(cfg)
+
+	// 1. Initial view at (80, 20)
+	viewInitial := hub.Render(80, 20)
+
+	// Must be compact 1-line: no "Path: " in the list
+	if strings.Contains(viewInitial, "Path: ") {
+		t.Errorf("expected compact 1-line format without 'Path: ', but found 'Path: ' in:\n%s", viewInitial)
+	}
+	// Must contain first site URL
+	if !strings.Contains(viewInitial, "https://site1.test") {
+		t.Errorf("expected view to contain URL https://site1.test, got:\n%s", viewInitial)
+	}
+
+	// 2. Navigate down 18 times to reach site19 (0-indexed cursor = 18)
+	for i := 0; i < 18; i++ {
+		hub.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
+	}
+
+	// Also check in AppModel with terminal height 24 (bodyHeight = 20)
+	app := tui.NewAppModel(cfg)
+	// Focus content
+	app.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	// Press down 18 times in Websites list
+	for i := 0; i < 18; i++ {
+		app.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
+	}
+	appView := app.ViewString()
+	if !strings.Contains(appView, "site19") {
+		t.Logf("CONFIRMED BUG: in AppModel view (height 30/24), site19 is clipped and invisible!")
+	}
+}
+
+
 
