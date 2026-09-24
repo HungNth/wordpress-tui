@@ -1,6 +1,7 @@
 package tui_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -186,3 +187,39 @@ func TestDeleteModel_ConfirmationAndExecution(t *testing.T) {
 		t.Fatalf("expected OnDelete to be called with 2 candidates, got %d", len(deleted))
 	}
 }
+
+func TestDeleteModel_ScrollingAndCompactLayout(t *testing.T) {
+	tmpDir := t.TempDir()
+	sitesDir := filepath.Join(tmpDir, "sites")
+	_ = os.MkdirAll(sitesDir, 0755)
+	for i := 1; i <= 25; i++ {
+		sDir := filepath.Join(sitesDir, fmt.Sprintf("site%d", i))
+		_ = os.MkdirAll(sDir, 0755)
+		_ = os.WriteFile(filepath.Join(sDir, "wp-config.php"), []byte("<?php"), 0644)
+	}
+	cfg := config.DefaultConfig(tmpDir)
+	cfg.WebsitesPath = sitesDir
+	m := tui.NewDeleteModel(cfg)
+
+	viewInitial := m.Render(80, 20)
+	if strings.Contains(viewInitial, "Path: ") {
+		t.Errorf("expected compact 1-line format without 'Path: ', but found 'Path: ' in:\n%s", viewInitial)
+	}
+	if !strings.Contains(viewInitial, "https://site1.test") {
+		t.Errorf("expected view to contain URL https://site1.test, got:\n%s", viewInitial)
+	}
+
+	// Navigate down 18 times to reach site19
+	for i := 0; i < 18; i++ {
+		m.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
+	}
+
+	viewScrolled := m.Render(80, 20)
+	if !strings.Contains(viewScrolled, "site19") {
+		t.Errorf("expected scrolled view to contain active site19, but it was clipped/invisible:\n%s", viewScrolled)
+	}
+	if strings.Contains(viewScrolled, "site1 ") || strings.Contains(viewScrolled, "site1\t") || strings.Contains(viewScrolled, "site1.test") {
+		t.Errorf("expected site1 to have scrolled out of view when focused on site19, got:\n%s", viewScrolled)
+	}
+}
+

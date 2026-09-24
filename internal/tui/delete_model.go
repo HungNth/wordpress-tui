@@ -22,6 +22,7 @@ type DeleteModel struct {
 	cfg           *config.Config
 	candidates    []deprovision.Candidate
 	cursor        int
+	scrollOffset  int
 	selectedMap   map[string]bool
 	state         DeleteModelState
 	confirmChoice bool // false = [ No, Cancel ], true = [ Yes, Delete All ]
@@ -38,6 +39,7 @@ func NewDeleteModel(cfg *config.Config) *DeleteModel {
 		cfg:           cfg,
 		candidates:    candidates,
 		cursor:        0,
+		scrollOffset:  0,
 		selectedMap:   make(map[string]bool),
 		state:         DeleteModelList,
 		confirmChoice: false,
@@ -54,6 +56,27 @@ func (m *DeleteModel) Refresh() {
 		} else {
 			m.cursor = 0
 		}
+	}
+	if m.scrollOffset > m.cursor {
+		m.scrollOffset = m.cursor
+	}
+}
+
+func (m *DeleteModel) clampScroll(maxVisible int) {
+	if maxVisible <= 0 {
+		return
+	}
+	if m.cursor < m.scrollOffset {
+		m.scrollOffset = m.cursor
+	} else if m.cursor >= m.scrollOffset+maxVisible {
+		m.scrollOffset = m.cursor - maxVisible + 1
+	}
+	total := len(m.candidates)
+	if total > maxVisible && m.scrollOffset > total-maxVisible {
+		m.scrollOffset = total - maxVisible
+	}
+	if m.scrollOffset < 0 {
+		m.scrollOffset = 0
 	}
 }
 
@@ -210,7 +233,23 @@ func (m *DeleteModel) Render(contentWidth, bodyHeight int) string {
 			return sb.String()
 		}
 
-		for i, cand := range m.candidates {
+		maxItems := bodyHeight - 9
+		if maxItems < 3 {
+			maxItems = 3
+		}
+		m.clampScroll(maxItems)
+		start := m.scrollOffset
+		end := start + maxItems
+		if end > len(m.candidates) {
+			end = len(m.candidates)
+		}
+
+		if start > 0 {
+			sb.WriteString(StyleMuted.Render(fmt.Sprintf("    ↑ %d more above\n", start)))
+		}
+
+		for i := start; i < end; i++ {
+			cand := m.candidates[i]
 			cursor := "  "
 			if i == m.cursor {
 				cursor = StyleFocus.Render("> ")
@@ -221,26 +260,38 @@ func (m *DeleteModel) Render(contentWidth, bodyHeight int) string {
 				check = StyleSuccess.Render("[x]")
 			}
 
-			itemTitle := cand.Slug
+			slugWidth := 20
+			slugStr := cand.Slug
+			if len(slugStr) < slugWidth {
+				slugStr = slugStr + strings.Repeat(" ", slugWidth-len(slugStr))
+			}
 			if i == m.cursor {
-				itemTitle = StyleFocus.Render(itemTitle)
+				slugStr = StyleFocus.Render(slugStr)
 			}
 
 			urlText := StyleMuted.Render(m.siteURL(cand.Slug))
-			pathText := StyleMuted.Render(cand.Path)
 
-			sb.WriteString(fmt.Sprintf("%s%s %s\n      URL:  %s\n      Path: %s\n\n", cursor, check, itemTitle, urlText, pathText))
+			sb.WriteString(fmt.Sprintf("%s%s %s  %s\n", cursor, check, slugStr, urlText))
+		}
+
+		if end < len(m.candidates) {
+			sb.WriteString(StyleMuted.Render(fmt.Sprintf("    ↓ %d more below\n", len(m.candidates)-end)))
 		}
 
 		if m.warningMsg != "" {
-			sb.WriteString("  " + StyleWarning.Render(m.warningMsg) + "\n\n")
+			sb.WriteString("\n  " + StyleWarning.Render(m.warningMsg) + "\n")
 		}
 
 	case DeleteModelConfirm:
 		selected := m.SelectedCandidates()
 		sb.WriteString(StyleError.Render("  ⚠ Delete Selected Websites?") + "\n\n")
 		sb.WriteString("  The following websites and their databases will be permanently removed:\n")
-		for _, s := range selected {
+		maxPreview := 6
+		for i, s := range selected {
+			if i >= maxPreview {
+				sb.WriteString(StyleMuted.Render(fmt.Sprintf("    ... and %d more website(s)\n", len(selected)-maxPreview)))
+				break
+			}
 			sb.WriteString(fmt.Sprintf("    • %s (%s)\n", s.Slug, s.Path))
 		}
 		sb.WriteString("\n")
