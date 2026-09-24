@@ -70,6 +70,10 @@ func (m *CreateWizardModel) Step() CreateWizardStep {
 	return m.step
 }
 
+func (m *CreateWizardModel) FieldIndex() int {
+	return m.fieldIndex
+}
+
 func (m *CreateWizardModel) Inputs() CreateInputs {
 	return m.inputs
 }
@@ -154,10 +158,6 @@ func (m *CreateWizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "enter":
 				if m.fieldIndex == createFieldSubmit {
 					m.submitStep1()
-					return m, nil
-				}
-				if m.fieldIndex == createFieldTweaks {
-					m.inputs.ApplyTweaks = !m.inputs.ApplyTweaks
 					return m, nil
 				}
 				m.fieldIndex = (m.fieldIndex + 1) % createFieldCount

@@ -181,3 +181,65 @@ func TestCreateWizard_DirtyStateAndDiscardPrompt(t *testing.T) {
 		t.Errorf("expected ShouldExitToSidebar after 'y'")
 	}
 }
+
+func TestCreateWizard_TweaksEnterAdvancesToSubmit(t *testing.T) {
+	cfg := config.DefaultConfig(t.TempDir())
+	wizard := tui.NewCreateWizardModel(cfg, nil, nil)
+
+	// Navigate to ApplyTweaks (field 5) using Enter from field 0..4
+	// Field 0: Name -> type "My Site" -> Enter -> Field 1: Slug
+	for _, ch := range "My Site" {
+		wizard.Update(tea.KeyPressMsg{Code: rune(ch), Text: string(ch)})
+	}
+	wizard.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	// Field 1: Slug -> Enter -> Field 2: Username
+	wizard.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	// Field 2: Username -> Enter -> Field 3: Password
+	wizard.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	// Field 3: Password -> Enter -> Field 4: Email
+	wizard.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	// Field 4: Email -> Enter -> Field 5: Tweaks
+	wizard.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+
+	if !wizard.Inputs().ApplyTweaks {
+		t.Fatalf("expected ApplyTweaks to default to true")
+	}
+
+	// Pressing Enter on Tweaks must advance to Submit button (field 6) WITHOUT toggling Tweaks
+	wizard.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+
+	if !wizard.Inputs().ApplyTweaks {
+		t.Errorf("expected ApplyTweaks to remain true after Enter (Enter should NOT toggle), but was toggled to false")
+	}
+	if wizard.FieldIndex() != 6 {
+		t.Errorf("expected FieldIndex 6 (Submit button) after Enter on Tweaks, got %d", wizard.FieldIndex())
+	}
+
+	// Now press Up to return to Tweaks
+	wizard.Update(tea.KeyPressMsg{Code: tea.KeyUp})
+	if wizard.FieldIndex() != 5 {
+		t.Errorf("expected FieldIndex 5 (Tweaks) after Up, got %d", wizard.FieldIndex())
+	}
+
+	// Press Space to toggle Tweaks
+	wizard.Update(tea.KeyPressMsg{Code: ' ', Text: " "})
+	if wizard.Inputs().ApplyTweaks {
+		t.Errorf("expected ApplyTweaks to be toggled to false by Space")
+	}
+
+	// Press Enter to advance to Submit again
+	wizard.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if wizard.Inputs().ApplyTweaks {
+		t.Errorf("expected ApplyTweaks to remain false after Enter")
+	}
+	if wizard.FieldIndex() != 6 {
+		t.Errorf("expected FieldIndex 6 (Submit button) after Enter, got %d", wizard.FieldIndex())
+	}
+
+	// Press Enter on Submit button advances step to Packages
+	wizard.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if wizard.Step() != tui.CreateWizardStepPackages {
+		t.Errorf("expected Enter on Submit to advance to StepPackages, got %v", wizard.Step())
+	}
+}
+
