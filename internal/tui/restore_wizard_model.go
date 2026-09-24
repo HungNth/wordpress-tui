@@ -31,14 +31,33 @@ type RestoreWizardModel struct {
 	strategy        restore.Strategy
 	formatCursor    int
 	formatOptions   []RestoreFormatOption
-	archives        []string
-	archiveCursor   int
-	selectedArchive string
-	fieldIndex      int
-	inputs          CreateInputs
-	validationErr   string
-	submitted       bool
-	shouldReturn    bool
+	archives            []string
+	archiveCursor       int
+	archiveScrollOffset int
+	selectedArchive     string
+	fieldIndex          int
+	inputs              CreateInputs
+	validationErr       string
+	submitted           bool
+	shouldReturn        bool
+}
+
+func (m *RestoreWizardModel) clampArchiveScroll(maxVisible int) {
+	if maxVisible <= 0 {
+		return
+	}
+	if m.archiveCursor < m.archiveScrollOffset {
+		m.archiveScrollOffset = m.archiveCursor
+	} else if m.archiveCursor >= m.archiveScrollOffset+maxVisible {
+		m.archiveScrollOffset = m.archiveCursor - maxVisible + 1
+	}
+	total := len(m.archives)
+	if total > maxVisible && m.archiveScrollOffset > total-maxVisible {
+		m.archiveScrollOffset = total - maxVisible
+	}
+	if m.archiveScrollOffset < 0 {
+		m.archiveScrollOffset = 0
+	}
 }
 
 func NewRestoreWizardModel(cfg *config.Config, checker SlugAvailabilityChecker) *RestoreWizardModel {
@@ -124,6 +143,7 @@ func (m *RestoreWizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				archives, _ := ScanBackupArchives(m.cfg.BackupPath, m.strategy)
 				m.archives = archives
 				m.archiveCursor = 0
+				m.archiveScrollOffset = 0
 				m.step = RestoreWizardStepArchive
 				return m, nil
 			}
@@ -267,7 +287,23 @@ func (m *RestoreWizardModel) Render(width, height int) string {
 			sb.WriteString(StyleError.Render("  No backup archives found matching format.") + "\n\n")
 			sb.WriteString(StyleMuted.Render("  Press Esc to go back and choose a different format or backup location."))
 		} else {
-			for i, arch := range m.archives {
+			maxItems := height - 8
+			if maxItems < 3 {
+				maxItems = 3
+			}
+			m.clampArchiveScroll(maxItems)
+			start := m.archiveScrollOffset
+			end := start + maxItems
+			if end > len(m.archives) {
+				end = len(m.archives)
+			}
+
+			if start > 0 {
+				sb.WriteString(StyleMuted.Render(fmt.Sprintf("    ↑ %d more above\n", start)))
+			}
+
+			for i := start; i < end; i++ {
+				arch := m.archives[i]
 				cursor := "  "
 				base := filepath.Base(arch)
 				if i == m.archiveCursor {
@@ -277,6 +313,10 @@ func (m *RestoreWizardModel) Render(width, height int) string {
 					base = StyleMuted.Render(base)
 				}
 				sb.WriteString(fmt.Sprintf("%s%s\n", cursor, base))
+			}
+
+			if end < len(m.archives) {
+				sb.WriteString(StyleMuted.Render(fmt.Sprintf("    ↓ %d more below\n", len(m.archives)-end)))
 			}
 		}
 

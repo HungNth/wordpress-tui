@@ -1,6 +1,7 @@
 package tui_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -84,3 +85,32 @@ func TestRestoreWizard_MultiStepFlow(t *testing.T) {
 		t.Errorf("expected return to Step 1 on Esc")
 	}
 }
+
+func TestRestoreWizard_ArchiveScrolling(t *testing.T) {
+	tempDir := t.TempDir()
+	cfg := config.DefaultConfig(tempDir)
+	cfg.BackupPath = tempDir
+
+	for i := 1; i <= 25; i++ {
+		name := filepath.Join(tempDir, fmt.Sprintf("backup%02d.zip", i))
+		_ = os.WriteFile(name, []byte("PK..."), 0644)
+	}
+
+	wizard := tui.NewRestoreWizardModel(cfg, nil)
+	// Go to step 2 (archives)
+	wizard.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+
+	// Navigate down 18 times to reach backup19.zip
+	for i := 0; i < 18; i++ {
+		wizard.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
+	}
+
+	viewScrolled := wizard.Render(70, 20)
+	if !strings.Contains(viewScrolled, "backup19.zip") {
+		t.Errorf("expected scrolled view to contain backup19.zip, but got:\n%s", viewScrolled)
+	}
+	if strings.Contains(viewScrolled, "backup01.zip") {
+		t.Errorf("expected backup01.zip to have scrolled out of view, got:\n%s", viewScrolled)
+	}
+}
+
