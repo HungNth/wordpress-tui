@@ -361,7 +361,9 @@ func TestRunCreateFlow_ColorOutput(t *testing.T) {
 	runner := &e2eMockRunner{parkedPath: cfg.WebsitesPath}
 
 	deps := app.CreateFlowDependencies{
-		Runner: runner,
+		Runner:        runner,
+		CoreResolver:  &mockSmokeCoreResolver{},
+		CoreExtractor: mockSmokeCoreExtractor,
 		PromptCreate: func(c *config.Config, checker ...tui.SlugAvailabilityChecker) (*tui.CreateInputs, error) {
 			return &tui.CreateInputs{
 				WebsiteName: "Color Test Site",
