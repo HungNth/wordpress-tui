@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -433,7 +434,7 @@ func (m *WebsitesHubModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			default:
 				text := msg.Text
-				if text == "" && len(str) == 1 {
+				if text == "" && utf8.RuneCountInString(str) == 1 {
 					text = str
 				}
 				if text != "" && !strings.Contains(str, "+") && m.adminFieldIndex < 3 {
@@ -576,17 +577,11 @@ func (m *WebsitesHubModel) appendAdminChar(c string) {
 func (m *WebsitesHubModel) deleteLastAdminChar() {
 	switch m.adminFieldIndex {
 	case 0:
-		if len(m.adminUsernameInput) > 0 {
-			m.adminUsernameInput = m.adminUsernameInput[:len(m.adminUsernameInput)-1]
-		}
+		m.adminUsernameInput = deleteLastRune(m.adminUsernameInput)
 	case 1:
-		if len(m.adminPasswordInput) > 0 {
-			m.adminPasswordInput = m.adminPasswordInput[:len(m.adminPasswordInput)-1]
-		}
+		m.adminPasswordInput = deleteLastRune(m.adminPasswordInput)
 	case 2:
-		if len(m.adminEmailInput) > 0 {
-			m.adminEmailInput = m.adminEmailInput[:len(m.adminEmailInput)-1]
-		}
+		m.adminEmailInput = deleteLastRune(m.adminEmailInput)
 	}
 }
 
