@@ -1,8 +1,8 @@
 {
-  "name": "wptui",
-  "version": "0.1.0",
-  "author": {
-    "name": "HungNth",
-    "url": "https://github.com/HungNth"
-  }
+    "name": "wptui",
+    "version": "0.2.0",
+    "author": {
+        "name": "HungNth",
+        "url": "https://github.com/HungNth"
+    }
 }
