@@ -26,19 +26,26 @@ type RestoreFormatOption struct {
 }
 
 type RestoreWizardModel struct {
-	cfg             *config.Config
-	checker         SlugAvailabilityChecker
-	step            RestoreWizardStep
-	strategy        restore.Strategy
-	formatCursor    int
-	formatOptions   []RestoreFormatOption
+	cfg                 *config.Config
+	checker             SlugAvailabilityChecker
+	step                RestoreWizardStep
+	strategy            restore.Strategy
+	formatCursor        int
+	formatOptions       []RestoreFormatOption
 	archives            []string
 	archiveCursor       int
 	archiveScrollOffset int
+	scanErr             string
+	archiveErr          string
+	enteringCustomPath  bool
+	customArchivePath   string
 	selectedArchive     string
+	selectedFromCustom  bool
 	fieldIndex          int
 	inputs              CreateInputs
+	cleanInputs         CreateInputs
 	validationErr       string
+	confirmingDiscard   bool
 	submitted           bool
 	shouldReturn        bool
 }
@@ -85,9 +92,22 @@ func NewRestoreWizardModel(cfg *config.Config, checker SlugAvailabilityChecker) 
 		formatOptions: formats,
 		fieldIndex:    0,
 		inputs:        initialInputs,
+		cleanInputs:   initialInputs,
 		submitted:     false,
 		shouldReturn:  false,
 	}
+}
+
+func (m *RestoreWizardModel) IsEnteringCustomPath() bool {
+	return m.step == RestoreWizardStepArchive && m.enteringCustomPath
+}
+
+func (m *RestoreWizardModel) IsConfirmingDiscard() bool {
+	return m.confirmingDiscard
+}
+
+func (m *RestoreWizardModel) IsDirty() bool {
+	return strings.TrimSpace(m.customArchivePath) != "" || m.inputs != m.cleanInputs
 }
 
 func (m *RestoreWizardModel) Step() RestoreWizardStep {
@@ -118,10 +138,81 @@ func (m *RestoreWizardModel) Init() tea.Cmd {
 	return nil
 }
 
+func sanitizeSingleLinePaste(raw string) string {
+	return strings.NewReplacer("\r", "", "\n", "").Replace(raw)
+}
+
+func extractPrintableInput(msg tea.KeyPressMsg) (string, bool) {
+	if msg.Mod&(tea.ModCtrl|tea.ModAlt|tea.ModSuper|tea.ModMeta) != 0 {
+		return "", false
+	}
+	str := msg.String()
+	if str == " " || str == "space" {
+		return " ", true
+	}
+	if msg.Text != "" {
+		return msg.Text, true
+	}
+	if utf8.RuneCountInString(str) == 1 {
+		return str, true
+	}
+	return "", false
+}
+
+func (m *RestoreWizardModel) loadArchivesForStrategy() {
+	scanned, err := ScanBackupArchives(m.cfg.BackupPath, m.strategy)
+	if err != nil {
+		m.scanErr = err.Error()
+	} else {
+		m.scanErr = ""
+	}
+	m.archives = append([]string{CustomPathOption}, scanned...)
+	m.archiveCursor = 0
+	m.archiveScrollOffset = 0
+	m.archiveErr = ""
+	m.enteringCustomPath = false
+}
+
 func (m *RestoreWizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.PasteMsg:
+		pasted := sanitizeSingleLinePaste(msg.Content)
+		if pasted == "" {
+			return m, nil
+		}
+		if m.step == RestoreWizardStepArchive && m.enteringCustomPath {
+			m.customArchivePath += pasted
+			return m, nil
+		}
+		if m.step == RestoreWizardStepInputs && m.fieldIndex < 5 {
+			m.appendChar(pasted)
+			return m, nil
+		}
+		return m, nil
+
 	case tea.KeyPressMsg:
 		str := msg.String()
+
+		if m.confirmingDiscard {
+			switch str {
+			case "y", "Y":
+				m.customArchivePath = ""
+				m.selectedArchive = ""
+				m.selectedFromCustom = false
+				m.enteringCustomPath = false
+				m.archiveErr = ""
+				m.validationErr = ""
+				m.inputs = m.cleanInputs
+				m.confirmingDiscard = false
+				m.step = RestoreWizardStepFormat
+				m.shouldReturn = true
+				return m, nil
+			case "n", "N", "esc":
+				m.confirmingDiscard = false
+				return m, nil
+			}
+			return m, nil
+		}
 
 		switch m.step {
 		case RestoreWizardStepFormat:
@@ -136,20 +227,57 @@ func (m *RestoreWizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.formatCursor++
 				}
 				return m, nil
-			case "esc":
+			case "shift+tab", "backtab":
 				m.shouldReturn = true
+				return m, nil
+			case "esc":
+				if m.IsDirty() {
+					m.confirmingDiscard = true
+				} else {
+					m.shouldReturn = true
+				}
 				return m, nil
 			case "enter":
 				m.strategy = m.formatOptions[m.formatCursor].Strategy
-				archives, _ := ScanBackupArchives(m.cfg.BackupPath, m.strategy)
-				m.archives = archives
-				m.archiveCursor = 0
-				m.archiveScrollOffset = 0
+				m.loadArchivesForStrategy()
 				m.step = RestoreWizardStepArchive
 				return m, nil
 			}
 
 		case RestoreWizardStepArchive:
+			if m.enteringCustomPath {
+				switch str {
+				case "esc":
+					m.enteringCustomPath = false
+					m.archiveErr = ""
+					return m, nil
+				case "enter":
+					cleanPath, err := NormalizeAndValidateArchivePath(m.customArchivePath, m.strategy)
+					if err != nil {
+						m.archiveErr = err.Error()
+						return m, nil
+					}
+					m.customArchivePath = cleanPath
+					m.selectedArchive = cleanPath
+					m.selectedFromCustom = true
+					m.enteringCustomPath = false
+					m.archiveErr = ""
+					m.step = RestoreWizardStepInputs
+					return m, nil
+				case "backspace":
+					m.customArchivePath = deleteLastRune(m.customArchivePath)
+					return m, nil
+				case "ctrl+u":
+					m.customArchivePath = ""
+					return m, nil
+				default:
+					if text, ok := extractPrintableInput(msg); ok {
+						m.customArchivePath += text
+					}
+					return m, nil
+				}
+			}
+
 			switch str {
 			case "up", "k":
 				if m.archiveCursor > 0 {
@@ -162,20 +290,37 @@ func (m *RestoreWizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			case "esc":
+				m.archiveErr = ""
 				m.step = RestoreWizardStepFormat
 				return m, nil
 			case "enter":
-				if len(m.archives) > 0 {
-					m.selectedArchive = m.archives[m.archiveCursor]
-					m.step = RestoreWizardStepInputs
+				if len(m.archives) == 0 {
+					return m, nil
 				}
+				if m.archiveCursor == 0 {
+					m.enteringCustomPath = true
+					m.archiveErr = ""
+					return m, nil
+				}
+				choice := m.archives[m.archiveCursor]
+				cleanPath, err := NormalizeAndValidateArchivePath(choice, m.strategy)
+				if err != nil {
+					m.archiveErr = err.Error()
+					return m, nil
+				}
+				m.selectedArchive = cleanPath
+				m.selectedFromCustom = false
+				m.archiveErr = ""
+				m.step = RestoreWizardStepInputs
 				return m, nil
 			}
 
 		case RestoreWizardStepInputs:
 			switch str {
 			case "esc":
+				m.validationErr = ""
 				m.step = RestoreWizardStepArchive
+				m.enteringCustomPath = m.selectedFromCustom
 				return m, nil
 			case "tab", "down":
 				m.fieldIndex = (m.fieldIndex + 1) % 6
@@ -185,11 +330,20 @@ func (m *RestoreWizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			case "enter":
 				if m.fieldIndex == 5 { // Submit button
+					cleanArchive, err := NormalizeAndValidateArchivePath(m.selectedArchive, m.strategy)
+					if err != nil {
+						m.validationErr = ""
+						m.archiveErr = err.Error()
+						m.step = RestoreWizardStepArchive
+						m.enteringCustomPath = m.selectedFromCustom
+						return m, nil
+					}
 					resolvedSlug, err := ResolveAndValidateSlug(m.inputs.WebsiteName, m.inputs.WebsiteSlug, m.checker)
 					if err != nil {
 						m.validationErr = err.Error()
 						return m, nil
 					}
+					m.selectedArchive = cleanArchive
 					m.inputs.WebsiteSlug = resolvedSlug
 					m.validationErr = ""
 					m.submitted = true
@@ -201,11 +355,7 @@ func (m *RestoreWizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.deleteLastChar()
 				return m, nil
 			default:
-				text := msg.Text
-				if text == "" && utf8.RuneCountInString(str) == 1 {
-					text = str
-				}
-				if text != "" && !strings.Contains(str, "+") {
+				if text, ok := extractPrintableInput(msg); ok {
 					m.appendChar(text)
 				}
 				return m, nil
@@ -250,13 +400,47 @@ func (m *RestoreWizardModel) View() tea.View {
 	return tea.NewView(m.Render(80, 24))
 }
 
+func renderWrappedPrefixed(sb *strings.Builder, indent, prefix string, style lipgloss.Style, text string, width int) {
+	prefixWidth := utf8.RuneCountInString(indent) + utf8.RuneCountInString(prefix)
+	avail := max(width-prefixWidth-2, 14)
+	lines := wrapDisplayText(text, avail)
+	if len(lines) == 0 {
+		return
+	}
+	sb.WriteString(indent + style.Render(prefix+lines[0]) + "\n")
+	hang := strings.Repeat(" ", prefixWidth)
+	for _, line := range lines[1:] {
+		sb.WriteString(hang + style.Render(line) + "\n")
+	}
+}
+
+func renderWrappedPath(sb *strings.Builder, firstIndent, contIndent string, style lipgloss.Style, text string, width int) {
+	contWidth := utf8.RuneCountInString(contIndent)
+	avail := max(width-contWidth-2, 14)
+	lines := wrapDisplayText(firstIndent+text, avail)
+	if len(lines) == 0 {
+		return
+	}
+	sb.WriteString(style.Render(lines[0]) + "\n")
+	for _, line := range lines[1:] {
+		sb.WriteString(contIndent + style.Render(line) + "\n")
+	}
+}
+
 func (m *RestoreWizardModel) Render(width, height int) string {
 	var sb strings.Builder
+	innerWidth := max(width-4, 20)
+	compact := height <= 22
+	if m.confirmingDiscard {
+		sb.WriteString("\n  " + StyleWarning.Render("[!] Discard changes? (y/n)") + "\n\n")
+		sb.WriteString(StyleMuted.Render("  You have unsaved Restore Wizard inputs.\n  Press 'y' to discard or 'n' to keep editing."))
+		return sb.String()
+	}
 
 	switch m.step {
 	case RestoreWizardStepFormat:
-		sb.WriteString(StyleFocus.Render("  Restore Website from Backup") + "\n")
-		sb.WriteString(StyleMuted.Render("  Choose the backup archive format to restore") + "\n\n")
+		sb.WriteString(StyleFocus.Render("  Restore Website") + "\n")
+		sb.WriteString(StyleMuted.Render("  Choose the Restore Archive format") + "\n\n")
 
 		for i, opt := range m.formatOptions {
 			cursor := "  "
@@ -271,49 +455,115 @@ func (m *RestoreWizardModel) Render(width, height int) string {
 		}
 
 	case RestoreWizardStepArchive:
-		sb.WriteString(StyleFocus.Render("  Select Backup Archive") + "\n")
-		sb.WriteString(StyleMuted.Render(fmt.Sprintf("  Scanning archives in %s", m.cfg.BackupPath)) + "\n\n")
-
-		if len(m.archives) == 0 {
-			sb.WriteString(StyleError.Render("  No backup archives found matching format.") + "\n\n")
-			sb.WriteString(StyleMuted.Render("  Press Esc to go back and choose a different format or backup location."))
-		} else {
-			maxItems := height - 8
-			if maxItems < 3 {
-				maxItems = 3
+		if m.enteringCustomPath {
+			sb.WriteString(StyleFocus.Render("  Enter Restore Archive Path") + "\n")
+			extHint, _ := expectedArchiveExtension(m.strategy)
+			if extHint == "" {
+				extHint = ".zip"
 			}
-			m.clampArchiveScroll(maxItems)
-			start := m.archiveScrollOffset
-			end := start + maxItems
-			if end > len(m.archives) {
-				end = len(m.archives)
+			desc := fmt.Sprintf("Enter or paste an absolute %s path (outer quotes allowed)", extHint)
+			for _, line := range wrapDisplayText(desc, innerWidth) {
+				sb.WriteString("  " + StyleMuted.Render(line) + "\n")
+			}
+			if !compact {
+				sb.WriteString("\n")
 			}
 
-			if start > 0 {
-				sb.WriteString(StyleMuted.Render(fmt.Sprintf("    ↑ %d more above\n", start)))
-			}
-
-			for i := start; i < end; i++ {
-				arch := m.archives[i]
-				cursor := "  "
-				base := filepath.Base(arch)
-				if i == m.archiveCursor {
-					cursor = StyleFocus.Render("> ")
-					base = StyleFocus.Render(base)
-				} else {
-					base = StyleMuted.Render(base)
+			sb.WriteString(StyleFocus.Render("> Archive Path:") + "\n")
+			fieldStyle := lipgloss.NewStyle().Foreground(ColorCyan).Underline(true)
+			if m.customArchivePath == "" {
+				placeholder := "e.g. D:\\backups\\website" + extHint
+				sb.WriteString("    " + fieldStyle.Render("_") + " " + StyleMuted.Render(placeholder) + "\n")
+			} else {
+				valLines := wrapDisplayText(m.customArchivePath+"_", max(innerWidth-2, 14))
+				maxValLines := max(height-12, 3)
+				if len(valLines) > maxValLines {
+					valLines = valLines[len(valLines)-maxValLines:]
 				}
-				sb.WriteString(fmt.Sprintf("%s%s\n", cursor, base))
+				for _, line := range valLines {
+					sb.WriteString("    " + fieldStyle.Render(line) + "\n")
+				}
 			}
 
-			if end < len(m.archives) {
-				sb.WriteString(StyleMuted.Render(fmt.Sprintf("    ↓ %d more below\n", len(m.archives)-end)))
+			if m.archiveErr != "" {
+				if !compact {
+					sb.WriteString("\n")
+				}
+				renderWrappedPrefixed(&sb, "  ", "[✗] ", StyleError, m.archiveErr, width)
+			}
+			return strings.TrimRight(sb.String(), "\n")
+		}
+
+		sb.WriteString(StyleFocus.Render("  Select Restore Archive") + "\n")
+		if m.scanErr != "" {
+			renderWrappedPrefixed(&sb, "  ", "[!] ", StyleWarning, m.scanErr, width)
+		} else {
+			for _, line := range wrapDisplayText(fmt.Sprintf("Backup directory: %s", m.cfg.BackupPath), innerWidth) {
+				sb.WriteString("  " + StyleMuted.Render(line) + "\n")
 			}
 		}
+		if !compact {
+			sb.WriteString("\n")
+		}
+
+		var errBlock strings.Builder
+		if m.archiveErr != "" {
+			if !compact {
+				errBlock.WriteString("\n")
+			}
+			renderWrappedPrefixed(&errBlock, "  ", "[✗] ", StyleError, m.archiveErr, width)
+		}
+
+		usedLines := strings.Count(sb.String(), "\n") + strings.Count(errBlock.String(), "\n")
+		if m.scanErr == "" && len(m.archives) == 1 {
+			usedLines += 2
+		}
+		maxItems := max(height-usedLines-5, 2)
+		m.clampArchiveScroll(maxItems)
+		start := m.archiveScrollOffset
+		end := min(start+maxItems, len(m.archives))
+
+		if start > 0 {
+			sb.WriteString(StyleMuted.Render(fmt.Sprintf("    ↑ %d more above\n", start)))
+		}
+
+		maxItemRunes := max(width-6, 16)
+		for i := start; i < end; i++ {
+			arch := m.archives[i]
+			cursor := "  "
+			display := arch
+			if i > 0 {
+				display = filepath.Base(arch)
+			}
+			if utf8.RuneCountInString(display) > maxItemRunes {
+				runes := []rune(display)
+				display = string(runes[:maxItemRunes-3]) + "..."
+			}
+			if i == m.archiveCursor {
+				cursor = StyleFocus.Render("> ")
+				display = StyleFocus.Render(display)
+			} else {
+				display = StyleMuted.Render(display)
+			}
+			sb.WriteString(fmt.Sprintf("%s%s\n", cursor, display))
+		}
+
+		if end < len(m.archives) {
+			sb.WriteString(StyleMuted.Render(fmt.Sprintf("    ↓ %d more below\n", len(m.archives)-end)))
+		}
+
+		if m.scanErr == "" && len(m.archives) == 1 {
+			sb.WriteString("\n  " + StyleMuted.Render("No matching archives in backup directory.") + "\n")
+		}
+
+		sb.WriteString(errBlock.String())
 
 	case RestoreWizardStepInputs:
 		sb.WriteString(StyleFocus.Render("  Restoration Target Parameters") + "\n")
-		sb.WriteString(StyleMuted.Render(fmt.Sprintf("  Archive: %s", filepath.Base(m.selectedArchive))) + "\n\n")
+		renderWrappedPath(&sb, "  Archive: ", "    ", StyleMuted, m.selectedArchive, width)
+		if !compact {
+			sb.WriteString("\n")
+		}
 
 		fields := []struct {
 			label string
@@ -336,10 +586,8 @@ func (m *RestoreWizardModel) Render(width, height int) string {
 				cursor = StyleFocus.Render("> ")
 				label = StyleFocus.Render(label)
 				val = lipgloss.NewStyle().Foreground(ColorCyan).Underline(true).Render(val + "_")
-			} else {
-				if val == "" {
-					val = StyleMuted.Render("(empty)")
-				}
+			} else if val == "" {
+				val = StyleMuted.Render("(empty)")
 			}
 			sb.WriteString(fmt.Sprintf("%s%s : %s\n", cursor, label, val))
 		}
@@ -352,12 +600,18 @@ func (m *RestoreWizardModel) Render(width, height int) string {
 		} else {
 			btnText = StyleMuted.Render(btnText)
 		}
-		sb.WriteString(fmt.Sprintf("\n%s%s\n", btnCursor, btnText))
+		if !compact {
+			sb.WriteString("\n")
+		}
+		sb.WriteString(fmt.Sprintf("%s%s\n", btnCursor, btnText))
 
 		if m.validationErr != "" {
-			sb.WriteString("\n  " + StyleError.Render("✗ "+m.validationErr) + "\n")
+			if !compact {
+				sb.WriteString("\n")
+			}
+			renderWrappedPrefixed(&sb, "  ", "[✗] ", StyleError, m.validationErr, width)
 		}
 	}
 
-	return sb.String()
+	return strings.TrimRight(sb.String(), "\n")
 }

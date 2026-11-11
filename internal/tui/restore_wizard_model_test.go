@@ -46,11 +46,15 @@ func TestRestoreWizard_MultiStepFlow(t *testing.T) {
 
 	// Step 2: Archive selection
 	view2 := wizard.Render(70, 20)
+	if !strings.Contains(view2, tui.CustomPathOption) {
+		t.Errorf("expected archive list to show %s first, got:\n%s", tui.CustomPathOption, view2)
+	}
 	if !strings.Contains(view2, "site1_2026-09-20.zip") {
 		t.Errorf("expected archive list to show site1_2026-09-20.zip, got:\n%s", view2)
 	}
 
-	// Press Enter on the first archive to select it and advance to Step 3
+	// Move down past [Enter custom path...] and press Enter on the scanned archive
+	wizard.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	wizard.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if wizard.Step() != tui.RestoreWizardStepInputs {
 		t.Fatalf("expected step RestoreWizardStepInputs, got %v", wizard.Step())
@@ -100,8 +104,8 @@ func TestRestoreWizard_ArchiveScrolling(t *testing.T) {
 	// Go to step 2 (archives)
 	wizard.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 
-	// Navigate down 18 times to reach backup19.zip
-	for i := 0; i < 18; i++ {
+	// Navigate down 19 times (past [Enter custom path...] + 18 items) to reach backup19.zip
+	for range 19 {
 		wizard.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
 	}
 
@@ -113,4 +117,3 @@ func TestRestoreWizard_ArchiveScrolling(t *testing.T) {
 		t.Errorf("expected backup01.zip to have scrolled out of view, got:\n%s", viewScrolled)
 	}
 }
-

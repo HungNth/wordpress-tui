@@ -69,7 +69,7 @@ var DefaultSidebarItems = []SidebarItem{
 	{Section: SectionWebsites, Title: "Websites", Description: "Local WordPress websites hub"},
 	{Section: SectionCreate, Title: "Create", Description: "Provision a new WordPress site"},
 	{Section: SectionDelete, Title: "Delete", Description: "Batch de-provision local websites"},
-	{Section: SectionRestore, Title: "Restore", Description: "Restore site from backup archive"},
+	{Section: SectionRestore, Title: "Restore", Description: "Restore site from archive"},
 	{Section: SectionSettings, Title: "Settings", Description: "Application settings & maintenance"},
 	{Section: SectionExit, Title: "Exit", Description: "Exit WPTUI"},
 }
@@ -340,6 +340,13 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case tea.PasteMsg:
+		if !m.isExecuting && m.focus == FocusContent && m.activeSec == SectionRestore && m.restoreWizard != nil {
+			newRW, cmd := m.restoreWizard.Update(msg)
+			m.restoreWizard = newRW.(*RestoreWizardModel)
+			return m, cmd
+		}
+		return m, nil
 	case tea.KeyPressMsg:
 		str := msg.String()
 		if str == "ctrl+c" {
@@ -646,13 +653,21 @@ func (m *AppModel) View() tea.View {
 				footerHelp = "  Left/Right Toggle Choice · Enter Confirm · Esc Cancel"
 			}
 		} else if m.activeSec == SectionRestore && m.restoreWizard != nil {
-			switch m.restoreWizard.Step() {
-			case RestoreWizardStepFormat:
-				footerHelp = "  Up/Down (j/k) Format · Enter Next · Esc Sidebar"
-			case RestoreWizardStepArchive:
-				footerHelp = "  Up/Down (j/k) Archive · Enter Next · Esc Back to Format"
-			default:
-				footerHelp = "  Tab/Shift+Tab Navigate · Enter Submit · Esc Back to Archive"
+			if m.restoreWizard.IsConfirmingDiscard() {
+				footerHelp = "  y Discard Changes · n Keep Editing"
+			} else {
+				switch m.restoreWizard.Step() {
+				case RestoreWizardStepFormat:
+					footerHelp = "  Up/Down (j/k) Format · Enter Next · Esc Sidebar"
+				case RestoreWizardStepArchive:
+					if m.restoreWizard.IsEnteringCustomPath() {
+						footerHelp = "  Type/Paste Path · Enter Confirm · Esc Back to Archives"
+					} else {
+						footerHelp = "  Up/Down (j/k) Archive · Enter Select · Esc Back to Format"
+					}
+				case RestoreWizardStepInputs:
+					footerHelp = "  Tab/Shift+Tab Navigate · Enter Submit · Esc Back to Archive"
+				}
 			}
 		} else if m.activeSec == SectionSettings && m.settingsModel != nil {
 			footerHelp = "  Up/Down (j/k) Option · Enter Run · Esc Sidebar"

@@ -92,16 +92,36 @@ func PromptDumpSelection(candidates []string) (string, error) {
 	return choice, nil
 }
 
-// ScanBackupArchives finds valid backup files (.zip, .wpress) in backupPath.
+func expectedArchiveExtension(strategy restore.Strategy) (ext, engineLabel string) {
+	switch strategy {
+	case restore.StrategyFullZIP:
+		return ".zip", "Full ZIP"
+	case restore.StrategyAI1WM:
+		return ".wpress", "AI1WM"
+	default:
+		return "", ""
+	}
+}
+
+// ScanBackupArchives finds valid Restore Archives (.zip, .wpress) in backupPath.
 func ScanBackupArchives(backupPath string, strategy restore.Strategy) ([]string, error) {
-	entries, err := os.ReadDir(backupPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
+	trimmedBackupPath := strings.TrimSpace(backupPath)
+	if trimmedBackupPath == "" {
+		return nil, errors.New("backup directory is not configured")
 	}
 
+	entries, err := os.ReadDir(trimmedBackupPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("backup directory does not exist: %s", trimmedBackupPath)
+		}
+		if errors.Is(err, os.ErrPermission) {
+			return nil, fmt.Errorf("backup directory is not readable: %s", trimmedBackupPath)
+		}
+		return nil, fmt.Errorf("cannot scan backup directory %s: %w", trimmedBackupPath, err)
+	}
+
+	wantExt, _ := expectedArchiveExtension(strategy)
 	var archives []string
 	for _, e := range entries {
 		info, err := e.Info()
@@ -110,54 +130,94 @@ func ScanBackupArchives(backupPath string, strategy restore.Strategy) ([]string,
 		}
 		name := e.Name()
 		ext := strings.ToLower(filepath.Ext(name))
-		if strategy == restore.StrategyFullZIP && ext == ".zip" {
-			archives = append(archives, filepath.Join(backupPath, name))
-		} else if strategy == restore.StrategyAI1WM && ext == ".wpress" {
-			archives = append(archives, filepath.Join(backupPath, name))
+		if wantExt != "" && ext == wantExt {
+			archives = append(archives, filepath.Join(trimmedBackupPath, name))
 		} else if strategy == "" && (ext == ".zip" || ext == ".wpress") {
-			archives = append(archives, filepath.Join(backupPath, name))
+			archives = append(archives, filepath.Join(trimmedBackupPath, name))
 		}
 	}
 	return archives, nil
 }
 
-// ValidateArchivePath validates that the given path exists, is a regular file, is readable, and has expected extension.
-func ValidateArchivePath(path string, strategy restore.Strategy) error {
-	clean := filepath.Clean(strings.TrimSpace(path))
-	if clean == "" {
-		return errors.New("file path cannot be empty")
+// NormalizeArchivePath trims surrounding whitespace, strips at most one balanced pair
+// of outer double quotes, normalizes path separators, and requires an absolute path.
+func NormalizeArchivePath(raw string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", errors.New("restore archive path cannot be empty")
+	}
+
+	hasLeadingQuote := strings.HasPrefix(trimmed, `"`)
+	hasTrailingQuote := strings.HasSuffix(trimmed, `"`)
+	if hasLeadingQuote != hasTrailingQuote || trimmed == `"` {
+		return "", errors.New("restore archive path has unmatched double quotes")
+	}
+	if hasLeadingQuote && hasTrailingQuote {
+		trimmed = trimmed[1 : len(trimmed)-1]
+		if strings.TrimSpace(trimmed) == "" {
+			return "", errors.New("restore archive path cannot be empty")
+		}
+		if trimmed == `"` || strings.HasPrefix(trimmed, `"`) != strings.HasSuffix(trimmed, `"`) {
+			return "", errors.New("restore archive path has unmatched double quotes")
+		}
+	}
+
+	clean := filepath.Clean(trimmed)
+	if !filepath.IsAbs(clean) {
+		return "", errors.New("restore archive path must be an absolute path")
+	}
+	return clean, nil
+}
+
+// NormalizeAndValidateArchivePath normalizes raw input and verifies that the target
+// exists, is a regular readable file, and matches the selected Restore Engine extension.
+func NormalizeAndValidateArchivePath(path string, strategy restore.Strategy) (string, error) {
+	clean, err := NormalizeArchivePath(path)
+	if err != nil {
+		return "", err
 	}
 
 	info, err := os.Lstat(clean)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return fmt.Errorf("file does not exist: %s", clean)
+		if errors.Is(err, os.ErrNotExist) {
+			return "", fmt.Errorf("restore archive does not exist: %s", clean)
 		}
-		return fmt.Errorf("cannot access file: %w", err)
+		if errors.Is(err, os.ErrPermission) {
+			return "", fmt.Errorf("restore archive is not accessible: %s", clean)
+		}
+		return "", fmt.Errorf("cannot access restore archive: %w", err)
 	}
 
 	if !info.Mode().IsRegular() {
-		return fmt.Errorf("path is not a regular file: %s", clean)
+		return "", fmt.Errorf("restore archive path is not a regular file: %s", clean)
 	}
 
 	ext := strings.ToLower(filepath.Ext(clean))
-	if strategy == restore.StrategyFullZIP && ext != ".zip" {
-		return fmt.Errorf("expected .zip archive for Full ZIP restore, got %s", ext)
+	gotExt := ext
+	if gotExt == "" {
+		gotExt = "no extension"
 	}
-	if strategy == restore.StrategyAI1WM && ext != ".wpress" {
-		return fmt.Errorf("expected .wpress archive for AI1WM restore, got %s", ext)
+	wantExt, engineLabel := expectedArchiveExtension(strategy)
+	if wantExt != "" && ext != wantExt {
+		return "", fmt.Errorf("expected %s archive for %s restore, got %s", wantExt, engineLabel, gotExt)
 	}
 	if strategy == "" && ext != ".zip" && ext != ".wpress" {
-		return fmt.Errorf("unsupported backup format %s (must be .zip or .wpress)", ext)
+		return "", fmt.Errorf("expected .zip or .wpress restore archive, got %s", gotExt)
 	}
 
 	f, err := os.Open(clean)
 	if err != nil {
-		return fmt.Errorf("file is not readable: %w", err)
+		return "", fmt.Errorf("restore archive is not readable: %w", err)
 	}
 	_ = f.Close()
 
-	return nil
+	return clean, nil
+}
+
+// ValidateArchivePath validates that the given path exists, is a regular file, is readable, and has expected extension.
+func ValidateArchivePath(path string, strategy restore.Strategy) error {
+	_, err := NormalizeAndValidateArchivePath(path, strategy)
+	return err
 }
 
 // PromptArchiveSelection displays the archive picker with [Enter custom path...] first.
