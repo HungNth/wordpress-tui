@@ -108,6 +108,10 @@ _Avoid_: Shell runner, process spawner
 The operation that captures the complete state of an existing Website—either by creating a consolidated zip archive containing database and source code, or by orchestrating an All-in-One WP Migration package export.
 _Avoid_: Snapshot, site dump, archive bundle
 
+**Batch Website Backup**:
+A Website Backup operation covering multiple selected Websites, all using the same chosen backup approach.
+_Avoid_: Bulk backup loop, multi-site backup
+
 **Backup Archive**:
 The final immutable backup artifact (`.zip` or `.wpress`) relocated to `backup_path` under standardized naming conventions.
 _Avoid_: Dump file, backup folder, zip target
