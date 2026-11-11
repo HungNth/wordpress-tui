@@ -96,9 +96,9 @@ func (m *ProgressMonitorModel) SetSize(width, height int) {
 	if vpHeight < 1 {
 		vpHeight = 1
 	}
-	vpWidth := width - 8
-	if vpWidth < 20 {
-		vpWidth = 20
+	vpWidth := width - 10
+	if vpWidth < 18 {
+		vpWidth = 18
 	}
 	m.viewport = viewport.New(viewport.WithWidth(vpWidth), viewport.WithHeight(vpHeight))
 	if len(m.logLines) > 0 {
@@ -184,47 +184,79 @@ func (m *ProgressMonitorModel) Render(width, height int) string {
 	sb.WriteString(StyleFocus.Render("  "+m.title) + "\n\n")
 
 	// 2. Stepper
+	maxLineWidth := width - 4
+	if maxLineWidth < 30 {
+		maxLineWidth = 30
+	}
+
 	for _, step := range m.steps {
 		var icon string
-		title := step.Title
+		var titleStyle lipgloss.Style
 
 		switch step.Status {
 		case StepStatusPending:
 			icon = StyleMuted.Render("[ ] ")
-			title = StyleMuted.Render(title)
+			titleStyle = StyleMuted
 		case StepStatusRunning:
 			icon = m.spinner.View() + " "
-			title = StyleFocus.Render(title)
+			titleStyle = StyleFocus
 		case StepStatusSuccess:
 			icon = StyleSuccess.Render("[✓] ")
-			title = StyleSuccess.Render(title)
+			titleStyle = StyleSuccess
 		case StepStatusWarning:
 			icon = StyleWarning.Render("[!] ")
-			title = StyleWarning.Render(title)
+			titleStyle = StyleWarning
 		case StepStatusFailed:
 			icon = StyleError.Render("[✗] ")
-			title = StyleError.Render(title)
+			titleStyle = StyleError
 		}
 
-		sb.WriteString("  " + icon + title)
+		rawTitle := step.Title
 		if step.Detail != "" {
-			sb.WriteString(StyleMuted.Render(fmt.Sprintf(" (%s)", step.Detail)))
+			rawTitle += fmt.Sprintf(" (%s)", step.Detail)
 		}
-		sb.WriteString("\n")
+
+		firstLineMax := maxLineWidth - 6
+		if firstLineMax < 15 {
+			firstLineMax = 15
+		}
+
+		lines := wrapWords(rawTitle, firstLineMax)
+		if len(lines) == 0 {
+			lines = []string{""}
+		}
+
+		sb.WriteString("  " + icon + titleStyle.Render(lines[0]) + "\n")
+		for _, nextLine := range lines[1:] {
+			sb.WriteString("      " + titleStyle.Render(nextLine) + "\n")
+		}
 	}
 	sb.WriteString("\n")
 
 	// 3. Log Viewport
+	boxWidth := width - 6
+	if boxWidth < 20 {
+		boxWidth = 20
+	}
+	if width-2 > 0 && boxWidth > width-2 {
+		boxWidth = width - 2
+	}
+
 	vpBorder := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(ColorMuted).
-		Width(width - 6)
-
+		Padding(0, 1).
+		Width(boxWidth)
 	logContent := m.viewport.View()
 	if logContent == "" {
 		logContent = StyleMuted.Render("Waiting for command output...")
 	}
-	sb.WriteString(vpBorder.Render(StyleMuted.Render(" Logs ") + "\n" + logContent))
+	renderedBox := vpBorder.Render(StyleMuted.Render("Logs") + "\n" + logContent)
+	if width > 2 {
+		sb.WriteString(lipgloss.PlaceHorizontal(width-2, lipgloss.Center, renderedBox))
+	} else {
+		sb.WriteString(renderedBox)
+	}
 	sb.WriteString("\n")
 
 	// 4. Completion summary
@@ -241,15 +273,36 @@ func (m *ProgressMonitorModel) Render(width, height int) string {
 		if m.completedMsg.Summary != "" {
 			for _, line := range strings.Split(m.completedMsg.Summary, "\n") {
 				if strings.HasPrefix(line, "[!]") {
-					sb.WriteString("    " + StyleWarning.Render(line) + "\n")
+					rawLines := wrapWords(line, maxLineWidth-4)
+					for _, rl := range rawLines {
+						sb.WriteString("    " + StyleWarning.Render(rl) + "\n")
+					}
 				} else if strings.HasPrefix(line, "[✗]") {
-					sb.WriteString("    " + StyleError.Render(line) + "\n")
+					rawLines := wrapWords(line, maxLineWidth-4)
+					for _, rl := range rawLines {
+						sb.WriteString("    " + StyleError.Render(rl) + "\n")
+					}
 				} else if parts := strings.SplitN(line, ":", 2); len(parts) == 2 {
 					key := parts[0] + ":"
 					val := strings.TrimSpace(parts[1])
-					sb.WriteString("    " + StyleMuted.Render(fmt.Sprintf("%-14s", key)) + " " + StyleHighlight.Render(val) + "\n")
+					valMaxWidth := maxLineWidth - 19
+					if valMaxWidth < 15 {
+						valMaxWidth = 15
+					}
+					valLines := wrapWords(val, valMaxWidth)
+					if len(valLines) == 0 {
+						valLines = []string{""}
+					}
+					sb.WriteString("    " + StyleMuted.Render(fmt.Sprintf("%-14s", key)) + " " + StyleHighlight.Render(valLines[0]) + "\n")
+					valIndent := strings.Repeat(" ", 19)
+					for _, nextVal := range valLines[1:] {
+						sb.WriteString(valIndent + StyleHighlight.Render(nextVal) + "\n")
+					}
 				} else {
-					sb.WriteString("    " + StyleMuted.Render(line) + "\n")
+					rawLines := wrapWords(line, maxLineWidth-4)
+					for _, rl := range rawLines {
+						sb.WriteString("    " + StyleMuted.Render(rl) + "\n")
+					}
 				}
 			}
 		}
