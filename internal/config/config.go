@@ -11,15 +11,11 @@ import (
 	"strings"
 )
 
-type ThemeItem struct {
-	Name string `json:"name"`
-	Slug string `json:"slug"`
-}
-
-type PluginItem struct {
-	Name string `json:"name"`
-	Slug string `json:"slug"`
-}
+const (
+	AppNameHerd    = "herd"
+	AppNameFlock   = "flock"
+	AppNameLaragon = "laragon"
+)
 
 type TweakType string
 
@@ -38,26 +34,24 @@ type WPTweak struct {
 }
 
 type Config struct {
-	UsedHerd              bool         `json:"used_herd"`
-	WebsitesPath          string       `json:"websites_path"`
-	PackagesAPIURL        string       `json:"packages_api_url"`
-	PackagesAPIKey        string       `json:"packages_api_key"`
-	DefaultAdminUsername  string       `json:"default_admin_username"`
-	DefaultAdminPassword  string       `json:"default_admin_password"`
-	DefaultAdminEmail     string       `json:"default_admin_email"`
-	DatabaseHost          string       `json:"database_host"`
-	DatabasePort          int          `json:"database_port"`
-	DBUsername            string       `json:"db_username"`
-	DBPassword            string       `json:"db_password"`
-	DBSocket              string       `json:"db_socket"`
-	DefaultThemeSlug      string       `json:"default_theme_slug"`
-	Themes                []ThemeItem  `json:"themes"`
-	Plugins               []PluginItem `json:"plugins"`
-	WPTweaks              []WPTweak    `json:"wp_tweaks"`
-	BackupExcludes        []string     `json:"backup_excludes"`
-	WPContentCopyExcludes []string     `json:"wp_content_copy_excludes"`
-	DeleteExcludes        []string     `json:"delete_excludes"`
-	BackupPath            string       `json:"backup_path"`
+	AppName               string    `json:"app_name"`
+	AppCommand            string    `json:"app_command"`
+	WebsitesPath          string    `json:"websites_path"`
+	PackagesAPIURL        string    `json:"packages_api_url"`
+	PackagesAPIKey        string    `json:"packages_api_key"`
+	DefaultAdminUsername  string    `json:"default_admin_username"`
+	DefaultAdminPassword  string    `json:"default_admin_password"`
+	DefaultAdminEmail     string    `json:"default_admin_email"`
+	DatabaseHost          string    `json:"database_host"`
+	DatabasePort          int       `json:"database_port"`
+	DBUsername            string    `json:"db_username"`
+	DBPassword            string    `json:"db_password"`
+	DBSocket              string    `json:"db_socket"`
+	WPTweaks              []WPTweak `json:"wp_tweaks"`
+	BackupExcludes        []string  `json:"backup_excludes"`
+	WPContentCopyExcludes []string  `json:"wp_content_copy_excludes"`
+	DeleteExcludes        []string  `json:"delete_excludes"`
+	BackupPath            string    `json:"backup_path"`
 }
 
 var ValidTweakTypes = map[TweakType]bool{
@@ -68,10 +62,9 @@ var ValidTweakTypes = map[TweakType]bool{
 }
 
 func DefaultConfig(homeDir string) *Config {
-	websitesPath := filepath.Join(homeDir, "Herd")
+	websitesPath := filepath.Join(homeDir, "Sites")
 
 	return &Config{
-		UsedHerd:             true,
 		WebsitesPath:         websitesPath,
 		BackupPath:           filepath.Join(websitesPath, "backups"),
 		PackagesAPIURL:       "",
@@ -84,29 +77,6 @@ func DefaultConfig(homeDir string) *Config {
 		DBUsername:           "root",
 		DBPassword:           "",
 		DBSocket:             "",
-		DefaultThemeSlug:     "flatsome",
-		Themes: []ThemeItem{
-			{Name: "Flatsome", Slug: "flatsome"},
-			{Name: "Bricks", Slug: "bricks"},
-			{Name: "Etch Theme", Slug: "etch-theme"},
-			{Name: "Woodmart", Slug: "woodmart"},
-			{Name: "Avada", Slug: "Avada"},
-			{Name: "Jannah", Slug: "jannah"},
-		},
-		Plugins: []PluginItem{
-			{Name: "Advanced Custom Fields PRO", Slug: "advanced-custom-fields-pro"},
-			{Name: "All-in-One WP Migration Unlimited Extension", Slug: "all-in-one-wp-migration-unlimited-extension"},
-			{Name: "Rank Math SEO PRO", Slug: "seo-by-rank-math-pro"},
-			{Name: "UpdraftPlus - Backup/Restore", Slug: "updraftplus"},
-			{Name: "WP Mail SMTP Pro", Slug: "wp-mail-smtp-pro"},
-			{Name: "Admin and Site Enhancements (ASE) Pro", Slug: "admin-site-enhancements-pro"},
-			{Name: "WP Rocket", Slug: "wp-rocket"},
-			{Name: "Perfmatters", Slug: "perfmatters"},
-			{Name: "Duplicator Pro", Slug: "duplicator-pro"},
-			{Name: "FluentCart Pro", Slug: "fluent-cart-pro"},
-			{Name: "Etch", Slug: "etch"},
-			{Name: "Automatic.css", Slug: "automaticcss-plugin"},
-		},
 		WPTweaks: []WPTweak{
 			{Type: TweakTypeConfigSet, Key: "WP_DEBUG", Value: "true", Raw: true},
 			{Type: TweakTypeConfigSet, Key: "WP_DEBUG_LOG", Value: "true", Raw: true},
@@ -176,6 +146,16 @@ func Validate(c *Config) error {
 	if c == nil {
 		return errors.New("config is nil")
 	}
+	switch c.AppName {
+	case AppNameHerd, AppNameFlock, AppNameLaragon:
+	case "":
+		return errors.New("app_name is required (must be 'herd', 'flock', or 'laragon')")
+	default:
+		return fmt.Errorf("invalid app_name %q: must be 'herd', 'flock', or 'laragon'", c.AppName)
+	}
+	if strings.TrimSpace(c.AppCommand) == "" {
+		return errors.New("app_command is required")
+	}
 	if strings.TrimSpace(c.WebsitesPath) == "" {
 		return errors.New("websites_path is required")
 	}
@@ -198,9 +178,6 @@ func Validate(c *Config) error {
 	}
 	if err := ValidateEmail(c.DefaultAdminEmail); err != nil {
 		return fmt.Errorf("invalid default_admin_email: %w", err)
-	}
-	if strings.TrimSpace(c.DefaultThemeSlug) == "" {
-		return errors.New("default_theme_slug is required")
 	}
 	if strings.TrimSpace(c.PackagesAPIURL) != "" {
 		u, err := url.Parse(c.PackagesAPIURL)
@@ -265,20 +242,24 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("invalid config JSON in %s: %w", path, err)
 	}
 
+	if _, ok := raw["used_herd"]; ok {
+		return nil, fmt.Errorf("obsolete configuration in %s: 'used_herd' is no longer supported; please run setup or reconfigure using 'app_name'", path)
+	}
+	if _, ok := raw["themes"]; ok {
+		return nil, fmt.Errorf("obsolete configuration in %s: 'themes' is no longer supported; package catalog is retrieved via API", path)
+	}
+	if _, ok := raw["plugins"]; ok {
+		return nil, fmt.Errorf("obsolete configuration in %s: 'plugins' is no longer supported; package catalog is retrieved via API", path)
+	}
+	if _, ok := raw["default_theme_slug"]; ok {
+		return nil, fmt.Errorf("obsolete configuration in %s: 'default_theme_slug' is no longer supported", path)
+	}
 	var cfg Config
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("invalid config JSON in %s: %w", path, err)
 	}
 	if err := Validate(&cfg); err != nil {
 		return nil, fmt.Errorf("invalid config in %s: %w", path, err)
-	}
-
-	// If delete_excludes key is completely absent from JSON, migrate to default ["backups"] and persist
-	if rawMsg, keyExists := raw["delete_excludes"]; !keyExists || string(rawMsg) == "null" {
-		cfg.DeleteExcludes = []string{"backups"}
-		if err := Save(path, &cfg); err != nil {
-			return nil, fmt.Errorf("failed to persist migrated delete_excludes to %s: %w", path, err)
-		}
 	}
 
 	return &cfg, nil
