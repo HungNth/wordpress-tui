@@ -5,7 +5,7 @@
 
 ## Context
 
-WordPress TUI supports dual-strategy backups (ADR 0014: Full ZIP and All-in-One WP Migration `.wpress`). The `restore` action in the main menu is currently marked coming soon. Reconstituting a WordPress website from an archive introduces critical questions around collision handling, archive discovery, database configuration reconciliation, and credential mutation timing.
+The integrated Restore Wizard currently discovers archives only in `backup_path`, despite the need to restore downloaded or third-party archives from other locations. Reconstituting a WordPress Website from an archive also introduces critical questions around collision handling, archive discovery, database configuration reconciliation, and credential mutation timing.
 
 ## Decision
 
@@ -13,9 +13,13 @@ WordPress TUI supports dual-strategy backups (ADR 0014: Full ZIP and All-in-One 
    - Website Restoration strictly provisions a fresh, non-colliding Website.
    - If the user-supplied Website Slug collides with an existing directory in `websites_path` or database in MySQL, the operation fails fast during preflight validation, prompting for an alternate name. Overwriting existing sites is prohibited.
 
-2. **Archive Discovery & Selection UX**:
-   - The TUI presents an interactive file selection list displaying valid backup archives (`.zip` and `.wpress`) found in `backup_path`.
-   - The first option at the top of the list is always `[Enter custom path...]`, enabling the user to paste an absolute file path from any disk location.
+2. **Restore Archive Discovery & Selection UX**:
+   - After the user chooses Full ZIP or AI1WM, the TUI presents valid Restore Archives found in `backup_path`. The first option is always `[Enter custom path...]`, including when the configured directory is missing, empty, or cannot be scanned; scan failures are reported without blocking custom input.
+   - Full ZIP accepts `.zip`; AI1WM accepts `.wpress`. Extension matching is case-insensitive, and compatible third-party filenames do not need to follow WPTUI naming conventions.
+   - A custom path must be absolute. Before use, surrounding whitespace and exactly one balanced pair of outer double quotes are removed, then the path is normalized using host path semantics. Unbalanced quotes are invalid.
+   - On Enter, both custom paths and listed entries must identify an existing, readable regular file with the extension required by the chosen Restore Engine. Validation errors remain inline and prevent advancement. The same validation runs again before restoration progress starts; a failure returns to archive input while preserving target parameters.
+   - Picker validation does not inspect archive contents; the selected Restore Engine retains responsibility for structural validation.
+   - A Restore Archive outside `backup_path` is used in place without warning or copying, and the source is preserved. The target-parameter step displays its full normalized path.
 
 3. **WordPress Root Discovery in ZIP Archives**:
    - ZIP archives are extracted into an isolated temporary staging directory outside `websites_path`.

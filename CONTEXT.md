@@ -112,8 +112,12 @@ _Avoid_: Snapshot, site dump, archive bundle
 The final immutable backup artifact (`.zip` or `.wpress`) relocated to `backup_path` under standardized naming conventions.
 _Avoid_: Dump file, backup folder, zip target
 
+**Restore Archive**:
+A readable `.zip` or `.wpress` file selected as the source of Website Restoration from any location; it may be a WPTUI Backup Archive or a compatible third-party archive.
+_Avoid_: Restore file, source backup, external backup
+
 **Website Restoration**:
-The operation that reconstitutes a Website from a Backup Archive into a fresh, non-colliding Website, reconciles database configuration, synchronizes administrative credentials, and configures local development hostnames.
+The operation that reconstitutes a Website from a Restore Archive into a fresh, non-colliding Website, reconciles database configuration, synchronizes administrative credentials, and configures local development hostnames.
 _Avoid_: Site unarchive, backup unpack, website overwrite
 
 **Full ZIP Restore Engine**:

@@ -16,8 +16,8 @@ WordPress TUI manages local WordPress **Websites** through an interactive termin
 - **Provisioning:** Create new local WordPress Websites with database creation, WordPress installation, local `.test` domain configuration (via Laravel Herd, Flock, or Laragon), and optional WordPress tweaks and API-driven Package installations.
 - **Website Configuration:** Apply tweaks to existing Websites, update administrator credentials, and install or upgrade plugins and themes from the configured Package Service.
 - **De-provisioning:** Safely remove Websites with database preview and verification, directory removal, and environment cleanup (Herd unsecure, Flock unsecure/unlink, or Laragon reload).
-- **Website Backup:** Create full consolidated ZIP backups (database SQL dump and files) or export All-in-One WP Migration (`.wpress`) archives.
-- **Website Restoration:** Reconstitute Websites from full ZIP backups or All-in-One WP Migration archives into fresh, non-colliding local Websites.
+- **Website Backup:** Export immutable **Backup Archives** to `backup_path` as full consolidated ZIP archives (database SQL dump and files) or All-in-One WP Migration (`.wpress`) archives.
+- **Website Restoration:** Reconstitute Websites into fresh, non-colliding local Websites from any compatible **Restore Archive** (`.zip` or `.wpress`), either discovered in `backup_path` or specified via a custom absolute filesystem path.
 - **Application Settings:** Open the application configuration in VS Code (`code --wait`) or view the local user cache directory in the native file manager.
 
 ## Prerequisites
@@ -126,6 +126,13 @@ WPTUI requires an explicit Local Development Environment selection:
 - **Search & Selection Accumulation**: Separate searchable pickers for plugins and themes preserve selected items across query modifications.
 - **Optional Active Theme**: When one or more themes are selected, users can optionally choose at most one as the Active Theme (or choose none). Provisioning without an active theme is fully supported; the administration interface is accessible while the frontend indicates no active theme is assigned.
 - **Deterministic Provenance**: Failed package resolutions are reported as errors; WPTUI never falls back to arbitrary WordPress.org slugs.
+
+### Website Backup & Restoration
+
+- **Backup Archives vs. Restore Archives**: WPTUI exports immutable **Backup Archives** to the configured `backup_path`. During Website Restoration, any compatible `.zip` (Full ZIP) or `.wpress` (All-in-One WP Migration) file can be selected as a **Restore Archive**.
+- **Custom Restore Archive Paths**: The Restore Wizard always lists `[Enter custom path...]` first, allowing you to enter or paste an absolute path to a Restore Archive stored anywhere on disk (even when `backup_path` is empty, missing, or unreadable).
+- **Quoted Clipboard Paths**: Surrounding whitespace and one balanced pair of outer double quotes (such as Windows Explorer **Copy as path** values like `"D:\Downloads\client-site.zip"`) are normalized automatically on confirmation.
+- **Source Preservation**: External Restore Archives are validated before restoration starts and read directly in place without being copied, moved, renamed, or modified.
 
 ### Configuration Schema & Strict Validation
 
