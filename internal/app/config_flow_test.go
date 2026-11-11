@@ -69,6 +69,8 @@ func (m *mockSiteWPClient) Run(ctx context.Context, dir, name string, args []str
 func TestApp_ConfigMenuRouting(t *testing.T) {
 	tempDir := t.TempDir()
 	cfg := config.DefaultConfig(tempDir)
+	cfg.AppName = config.AppNameHerd
+	cfg.AppCommand = "herd"
 	cfg.WebsitesPath = tempDir
 	cfgPath, err := config.ConfigPath(tempDir)
 	if err != nil {

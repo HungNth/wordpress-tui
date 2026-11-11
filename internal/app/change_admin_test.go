@@ -17,8 +17,9 @@ func TestApp_ChangeAdminExecution_Wiring(t *testing.T) {
 	tempHome := t.TempDir()
 	cfgPath := filepath.Join(tempHome, ".config", "wptui", "config.json")
 	cfg := config.DefaultConfig(tempHome)
+	cfg.AppName = config.AppNameHerd
+	cfg.AppCommand = "herd"
 	if err := config.Save(cfgPath, cfg); err != nil {
-		t.Fatal(err)
 	}
 
 	application := app.New(app.Options{HomeDir: tempHome})
@@ -92,6 +93,8 @@ func TestApp_ChangeAdminExecution_PreflightValidation(t *testing.T) {
 	tempHome := t.TempDir()
 	cfgPath := filepath.Join(tempHome, ".config", "wptui", "config.json")
 	cfg := config.DefaultConfig(tempHome)
+	cfg.AppName = config.AppNameHerd
+	cfg.AppCommand = "herd"
 	_ = config.Save(cfgPath, cfg)
 
 	application := app.New(app.Options{HomeDir: tempHome})

@@ -14,6 +14,7 @@ import (
 	"wptui/internal/create"
 	"wptui/internal/deprovision"
 	"wptui/internal/launcher"
+	"wptui/internal/localenv"
 	"wptui/internal/packages"
 	"wptui/internal/restore"
 	"wptui/internal/siteconfig"
@@ -28,17 +29,14 @@ func defaultAppRunner(ctx context.Context, model tea.Model) error {
 }
 
 func (a *App) siteURL(slug string) string {
-	if a.config != nil && a.config.UsedHerd {
-		return fmt.Sprintf("https://%s.test", slug)
-	}
-	return fmt.Sprintf("http://%s.test", slug)
+	return localenv.SiteURL(a.config, slug)
 }
 
 // BuildAppModel constructs and configures the root Bubble Tea AppModel with all operational handlers.
 func (a *App) BuildAppModel(ctx context.Context) *tui.AppModel {
 	m := tui.NewAppModel(a.config)
 
-	client := wpcli.NewClient()
+	client := wpcli.NewClientForConfig(a.config)
 	dbConn := wpcli.DBConnection{
 		Host:   a.config.DatabaseHost,
 		Port:   a.config.DatabasePort,
@@ -66,39 +64,23 @@ func (a *App) BuildAppModel(ctx context.Context) *tui.AppModel {
 	}
 
 	var catalog []packages.CatalogItem
+	var catalogWarning string
 	if strings.TrimSpace(a.config.PackagesAPIURL) != "" {
 		cat, err := packages.FetchCatalog(ctx, nil, a.config.PackagesAPIURL, a.config.PackagesAPIKey)
-		if err == nil {
+		if err != nil {
+			catalogWarning = fmt.Sprintf("Package Catalog warning: %s", packages.SanitizeError(err))
+		} else if len(cat) == 0 {
+			catalogWarning = "Package Catalog warning: catalog returned 0 packages"
+		} else {
 			catalog = cat
 		}
 	}
 
-	slugSet := make(map[string]bool)
-	for _, it := range catalog {
-		slugSet[it.Slug] = true
-	}
-	for _, p := range a.config.Plugins {
-		if !slugSet[p.Slug] {
-			slugSet[p.Slug] = true
-			catalog = append(catalog, packages.CatalogItem{
-				Name: p.Name,
-				Slug: p.Slug,
-				Type: "plugin",
-			})
-		}
-	}
-	for _, t := range a.config.Themes {
-		if !slugSet[t.Slug] {
-			slugSet[t.Slug] = true
-			catalog = append(catalog, packages.CatalogItem{
-				Name: t.Name,
-				Slug: t.Slug,
-				Type: "theme",
-			})
-		}
-	}
-
 	m.SetCreateDependencies(catalog, checker)
+	if m.WebsitesHub() != nil {
+		m.WebsitesHub().SetCatalog(catalog)
+		m.WebsitesHub().SetCatalogWarning(catalogWarning)
+	}
 	m.SetRestoreDependencies(checker)
 
 	defaultRunner := &launcher.DefaultRunner{}
@@ -110,7 +92,14 @@ func (a *App) BuildAppModel(ctx context.Context) *tui.AppModel {
 
 	if m.SettingsModel() != nil {
 		m.SettingsModel().OnReload = func(newCfg *config.Config) {
+			oldURL := a.config.PackagesAPIURL
+			oldKey := a.config.PackagesAPIKey
 			a.config = newCfg
+			m.SetConfig(newCfg)
+			if strings.TrimSpace(newCfg.PackagesAPIURL) == "" || newCfg.PackagesAPIURL != oldURL || newCfg.PackagesAPIKey != oldKey {
+				catalog = nil
+				m.InvalidateCatalog()
+			}
 		}
 	}
 
@@ -195,7 +184,7 @@ func (a *App) BuildAppModel(ctx context.Context) *tui.AppModel {
 		return cmd
 	})
 
-	m.SetInstallPackagesHandler(func(cand deprovision.Candidate, pkgType packages.PackageType, slugs []string, activate bool) tea.Cmd {
+	m.SetInstallPackagesHandler(func(cand deprovision.Candidate, pkgType packages.PackageType, slugs []string, activate bool, activeTheme ...string) tea.Cmd {
 		ch := make(chan tea.Msg, 128)
 		typeLabel := "Plugins"
 		if pkgType == packages.PackageTypeTheme {
@@ -203,11 +192,15 @@ func (a *App) BuildAppModel(ctx context.Context) *tui.AppModel {
 		}
 		steps := []tui.ProgressStep{
 			{ID: "preflight", Title: "Verify WordPress Site", Status: tui.StepStatusPending},
-			{ID: "resolve", Title: "Resolve Package Archives", Status: tui.StepStatusPending},
+			{ID: "resolve", Title: fmt.Sprintf("Resolve %s Archives", typeLabel), Status: tui.StepStatusPending},
 			{ID: "install", Title: fmt.Sprintf("Install %s", typeLabel), Status: tui.StepStatusPending},
 		}
 		cmd := m.StartProgressWithChannel(fmt.Sprintf("Installing %s on %s", typeLabel, cand.Slug), steps, ch)
-		go a.runInstallPackagesExecution(ctx, cand, pkgType, slugs, activate, ch)
+		actTheme := ""
+		if len(activeTheme) > 0 {
+			actTheme = activeTheme[0]
+		}
+		go a.runInstallPackagesExecution(ctx, cand, pkgType, slugs, activate, actTheme, ch)
 		return cmd
 	})
 
@@ -217,7 +210,7 @@ func (a *App) BuildAppModel(ctx context.Context) *tui.AppModel {
 func (a *App) runCreateExecution(ctx context.Context, inputs tui.CreateInputs, chosenPackages []string, steps []tui.ProgressStep, ch chan<- tea.Msg) {
 	defer close(ch)
 
-	client := wpcli.NewClient()
+	client := wpcli.NewClientForConfig(a.config)
 	dbConn := wpcli.DBConnection{
 		Host:   a.config.DatabaseHost,
 		Port:   a.config.DatabasePort,
@@ -253,59 +246,54 @@ func (a *App) runCreateExecution(ctx context.Context, inputs tui.CreateInputs, c
 	ch <- tui.StepStartMsg{ID: "resolve", Title: "Resolving packages..."}
 	var pluginArts []packages.Artifact
 	var themeArts []packages.Artifact
-	var defaultThemeArt *packages.Artifact
-	defaultThemeSkipped := false
 
-	if a.config.DefaultThemeSlug != "" {
-		if strings.TrimSpace(a.config.PackagesAPIURL) != "" && pkgResolver != nil {
-			ch <- tui.LogLineMsg(fmt.Sprintf("Resolving default theme %s...", a.config.DefaultThemeSlug))
-			art, err := pkgResolver.ResolvePackage(ctx, packages.PackageRef{Type: packages.PackageTypeTheme, Slug: a.config.DefaultThemeSlug}, stageDir)
-			if err != nil {
-				ch <- tui.StepCompleteMsg{ID: "resolve", Status: tui.StepStatusWarning, Detail: err.Error()}
-				ch <- tui.LogLineMsg(fmt.Sprintf("Warning: failed to resolve default theme: %v", err))
-			} else {
-				defaultThemeArt = art
+	if len(chosenPackages) > 0 {
+		if pkgResolver == nil {
+			ch <- tui.StepCompleteMsg{ID: "resolve", Status: tui.StepStatusFailed, Detail: "Package service unavailable"}
+			ch <- tui.OperationCompleteMsg{
+				Title:   "Website Provisioning Failed",
+				Success: false,
+				Summary: "Package resolver is not configured but packages were selected",
 			}
-		} else {
-			defaultThemeSkipped = true
+			return
 		}
-	}
-
-	if pkgResolver != nil && len(chosenPackages) > 0 {
 		for _, slug := range chosenPackages {
 			ch <- tui.LogLineMsg(fmt.Sprintf("Resolving package %s...", slug))
 			art, err := pkgResolver.ResolvePackage(ctx, packages.PackageRef{Type: packages.PackageTypePlugin, Slug: slug}, stageDir)
 			if err != nil {
 				art, err = pkgResolver.ResolvePackage(ctx, packages.PackageRef{Type: packages.PackageTypeTheme, Slug: slug}, stageDir)
 			}
-			if err == nil && art != nil {
-				if art.Ref.Type == packages.PackageTypeTheme {
-					themeArts = append(themeArts, *art)
-				} else {
-					pluginArts = append(pluginArts, *art)
+			if err != nil || art == nil {
+				ch <- tui.StepCompleteMsg{ID: "resolve", Status: tui.StepStatusFailed, Detail: fmt.Sprintf("Failed to resolve %s", slug)}
+				ch <- tui.OperationCompleteMsg{
+					Title:   "Website Provisioning Failed",
+					Success: false,
+					Summary: fmt.Sprintf("Failed to resolve package %q: %v", slug, err),
 				}
+				return
+			}
+			if art.Ref.Type == packages.PackageTypeTheme {
+				themeArts = append(themeArts, *art)
 			} else {
-				ch <- tui.LogLineMsg(fmt.Sprintf("Warning: could not resolve %s: %v", slug, err))
+				pluginArts = append(pluginArts, *art)
 			}
 		}
 	}
 	ch <- tui.StepCompleteMsg{ID: "resolve", Status: tui.StepStatusSuccess, Detail: "Resolved"}
 
 	tracker := NewCreateProgressTracker(ch, steps)
-	ch <- tui.StepStartMsg{ID: "download", Title: "Downloading WordPress core..."}
 	progress := tracker.StepFunc()
 
 	req := create.Request{
-		WebsiteName:         inputs.WebsiteName,
-		WebsiteSlug:         inputs.WebsiteSlug,
-		AdminUsername:       inputs.AdminUsername,
-		AdminPassword:       inputs.AdminPassword,
-		AdminEmail:          inputs.AdminEmail,
-		ApplyTweaks:         inputs.ApplyTweaks,
-		DefaultTheme:        defaultThemeArt,
-		DefaultThemeSkipped: defaultThemeSkipped,
-		PluginArtifacts:     pluginArts,
-		ThemeArtifacts:      themeArts,
+		WebsiteName:     inputs.WebsiteName,
+		WebsiteSlug:     inputs.WebsiteSlug,
+		AdminUsername:   inputs.AdminUsername,
+		AdminPassword:   inputs.AdminPassword,
+		AdminEmail:      inputs.AdminEmail,
+		ApplyTweaks:     inputs.ApplyTweaks,
+		ActiveThemeSlug: inputs.ActiveThemeSlug,
+		PluginArtifacts: pluginArts,
+		ThemeArtifacts:  themeArts,
 	}
 
 	result, err := creator.Create(ctx, req, progress)
@@ -330,7 +318,7 @@ func (a *App) runCreateExecution(ctx context.Context, inputs tui.CreateInputs, c
 func (a *App) runRestoreExecution(ctx context.Context, strategy restore.Strategy, archivePath string, inputs tui.CreateInputs, ch chan<- tea.Msg) {
 	defer close(ch)
 
-	client := wpcli.NewClient()
+	client := wpcli.NewClientForConfig(a.config)
 	ch <- tui.StepStartMsg{ID: "preflight", Title: "Running preflight checks..."}
 
 	targetDir := filepath.Join(a.config.WebsitesPath, inputs.WebsiteSlug)
@@ -418,7 +406,7 @@ func (a *App) runRestoreExecution(ctx context.Context, strategy restore.Strategy
 func (a *App) runBackupExecution(ctx context.Context, cand deprovision.Candidate, strategy backup.BackupStrategy, ch chan<- tea.Msg) {
 	defer close(ch)
 
-	client := wpcli.NewClient()
+	client := wpcli.NewClientForConfig(a.config)
 	backupPath := strings.TrimSpace(a.config.BackupPath)
 	if backupPath == "" {
 		backupPath = filepath.Join(a.config.WebsitesPath, "backups")
@@ -544,7 +532,7 @@ func (a *App) runBackupExecution(ctx context.Context, cand deprovision.Candidate
 func (a *App) runDeleteExecution(ctx context.Context, cands []deprovision.Candidate, ch chan<- tea.Msg) {
 	defer close(ch)
 
-	client := wpcli.NewClient()
+	client := wpcli.NewClientForConfig(a.config)
 	ch <- tui.StepStartMsg{ID: "deprovision", Title: "Resolving databases and de-provisioning..."}
 
 	n := len(cands)
@@ -573,13 +561,13 @@ func (a *App) runDeleteExecution(ctx context.Context, cands []deprovision.Candid
 	}
 
 	results := deprovision.Deprovision(ctx, cands, client, deprovision.DeprovisionOptions{
-		UsedHerd:    a.config.UsedHerd,
+		Config:      a.config,
 		Concurrency: 4,
 		OnProgress: func(r deprovision.Result) {
-			if r.HerdErr != nil || r.DBErr != nil || r.DirErr != nil {
+			if r.EnvironmentErr != nil || r.DBErr != nil || r.DirErr != nil {
 				var errMsgs []string
-				if r.HerdErr != nil {
-					errMsgs = append(errMsgs, fmt.Sprintf("herd: %v", r.HerdErr))
+				if r.EnvironmentErr != nil {
+					errMsgs = append(errMsgs, fmt.Sprintf("environment: %v", r.EnvironmentErr))
 				}
 				if r.DBErr != nil {
 					errMsgs = append(errMsgs, fmt.Sprintf("db: %v", r.DBErr))
@@ -596,7 +584,7 @@ func (a *App) runDeleteExecution(ctx context.Context, cands []deprovision.Candid
 
 	failedCount := 0
 	for _, r := range results {
-		if r.HerdErr != nil || r.DBErr != nil || r.DirErr != nil {
+		if r.EnvironmentErr != nil || r.DBErr != nil || r.DirErr != nil {
 			failedCount++
 		}
 	}
@@ -622,7 +610,7 @@ func (a *App) runDeleteExecution(ctx context.Context, cands []deprovision.Candid
 func (a *App) runConfigExecution(ctx context.Context, cand deprovision.Candidate, ch chan<- tea.Msg) {
 	defer close(ch)
 
-	client := wpcli.NewClient()
+	client := wpcli.NewClientForConfig(a.config)
 	ch <- tui.StepStartMsg{ID: "preflight", Title: "Verifying WordPress site..."}
 
 	// 1. Check directory
@@ -710,7 +698,7 @@ func (a *App) runConfigExecution(ctx context.Context, cand deprovision.Candidate
 func (a *App) runChangeAdminExecution(ctx context.Context, cand deprovision.Candidate, username, password, email string, ch chan<- tea.Msg) {
 	defer close(ch)
 
-	client := wpcli.NewClient()
+	client := wpcli.NewClientForConfig(a.config)
 
 	// 1. Preflight: Verify site directory & wp-config.php
 	ch <- tui.StepStartMsg{ID: "preflight", Title: "Verifying WordPress directory and configuration..."}
@@ -804,10 +792,10 @@ func (a *App) runChangeAdminExecution(ctx context.Context, cand deprovision.Cand
 	}
 }
 
-func (a *App) runInstallPackagesExecution(ctx context.Context, cand deprovision.Candidate, pkgType packages.PackageType, slugs []string, activate bool, ch chan<- tea.Msg) {
+func (a *App) runInstallPackagesExecution(ctx context.Context, cand deprovision.Candidate, pkgType packages.PackageType, slugs []string, activate bool, activeTheme string, ch chan<- tea.Msg) {
 	defer close(ch)
 
-	client := wpcli.NewClient()
+	client := wpcli.NewClientForConfig(a.config)
 	typeLabel := "Plugins"
 	if pkgType == packages.PackageTypeTheme {
 		typeLabel = "Themes"
@@ -860,25 +848,35 @@ func (a *App) runInstallPackagesExecution(ctx context.Context, cand deprovision.
 
 	ch <- tui.StepStartMsg{ID: "resolve", Title: fmt.Sprintf("Resolving %s archives...", typeLabel)}
 	var artifacts []packages.Artifact
+	var failedNames []string
+	var failedCount int
+
 	for _, slug := range slugs {
 		ch <- tui.LogLineMsg(fmt.Sprintf("Resolving %s %s...", pkgType, slug))
-		if pkgResolver != nil {
-			art, err := pkgResolver.ResolvePackage(ctx, packages.PackageRef{Type: pkgType, Slug: slug}, stageDir)
-			if err != nil {
-				ch <- tui.LogLineMsg(fmt.Sprintf("Warning: could not download %s: %v, falling back to WP.org slug", slug, err))
-				artifacts = append(artifacts, packages.Artifact{
-					Ref:  packages.PackageRef{Type: pkgType, Slug: slug},
-					Path: slug,
-				})
-			} else {
-				artifacts = append(artifacts, *art)
-			}
-		} else {
-			artifacts = append(artifacts, packages.Artifact{
-				Ref:  packages.PackageRef{Type: pkgType, Slug: slug},
-				Path: slug,
-			})
+		if pkgResolver == nil {
+			failedCount++
+			failedNames = append(failedNames, slug)
+			ch <- tui.LogLineMsg(fmt.Sprintf("✗ %s: package service not configured", slug))
+			continue
 		}
+		art, err := pkgResolver.ResolvePackage(ctx, packages.PackageRef{Type: pkgType, Slug: slug}, stageDir)
+		if err != nil {
+			failedCount++
+			failedNames = append(failedNames, slug)
+			ch <- tui.LogLineMsg(fmt.Sprintf("✗ %s: %v", slug, err))
+			continue
+		}
+		artifacts = append(artifacts, *art)
+	}
+
+	if len(artifacts) == 0 && len(slugs) > 0 {
+		ch <- tui.StepCompleteMsg{ID: "resolve", Status: tui.StepStatusFailed, Detail: "All package resolutions failed"}
+		ch <- tui.OperationCompleteMsg{
+			Title:   fmt.Sprintf("Failed to Install %s", typeLabel),
+			Success: false,
+			Summary: fmt.Sprintf("Failed to resolve packages: %s", strings.Join(failedNames, ", ")),
+		}
+		return
 	}
 	ch <- tui.StepCompleteMsg{ID: "resolve", Status: tui.StepStatusSuccess, Detail: fmt.Sprintf("%d resolved", len(artifacts))}
 
@@ -888,25 +886,34 @@ func (a *App) runInstallPackagesExecution(ctx context.Context, cand deprovision.
 		ch <- tui.LogLineMsg(message)
 	}
 
-	results := siteconfig.InstallPackages(ctx, cand.Path, pkgType, artifacts, activate, client, onProgress)
+	installActivate := activate
+	if pkgType == packages.PackageTypeTheme {
+		installActivate = false
+	}
+	results := siteconfig.InstallPackages(ctx, cand.Path, pkgType, artifacts, installActivate, client, onProgress)
 
-	var successCount, skippedCount, failedCount int
-	var failedNames []string
+	var successCount, skippedCount int
 	for _, r := range results {
 		if r.Skipped {
 			skippedCount++
 			ch <- tui.LogLineMsg(fmt.Sprintf("[-] %s: %s (skipped)", r.Slug, r.SkipReason))
 		} else if r.Success {
 			successCount++
-			act := ""
-			if r.Activated {
-				act = " (activated)"
-			}
-			ch <- tui.LogLineMsg(fmt.Sprintf("✓ %s: installed%s", r.Slug, act))
+			ch <- tui.LogLineMsg(fmt.Sprintf("✓ %s: installed", r.Slug))
 		} else {
 			failedCount++
 			failedNames = append(failedNames, r.Slug)
 			ch <- tui.LogLineMsg(fmt.Sprintf("✗ %s: %v", r.Slug, r.Err))
+		}
+	}
+
+	if pkgType == packages.PackageTypeTheme && activeTheme != "" {
+		ch <- tui.LogLineMsg(fmt.Sprintf("Activating theme %s...", activeTheme))
+		_, stderr, actErr := client.Run(ctx, cand.Path, "wp", []string{"theme", "activate", activeTheme}, "")
+		if actErr != nil {
+			ch <- tui.LogLineMsg(fmt.Sprintf("✗ Failed to activate theme %s: %v (%s)", activeTheme, actErr, stderr))
+		} else {
+			ch <- tui.LogLineMsg(fmt.Sprintf("✓ Theme %s activated", activeTheme))
 		}
 	}
 
@@ -915,6 +922,13 @@ func (a *App) runInstallPackagesExecution(ctx context.Context, cand deprovision.
 		fmt.Sprintf("Directory:    %s", cand.Path),
 		fmt.Sprintf("Package Type: %s", typeLabel),
 		fmt.Sprintf("Installed:    %d", successCount),
+	}
+	if pkgType == packages.PackageTypeTheme {
+		if activeTheme != "" {
+			summaryLines = append(summaryLines, fmt.Sprintf("Active Theme: %s", activeTheme))
+		} else {
+			summaryLines = append(summaryLines, "Active Theme: (none)")
+		}
 	}
 	if skippedCount > 0 {
 		summaryLines = append(summaryLines, fmt.Sprintf("Skipped:      %d (already up to date)", skippedCount))

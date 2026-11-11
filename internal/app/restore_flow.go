@@ -16,8 +16,8 @@ import (
 
 // RunDefaultRestoreFlow orchestrates the interactive Website Restoration workflow.
 func RunDefaultRestoreFlow(ctx context.Context, cfg *config.Config) error {
-	client := wpcli.NewClient()
-	if err := client.CheckDependencies(cfg.UsedHerd); err != nil {
+	client := wpcli.NewClientForConfig(cfg)
+	if err := client.CheckDependencies(); err != nil {
 		return err
 	}
 

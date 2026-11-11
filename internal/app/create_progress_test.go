@@ -1,6 +1,7 @@
 package app_test
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -17,9 +18,9 @@ func TestCreateProgress_StepProgressionAndSummary(t *testing.T) {
 		WPTweaks: []config.WPTweak{
 			{Type: config.TweakTypeOptionUpdate, Key: "blogdescription", Value: "Just another WP site"},
 		},
-		UsedHerd:         true,
-		DefaultThemeSlug: "flatsome",
-		PackagesAPIURL:   "https://api.example.com",
+		AppName:        config.AppNameHerd,
+		AppCommand:     "herd",
+		PackagesAPIURL: "https://api.example.com",
 	}
 
 	inputs := tui.CreateInputs{
@@ -37,7 +38,7 @@ func TestCreateProgress_StepProgressionAndSummary(t *testing.T) {
 	for i, s := range steps {
 		stepIDs[i] = s.ID
 	}
-	expectedIDs := []string{"resolve", "download", "database", "install", "tweaks", "packages", "herd"}
+	expectedIDs := []string{"resolve", "register", "download", "database", "install", "tweaks", "packages", "environment"}
 	if strings.Join(stepIDs, ",") != strings.Join(expectedIDs, ",") {
 		t.Fatalf("expected step IDs %v, got %v", expectedIDs, stepIDs)
 	}
@@ -52,8 +53,9 @@ func TestCreateProgress_StepProgressionAndSummary(t *testing.T) {
 	ch <- tui.StepStartMsg{ID: "resolve", Title: "Resolving packages..."}
 	ch <- tui.StepCompleteMsg{ID: "resolve", Status: tui.StepStatusSuccess, Detail: "Resolved"}
 
-	ch <- tui.StepStartMsg{ID: "download", Title: "Downloading WordPress core..."}
 	progress := tracker.StepFunc()
+	progress("create_directory", "Creating website directory...")
+	progress("environment_register", "Registering environment...")
 	progress("core_extract", "Extracting WordPress core...")
 	progress("config_create", "Generating wp-config.php...")
 	progress("db_create", "Creating database...")
@@ -62,7 +64,7 @@ func TestCreateProgress_StepProgressionAndSummary(t *testing.T) {
 	progress("theme_install", "Installing default theme flatsome...")
 	progress("plugin_install", "Installing plugin admin-site-enhancements-pro...")
 	progress("plugin_install", "Installing plugin advanced-custom-fields-pro...")
-	progress("herd_secure", "Securing site with Herd TLS...")
+	progress("environment_secure", "Securing site with environment TLS...")
 
 	// Successful finish
 	tracker.CompleteAllSuccess()
@@ -98,8 +100,8 @@ func TestCreateProgress_StepProgressionAndSummary(t *testing.T) {
 		t.Errorf("found unticked [ ] steps in view:\n%s", view)
 	}
 	checkCount := strings.Count(view, "[✓]")
-	if checkCount != 7 {
-		t.Errorf("expected 7 completed [✓] steps, got %d:\n%s", checkCount, view)
+	if checkCount != 8 {
+		t.Errorf("expected 8 completed [✓] steps, got %d:\n%s", checkCount, view)
 	}
 
 	// 3. Summary details must be present and formatted
@@ -125,7 +127,7 @@ func TestCreateProgress_StepProgressionAndSummary(t *testing.T) {
 
 func TestBuildCreateSteps_OmitsInactiveSteps(t *testing.T) {
 	cfg := &config.Config{
-		UsedHerd: false,
+		AppName: "",
 	}
 	inputs := tui.CreateInputs{
 		ApplyTweaks: false,
@@ -139,8 +141,83 @@ func TestBuildCreateSteps_OmitsInactiveSteps(t *testing.T) {
 		if s.ID == "packages" {
 			t.Errorf("packages step should be omitted when no packages chosen")
 		}
-		if s.ID == "herd" {
-			t.Errorf("herd step should be omitted when UsedHerd is false")
+		if s.ID == "environment" {
+			t.Errorf("environment step should be omitted when AppName is empty")
 		}
+	}
+}
+func TestCreateProgress_EarlyRegistrationFailure_LaragonNoFinalTLS(t *testing.T) {
+	laragonCfg := &config.Config{
+		AppName:    config.AppNameLaragon,
+		AppCommand: "laragon.exe",
+	}
+	inputs := tui.CreateInputs{
+		WebsiteName: "Laragon Site",
+		WebsiteSlug: "laragon-site",
+	}
+	steps := app.BuildCreateSteps(inputs, nil, laragonCfg)
+
+	// 1. Verify Laragon has NO final "environment" TLS step
+	for _, s := range steps {
+		if s.ID == "environment" {
+			t.Errorf("Laragon should omit final environment TLS step, found in steps: %v", steps)
+		}
+	}
+
+	ch := make(chan tea.Msg, 50)
+	tracker := app.NewCreateProgressTracker(ch, steps)
+	prog := tracker.StepFunc()
+
+	// Simulate early registration failure
+	prog("create_directory", "Creating website directory...")
+	prog("environment_register", "Registering environment...")
+	tracker.MarkFailed(errors.New("registration failed"))
+
+	close(ch)
+	var msgs []tea.Msg
+	for m := range ch {
+		msgs = append(msgs, m)
+	}
+
+	monitor := tui.NewProgressMonitorModel("Provisioning Laragon Site", steps)
+	monitor.SetSize(80, 24)
+	for _, m := range msgs {
+		monitor.Update(m)
+	}
+	var registerFailed bool
+	var downloadStartedOrCompleted bool
+	for _, m := range msgs {
+		switch msg := m.(type) {
+		case tui.StepCompleteMsg:
+			if msg.ID == "register" && msg.Status == tui.StepStatusFailed {
+				registerFailed = true
+			}
+			if msg.ID == "download" {
+				downloadStartedOrCompleted = true
+			}
+		case tui.StepStartMsg:
+			if msg.ID == "download" {
+				downloadStartedOrCompleted = true
+			}
+		}
+	}
+
+	// 2. Register step must have emitted StepCompleteMsg with StepStatusFailed
+	if !registerFailed {
+		t.Errorf("expected emitted StepCompleteMsg with ID 'register' and Status Failed, got msgs: %+v", msgs)
+	}
+
+	// 3. Download step must NOT have been started or completed
+	if downloadStartedOrCompleted {
+		t.Errorf("expected download step not started or completed, got msgs: %+v", msgs)
+	}
+
+	// 4. In rendered view, failure marker [✗] must be present and no [✓] completed steps
+	view := monitor.Render(80, 24)
+	if !strings.Contains(view, "[✗]") {
+		t.Errorf("expected failed marker [✗] in view, got:\n%s", view)
+	}
+	if strings.Contains(view, "[✓]") {
+		t.Errorf("expected no completed [✓] steps in view upon early registration failure, got:\n%s", view)
 	}
 }

@@ -15,21 +15,22 @@ import (
 )
 
 type ConfigFlowDependencies struct {
-	WPClient       siteconfig.WPClient
-	Resolver       PackageResolver
-	Catalog        []packages.CatalogItem
-	SelectWebsite  func([]deprovision.Candidate) (*deprovision.Candidate, error)
-	SelectAction   func(string) (tui.ConfigAction, error)
-	SelectAdmin    func([]siteconfig.AdminUser) (*siteconfig.AdminUser, error)
-	PromptAdmin    func(siteconfig.AdminUser, *config.Config) (siteconfig.AdminInput, error)
-	PromptPackages func(context.Context, *config.Config, []packages.CatalogItem) ([]string, []string, error)
-	PromptThemes   func(context.Context, *config.Config, []packages.CatalogItem) ([]string, []string, error)
-	PromptThemeAct func() (bool, error)
-	Connector      siteconfig.DBConnector
+	WPClient          siteconfig.WPClient
+	Resolver          PackageResolver
+	Catalog           []packages.CatalogItem
+	SelectWebsite     func([]deprovision.Candidate) (*deprovision.Candidate, error)
+	SelectAction      func(string) (tui.ConfigAction, error)
+	SelectAdmin       func([]siteconfig.AdminUser) (*siteconfig.AdminUser, error)
+	PromptAdmin       func(siteconfig.AdminUser, *config.Config) (siteconfig.AdminInput, error)
+	PromptPackages    func(context.Context, *config.Config, []packages.CatalogItem) ([]string, []string, error)
+	PromptThemes      func(context.Context, *config.Config, []packages.CatalogItem) ([]string, []string, error)
+	PromptThemeAct    func() (bool, error)
+	PromptActiveTheme func([]string) (string, error)
+	Connector         siteconfig.DBConnector
 }
 
 func RunDefaultConfigFlow(ctx context.Context, cfg *config.Config) error {
-	client := wpcli.NewClient()
+	client := wpcli.NewClientForConfig(cfg)
 	var resolver PackageResolver
 	var catalog []packages.CatalogItem
 
@@ -57,11 +58,6 @@ func RunConfigFlowWithDeps(ctx context.Context, cfg *config.Config, deps ConfigF
 		selectWebsite = tui.SelectWebsiteForConfig
 	}
 
-	selectAction := deps.SelectAction
-	if selectAction == nil {
-		selectAction = tui.SelectConfigAction
-	}
-
 	selectAdmin := deps.SelectAdmin
 	if selectAdmin == nil {
 		selectAdmin = tui.SelectAdminUser
@@ -76,7 +72,6 @@ func RunConfigFlowWithDeps(ctx context.Context, cfg *config.Config, deps ConfigF
 	if promptThemeAct == nil {
 		promptThemeAct = tui.PromptThemeActivation
 	}
-
 
 	for {
 		candidates, err := deprovision.DiscoverCandidates(ctx, cfg.WebsitesPath, cfg.DeleteExcludes)
@@ -99,7 +94,32 @@ func RunConfigFlowWithDeps(ctx context.Context, cfg *config.Config, deps ConfigF
 		// Loop on actions for the selected site
 		siteLoop := true
 		for siteLoop {
-			action, err := selectAction(selectedSite.Slug)
+			hasPlugins := false
+			hasThemes := false
+			for _, it := range deps.Catalog {
+				if it.Type == "plugin" {
+					hasPlugins = true
+				} else if it.Type == "theme" {
+					hasThemes = true
+				}
+			}
+			var availableActions []tui.ConfigAction
+			availableActions = append(availableActions, tui.ActionApplyTweaks, tui.ActionChangeAdmin)
+			if hasPlugins {
+				availableActions = append(availableActions, tui.ActionInstallPlugins)
+			}
+			if hasThemes {
+				availableActions = append(availableActions, tui.ActionInstallThemes)
+			}
+			availableActions = append(availableActions, tui.ActionBack)
+
+			var action tui.ConfigAction
+			var err error
+			if deps.SelectAction != nil {
+				action, err = deps.SelectAction(selectedSite.Slug)
+			} else {
+				action, err = tui.SelectConfigAction(selectedSite.Slug, availableActions...)
+			}
 			if err != nil {
 				return err
 			}
@@ -155,8 +175,7 @@ func RunConfigFlowWithDeps(ctx context.Context, cfg *config.Config, deps ConfigF
 					}
 					chosenPlugins = plugins
 				} else {
-					opts := tui.BuildPluginOptions(cfg.Plugins)
-					plugins, err := tui.SelectPackagesFlow(ctx, packages.PackageTypePlugin, opts, deps.Catalog)
+					plugins, err := tui.SelectPackagesFlow(ctx, packages.PackageTypePlugin, deps.Catalog)
 					if err != nil {
 						fmt.Printf("Plugin selection error: %v\n", err)
 						break
@@ -205,8 +224,7 @@ func RunConfigFlowWithDeps(ctx context.Context, cfg *config.Config, deps ConfigF
 					}
 					chosenThemes = themes
 				} else {
-					opts := tui.BuildThemeOptions(cfg.Themes)
-					themes, err := tui.SelectPackagesFlow(ctx, packages.PackageTypeTheme, opts, deps.Catalog)
+					themes, err := tui.SelectPackagesFlow(ctx, packages.PackageTypeTheme, deps.Catalog)
 					if err != nil {
 						fmt.Printf("Theme selection error: %v\n", err)
 						break
@@ -224,10 +242,30 @@ func RunConfigFlowWithDeps(ctx context.Context, cfg *config.Config, deps ConfigF
 					break
 				}
 
-				activate, err := promptThemeAct()
-				if err != nil {
-					fmt.Printf("Theme activation prompt cancelled: %v\n", err)
-					break
+				activeTheme := ""
+				if deps.PromptActiveTheme != nil {
+					act, err := deps.PromptActiveTheme(chosenThemes)
+					if err != nil {
+						fmt.Printf("Theme activation prompt cancelled: %v\n", err)
+						break
+					}
+					activeTheme = act
+				} else if deps.PromptThemeAct != nil {
+					act, err := deps.PromptThemeAct()
+					if err != nil {
+						fmt.Printf("Theme activation prompt cancelled: %v\n", err)
+						break
+					}
+					if act && len(chosenThemes) > 0 {
+						activeTheme = chosenThemes[0]
+					}
+				} else {
+					act, err := tui.PromptActiveTheme(chosenThemes)
+					if err != nil {
+						fmt.Printf("Theme activation prompt cancelled: %v\n", err)
+						break
+					}
+					activeTheme = act
 				}
 
 				refs := make([]packages.PackageRef, 0, len(chosenThemes))
@@ -247,11 +285,21 @@ func RunConfigFlowWithDeps(ctx context.Context, cfg *config.Config, deps ConfigF
 					fmt.Printf("Warning: partial/failed package resolution: %v\n", err)
 				}
 
-				results := siteconfig.InstallPackages(ctx, selectedSite.Path, packages.PackageTypeTheme, artifacts, activate, deps.WPClient, tui.PrintProgress)
+				results := siteconfig.InstallPackages(ctx, selectedSite.Path, packages.PackageTypeTheme, artifacts, false, deps.WPClient, tui.PrintProgress)
 				_ = os.RemoveAll(stageDir)
+
+				if activeTheme != "" {
+					_, _, actErr := deps.WPClient.Run(ctx, selectedSite.Path, "wp", []string{"theme", "activate", activeTheme}, "")
+					if actErr != nil {
+						fmt.Printf("Warning: failed to activate theme %s: %v\n", activeTheme, actErr)
+					} else {
+						fmt.Printf("Theme %q activated.\n", activeTheme)
+					}
+				}
+
 				tui.PrintPackageInstallSummary(results)
 			}
-
 		}
 	}
+	return nil
 }

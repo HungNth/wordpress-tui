@@ -14,6 +14,7 @@ import (
 func BuildCreateSteps(inputs tui.CreateInputs, pkgs []string, cfg *config.Config) []tui.ProgressStep {
 	steps := []tui.ProgressStep{
 		{ID: "resolve", Title: "Resolve Packages", Status: tui.StepStatusPending},
+		{ID: "register", Title: "Prepare Website & Environment", Status: tui.StepStatusPending},
 		{ID: "download", Title: "Download & Extract WordPress Core", Status: tui.StepStatusPending},
 		{ID: "database", Title: "Create Database & Config", Status: tui.StepStatusPending},
 		{ID: "install", Title: "Install WordPress", Status: tui.StepStatusPending},
@@ -21,12 +22,11 @@ func BuildCreateSteps(inputs tui.CreateInputs, pkgs []string, cfg *config.Config
 	if inputs.ApplyTweaks && len(cfg.WPTweaks) > 0 {
 		steps = append(steps, tui.ProgressStep{ID: "tweaks", Title: "Apply Tweaks", Status: tui.StepStatusPending})
 	}
-	hasPackages := len(pkgs) > 0 || (cfg.DefaultThemeSlug != "" && strings.TrimSpace(cfg.PackagesAPIURL) != "")
-	if hasPackages {
+	if len(pkgs) > 0 {
 		steps = append(steps, tui.ProgressStep{ID: "packages", Title: "Install Selected Packages", Status: tui.StepStatusPending})
 	}
-	if cfg.UsedHerd {
-		steps = append(steps, tui.ProgressStep{ID: "herd", Title: "Configure Herd TLS", Status: tui.StepStatusPending})
+	if cfg != nil && (cfg.AppName == config.AppNameHerd || cfg.AppName == config.AppNameFlock) {
+		steps = append(steps, tui.ProgressStep{ID: "environment", Title: "Configure Environment TLS", Status: tui.StepStatusPending})
 	}
 	return steps
 }
@@ -46,61 +46,51 @@ func NewCreateProgressTracker(ch chan<- tea.Msg, steps []tui.ProgressStep) *Crea
 	}
 }
 
+func (t *CreateProgressTracker) transition(targetStep, detail string) {
+	if t.currentStep == targetStep {
+		return
+	}
+	if t.currentStep != "" {
+		t.ch <- tui.StepCompleteMsg{ID: t.currentStep, Status: tui.StepStatusSuccess, Detail: "Complete"}
+	}
+	t.currentStep = targetStep
+	t.ch <- tui.StepStartMsg{ID: targetStep, Title: detail}
+}
+
 // StepFunc returns the progress callback passed to creator.Create.
 func (t *CreateProgressTracker) StepFunc() create.ProgressFunc {
 	return func(step, detail string) {
 		t.ch <- tui.LogLineMsg(detail)
 		switch step {
-		case "create_directory", "core_resolve", "core_extract", "core_download":
-			t.currentStep = "download"
-			t.ch <- tui.StepStartMsg{ID: "download", Title: detail}
+		case "create_directory", "environment_register":
+			t.transition("register", detail)
+
+		case "core_resolve", "core_extract", "core_download":
+			t.transition("download", detail)
 
 		case "config_create", "db_create":
-			if t.currentStep == "download" {
-				t.ch <- tui.StepCompleteMsg{ID: "download", Status: tui.StepStatusSuccess, Detail: "Complete"}
-			}
-			t.currentStep = "database"
-			t.ch <- tui.StepStartMsg{ID: "database", Title: detail}
+			t.transition("database", detail)
 
 		case "core_install":
-			if t.currentStep == "database" {
-				t.ch <- tui.StepCompleteMsg{ID: "database", Status: tui.StepStatusSuccess, Detail: "Complete"}
-			}
-			t.currentStep = "install"
-			t.ch <- tui.StepStartMsg{ID: "install", Title: detail}
+			t.transition("install", detail)
 
 		case "tweaks", "tweak":
-			if t.currentStep == "install" {
-				t.ch <- tui.StepCompleteMsg{ID: "install", Status: tui.StepStatusSuccess, Detail: "Complete"}
-			}
-			t.currentStep = "tweaks"
-			t.ch <- tui.StepStartMsg{ID: "tweaks", Title: detail}
+			t.transition("tweaks", detail)
 
 		case "theme_install", "plugin_install":
-			if t.currentStep == "tweaks" {
-				t.ch <- tui.StepCompleteMsg{ID: "tweaks", Status: tui.StepStatusSuccess, Detail: "Complete"}
-			} else if t.currentStep == "install" {
-				t.ch <- tui.StepCompleteMsg{ID: "install", Status: tui.StepStatusSuccess, Detail: "Complete"}
-			}
-			t.currentStep = "packages"
-			t.ch <- tui.StepStartMsg{ID: "packages", Title: detail}
+			t.transition("packages", detail)
 
-		case "herd_secure":
-			if t.currentStep == "packages" {
-				t.ch <- tui.StepCompleteMsg{ID: "packages", Status: tui.StepStatusSuccess, Detail: "Complete"}
-			} else if t.currentStep == "tweaks" {
-				t.ch <- tui.StepCompleteMsg{ID: "tweaks", Status: tui.StepStatusSuccess, Detail: "Complete"}
-			} else if t.currentStep == "install" {
-				t.ch <- tui.StepCompleteMsg{ID: "install", Status: tui.StepStatusSuccess, Detail: "Complete"}
-			}
-			t.currentStep = "herd"
-			t.ch <- tui.StepStartMsg{ID: "herd", Title: detail}
+		case "environment_secure":
+			t.transition("environment", detail)
 		}
 	}
 }
 
 // CompleteAllSuccess marks any remaining active or pending steps as succeeded.
 func (t *CreateProgressTracker) CompleteAllSuccess() {
+	if t.currentStep != "" {
+		t.ch <- tui.StepCompleteMsg{ID: t.currentStep, Status: tui.StepStatusSuccess, Detail: "Complete"}
+	}
 	for _, s := range t.steps {
 		t.ch <- tui.StepCompleteMsg{ID: s.ID, Status: tui.StepStatusSuccess, Detail: "Complete"}
 	}
@@ -134,6 +124,8 @@ func FormatCreateSummary(inputs tui.CreateInputs, result *create.Result, default
 
 	if result.ActiveTheme != "" {
 		lines = append(lines, fmt.Sprintf("Active Theme: %s", result.ActiveTheme))
+	} else {
+		lines = append(lines, "Active Theme: none (administration interface available; frontend has no active renderer)")
 	}
 	if len(result.InstalledPlugins) > 0 {
 		lines = append(lines, fmt.Sprintf("Plugins:      %s", strings.Join(result.InstalledPlugins, ", ")))

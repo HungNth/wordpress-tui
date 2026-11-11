@@ -131,6 +131,8 @@ func TestE2E_ComposedSiteConfiguration(t *testing.T) {
 
 	cfg := &config.Config{
 		WebsitesPath: tempDir,
+		AppName:      config.AppNameHerd,
+		AppCommand:   "herd",
 		WPTweaks: []config.WPTweak{
 			{Type: "config_set", Key: "WP_DEBUG", Value: "true"},
 		},
@@ -157,8 +159,8 @@ func TestE2E_ComposedSiteConfiguration(t *testing.T) {
 	siteSelectionCount := 0
 
 	deps := app.ConfigFlowDependencies{
-		WPClient: client,
-		Resolver: &mockE2EResolver{},
+		WPClient:  client,
+		Resolver:  &mockE2EResolver{},
 		Connector: connector,
 		SelectWebsite: func(candidates []deprovision.Candidate) (*deprovision.Candidate, error) {
 			siteSelectionCount++

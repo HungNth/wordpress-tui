@@ -20,9 +20,8 @@ func TestRunConfigFlowWithDeps_CatalogAvailableForSearch(t *testing.T) {
 
 	cfg := &config.Config{
 		WebsitesPath: tempDir,
-		Plugins: []config.PluginItem{
-			{Name: "Plugin Default", Slug: "plugin-default"},
-		},
+		AppName:      config.AppNameHerd,
+		AppCommand:   "herd",
 	}
 
 	catalogItems := []packages.CatalogItem{

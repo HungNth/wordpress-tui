@@ -46,6 +46,8 @@ func (m *mockSettingsLauncher) Start(ctx context.Context, name string, args ...s
 func TestApp_SettingsMenuRouting(t *testing.T) {
 	tempDir := t.TempDir()
 	cfg := config.DefaultConfig(tempDir)
+	cfg.AppName = config.AppNameHerd
+	cfg.AppCommand = "herd"
 	cfg.WebsitesPath = tempDir
 	cfgPath, err := config.ConfigPath(tempDir)
 	if err != nil {
@@ -88,6 +90,8 @@ func TestRunSettingsFlowWithDeps_OpenVSCodeAndHotReload(t *testing.T) {
 	cfgPath := filepath.Join(tempDir, "config.json")
 
 	initialCfg := config.DefaultConfig(tempDir)
+	initialCfg.AppName = config.AppNameHerd
+	initialCfg.AppCommand = "herd"
 	initialCfg.WebsitesPath = tempDir
 	initialCfg.DefaultAdminUsername = "initial_admin"
 	_ = config.Save(cfgPath, initialCfg)
@@ -96,6 +100,8 @@ func TestRunSettingsFlowWithDeps_OpenVSCodeAndHotReload(t *testing.T) {
 		runFn: func(ctx context.Context, name string, args ...string) error {
 			// Simulate user editing config.json in VS Code before closing
 			updatedCfg := config.DefaultConfig(tempDir)
+			updatedCfg.AppName = config.AppNameHerd
+			updatedCfg.AppCommand = "herd"
 			updatedCfg.WebsitesPath = tempDir
 			updatedCfg.DefaultAdminUsername = "updated_admin"
 			return config.Save(cfgPath, updatedCfg)
@@ -138,6 +144,8 @@ func TestRunSettingsFlowWithDeps_InvalidJSONRetainsOldConfig(t *testing.T) {
 	cfgPath := filepath.Join(tempDir, "config.json")
 
 	initialCfg := config.DefaultConfig(tempDir)
+	initialCfg.AppName = config.AppNameHerd
+	initialCfg.AppCommand = "herd"
 	initialCfg.WebsitesPath = tempDir
 	initialCfg.DefaultAdminUsername = "stable_admin"
 	_ = config.Save(cfgPath, initialCfg)
@@ -216,6 +224,8 @@ func TestRunSettingsFlowWithDeps_VSCodeProcessFails_NoReload(t *testing.T) {
 	cfgPath := filepath.Join(tempDir, "config.json")
 
 	initialCfg := config.DefaultConfig(tempDir)
+	initialCfg.AppName = config.AppNameHerd
+	initialCfg.AppCommand = "herd"
 	initialCfg.WebsitesPath = tempDir
 	initialCfg.DefaultAdminUsername = "stable_admin"
 	_ = config.Save(cfgPath, initialCfg)

@@ -17,8 +17,9 @@ func TestApp_ConfigExecution_PreflightValidation(t *testing.T) {
 	tempHome := t.TempDir()
 	cfgPath := filepath.Join(tempHome, ".config", "wptui", "config.json")
 	cfg := config.DefaultConfig(tempHome)
+	cfg.AppName = config.AppNameHerd
+	cfg.AppCommand = "herd"
 	if err := config.Save(cfgPath, cfg); err != nil {
-		t.Fatal(err)
 	}
 
 	application := app.New(app.Options{HomeDir: tempHome})

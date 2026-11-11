@@ -1,14 +1,14 @@
 package app
 
 import (
+	tea "charm.land/bubbletea/v2"
+	"charm.land/huh/v2"
 	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-	tea "charm.land/bubbletea/v2"
-	"charm.land/huh/v2"
 	"wptui/internal/config"
 	"wptui/internal/create"
 	"wptui/internal/deprovision"
@@ -16,6 +16,7 @@ import (
 	"wptui/internal/tui"
 	"wptui/internal/wpcli"
 )
+
 var ErrUserCancelled = errors.New("user cancelled")
 
 type Options struct {
@@ -158,21 +159,22 @@ type PackageResolver interface {
 }
 
 type CreateFlowDependencies struct {
-	Runner         wpcli.Runner
-	Resolver       PackageResolver
-	CoreResolver   create.CoreResolver
-	CoreExtractor  create.CoreExtractor
-	Catalog        []packages.CatalogItem
-	PromptCreate   func(*config.Config, ...tui.SlugAvailabilityChecker) (*tui.CreateInputs, error)
-	PromptPackages func(context.Context, *config.Config, []packages.CatalogItem) ([]string, []string, error)
+	Runner            wpcli.Runner
+	Resolver          PackageResolver
+	CoreResolver      create.CoreResolver
+	CoreExtractor     create.CoreExtractor
+	Catalog           []packages.CatalogItem
+	PromptCreate      func(*config.Config, ...tui.SlugAvailabilityChecker) (*tui.CreateInputs, error)
+	PromptPackages    func(context.Context, *config.Config, []packages.CatalogItem) ([]string, []string, error)
+	PromptActiveTheme func([]string) (string, error)
 }
 
 func RunCreateFlowWithDeps(ctx context.Context, cfg *config.Config, deps CreateFlowDependencies) error {
 	var client *wpcli.Client
 	if deps.Runner != nil {
-		client = wpcli.NewClientWithRunner(deps.Runner)
+		client = wpcli.NewClientWithRunnerForConfig(deps.Runner, cfg)
 	} else {
-		client = wpcli.NewClient()
+		client = wpcli.NewClientForConfig(cfg)
 	}
 
 	dbConn := wpcli.DBConnection{
@@ -224,7 +226,11 @@ func RunCreateFlowWithDeps(ctx context.Context, cfg *config.Config, deps CreateF
 	catalog := deps.Catalog
 	if len(catalog) == 0 && strings.TrimSpace(cfg.PackagesAPIURL) != "" {
 		cat, err := packages.FetchCatalog(ctx, nil, cfg.PackagesAPIURL, cfg.PackagesAPIKey)
-		if err == nil {
+		if err != nil {
+			fmt.Printf("Warning: failed to fetch package catalog: %v\n", packages.SanitizeError(err))
+		} else if len(cat) == 0 {
+			fmt.Println("Warning: package catalog returned 0 packages")
+		} else {
 			catalog = cat
 		}
 	}
@@ -246,12 +252,31 @@ func RunCreateFlowWithDeps(ctx context.Context, cfg *config.Config, deps CreateF
 			fmt.Printf("\nCollision: %v\nPlease choose a different website name or slug.\n\n", err)
 			continue
 		}
-		plugins, themes, err := promptPackages(ctx, cfg, catalog)
-		if err != nil {
-			if errors.Is(err, huh.ErrUserAborted) {
-				return nil
+		var plugins, themes []string
+		if strings.TrimSpace(cfg.PackagesAPIURL) != "" && len(catalog) > 0 {
+			plugins, themes, err = promptPackages(ctx, cfg, catalog)
+			if err != nil {
+				if errors.Is(err, huh.ErrUserAborted) {
+					return nil
+				}
+				return err
 			}
-			return err
+		}
+
+		activeThemeSlug := inputs.ActiveThemeSlug
+		if activeThemeSlug == "" && len(themes) > 0 {
+			promptAct := deps.PromptActiveTheme
+			if promptAct == nil {
+				promptAct = tui.PromptActiveTheme
+			}
+			act, err := promptAct(themes)
+			if err != nil {
+				if errors.Is(err, huh.ErrUserAborted) {
+					return nil
+				}
+				return err
+			}
+			activeThemeSlug = act
 		}
 
 		// Pre-mutation: resolve package artifacts before creating website or database
@@ -260,21 +285,6 @@ func RunCreateFlowWithDeps(ctx context.Context, cfg *config.Config, deps CreateF
 			return fmt.Errorf("failed to create package staging directory: %w", err)
 		}
 		defer os.RemoveAll(stageDir)
-
-		var defaultThemeArt *packages.Artifact
-		defaultThemeSkipped := false
-		if cfg.DefaultThemeSlug != "" {
-			if strings.TrimSpace(cfg.PackagesAPIURL) != "" && deps.Resolver != nil {
-				tui.PrintProgress(0, 0, fmt.Sprintf("Resolving default theme %s...", cfg.DefaultThemeSlug))
-				art, err := deps.Resolver.ResolvePackage(ctx, packages.PackageRef{Type: packages.PackageTypeTheme, Slug: cfg.DefaultThemeSlug}, stageDir)
-				if err != nil {
-					return fmt.Errorf("failed to resolve default theme %q: %w", cfg.DefaultThemeSlug, err)
-				}
-				defaultThemeArt = art
-			} else {
-				defaultThemeSkipped = true
-			}
-		}
 
 		var pluginArts []packages.Artifact
 		if deps.Resolver != nil && len(plugins) > 0 {
@@ -291,9 +301,6 @@ func RunCreateFlowWithDeps(ctx context.Context, cfg *config.Config, deps CreateF
 		var themeArts []packages.Artifact
 		if deps.Resolver != nil && len(themes) > 0 {
 			for _, th := range themes {
-				if cfg.DefaultThemeSlug != "" && th == cfg.DefaultThemeSlug {
-					continue
-				}
 				tui.PrintProgress(0, 0, fmt.Sprintf("Resolving theme %s...", th))
 				art, err := deps.Resolver.ResolvePackage(ctx, packages.PackageRef{Type: packages.PackageTypeTheme, Slug: th}, stageDir)
 				if err != nil {
@@ -304,16 +311,15 @@ func RunCreateFlowWithDeps(ctx context.Context, cfg *config.Config, deps CreateF
 		}
 
 		req := create.Request{
-			WebsiteName:         inputs.WebsiteName,
-			WebsiteSlug:         inputs.WebsiteSlug,
-			AdminUsername:       inputs.AdminUsername,
-			AdminPassword:       inputs.AdminPassword,
-			AdminEmail:          inputs.AdminEmail,
-			ApplyTweaks:         inputs.ApplyTweaks,
-			DefaultTheme:        defaultThemeArt,
-			DefaultThemeSkipped: defaultThemeSkipped,
-			PluginArtifacts:     pluginArts,
-			ThemeArtifacts:      themeArts,
+			WebsiteName:     inputs.WebsiteName,
+			WebsiteSlug:     inputs.WebsiteSlug,
+			AdminUsername:   inputs.AdminUsername,
+			AdminPassword:   inputs.AdminPassword,
+			AdminEmail:      inputs.AdminEmail,
+			ApplyTweaks:     inputs.ApplyTweaks,
+			ActiveThemeSlug: activeThemeSlug,
+			PluginArtifacts: pluginArts,
+			ThemeArtifacts:  themeArts,
 		}
 
 		var currentStep string
@@ -341,9 +347,10 @@ func RunCreateFlowWithDeps(ctx context.Context, cfg *config.Config, deps CreateF
 		fmt.Println("\n" + successStyle.Render("=== Website Provisioned Successfully! ==="))
 		fmt.Printf("Path: %s\n", highlightStyle.Render(result.WebsitePath))
 		fmt.Printf("URL:  %s\n", highlightStyle.Render(result.WebsiteURL))
-		fmt.Printf("Active Theme: %s\n", result.ActiveTheme)
-		if result.DefaultThemeSkipped {
-			fmt.Printf("%s: Default theme (%s) skipped — Package API disabled.\n", warningStyle.Render("Notice"), cfg.DefaultThemeSlug)
+		if result.ActiveTheme != "" {
+			fmt.Printf("Active Theme: %s\n", result.ActiveTheme)
+		} else {
+			fmt.Println("Active Theme: none (administration interface available; frontend has no active renderer)")
 		}
 		if len(result.PackageStatuses) > 0 {
 			fmt.Println("\n" + highlightStyle.Render("Package Installation Statuses:"))
@@ -410,7 +417,7 @@ type DeleteFlowDependencies struct {
 
 // RunDefaultDeleteFlow runs the standard de-provisioning workflow.
 func RunDefaultDeleteFlow(ctx context.Context, cfg *config.Config) error {
-	cli := wpcli.NewClient()
+	cli := wpcli.NewClientForConfig(cfg)
 	return RunDeleteFlowWithDeps(ctx, cfg, DeleteFlowDependencies{
 		WPClient: cli,
 		Select:   tui.PromptDeleteSelection,
@@ -461,7 +468,7 @@ func RunDeleteFlowWithDeps(ctx context.Context, cfg *config.Config, deps DeleteF
 	}
 
 	results := deprovision.Deprovision(ctx, selected, deps.WPClient, deprovision.DeprovisionOptions{
-		UsedHerd:    cfg.UsedHerd,
+		Config:      cfg,
 		Concurrency: 4,
 	})
 

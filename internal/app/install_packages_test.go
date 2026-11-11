@@ -18,8 +18,9 @@ func TestApp_InstallPackagesExecution_Wiring(t *testing.T) {
 	tempHome := t.TempDir()
 	cfgPath := filepath.Join(tempHome, ".config", "wptui", "config.json")
 	cfg := config.DefaultConfig(tempHome)
+	cfg.AppName = config.AppNameHerd
+	cfg.AppCommand = "herd"
 	if err := config.Save(cfgPath, cfg); err != nil {
-		t.Fatal(err)
 	}
 
 	application := app.New(app.Options{HomeDir: tempHome})
@@ -89,6 +90,8 @@ func TestApp_InstallPackagesExecution_PreflightValidation(t *testing.T) {
 	tempHome := t.TempDir()
 	cfgPath := filepath.Join(tempHome, ".config", "wptui", "config.json")
 	cfg := config.DefaultConfig(tempHome)
+	cfg.AppName = config.AppNameHerd
+	cfg.AppCommand = "herd"
 	_ = config.Save(cfgPath, cfg)
 
 	application := app.New(app.Options{HomeDir: tempHome})
@@ -109,6 +112,29 @@ func TestApp_InstallPackagesExecution_PreflightValidation(t *testing.T) {
 	candNoConfig := deprovision.Candidate{Slug: "no-config", Path: siteDir}
 	cmd2 := appModel.WebsitesHub().OnInstallPackages(candNoConfig, packages.PackageTypeTheme, []string{"twentytwentyfour"}, false)
 	if cmd2 == nil {
+		t.Fatalf("expected non-nil cmd")
+	}
+}
+func TestApp_InstallPackagesExecution_ResolutionFailure_NoWPOrgFallback(t *testing.T) {
+	tempHome := t.TempDir()
+	cfgPath := filepath.Join(tempHome, ".config", "wptui", "config.json")
+	cfg := config.DefaultConfig(tempHome)
+	cfg.AppName = config.AppNameHerd
+	cfg.AppCommand = "herd"
+	cfg.PackagesAPIURL = "" // no API configured -> resolution fails
+	_ = config.Save(cfgPath, cfg)
+
+	siteDir := filepath.Join(tempHome, "sites", "test-site")
+	_ = os.MkdirAll(siteDir, 0755)
+	_ = os.WriteFile(filepath.Join(siteDir, "wp-config.php"), []byte("<?php"), 0644)
+
+	application := app.New(app.Options{HomeDir: tempHome})
+	_, _ = application.InitConfig(false)
+	appModel := application.BuildAppModel(context.Background())
+
+	cand := deprovision.Candidate{Slug: "test-site", Path: siteDir}
+	cmd := appModel.WebsitesHub().OnInstallPackages(cand, packages.PackageTypePlugin, []string{"unresolvable-plugin"}, true)
+	if cmd == nil {
 		t.Fatalf("expected non-nil cmd")
 	}
 }

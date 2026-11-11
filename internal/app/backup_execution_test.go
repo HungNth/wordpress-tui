@@ -18,6 +18,8 @@ func TestApp_BackupExecution_Wiring(t *testing.T) {
 	tempHome := t.TempDir()
 	cfgPath := filepath.Join(tempHome, ".config", "wptui", "config.json")
 	cfg := config.DefaultConfig(tempHome)
+	cfg.AppName = config.AppNameHerd
+	cfg.AppCommand = "herd"
 	if err := config.Save(cfgPath, cfg); err != nil {
 		t.Fatal(err)
 	}
@@ -138,6 +140,8 @@ func TestApp_BackupExecution_PreflightValidation(t *testing.T) {
 	tempHome := t.TempDir()
 	cfgPath := filepath.Join(tempHome, ".config", "wptui", "config.json")
 	cfg := config.DefaultConfig(tempHome)
+	cfg.AppName = config.AppNameHerd
+	cfg.AppCommand = "herd"
 	if err := config.Save(cfgPath, cfg); err != nil {
 		t.Fatal(err)
 	}

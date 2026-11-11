@@ -16,6 +16,8 @@ func TestTicket01_DemoIsolatedHome(t *testing.T) {
 	mockWizard := func(home string) (*config.Config, error) {
 		wizardRunCount++
 		cfg := config.DefaultConfig(home)
+		cfg.AppName = config.AppNameHerd
+		cfg.AppCommand = "herd"
 		cfg.DefaultAdminUsername = "demo_admin"
 		cfg.PackagesAPIURL = "https://example.com/api/v1"
 		return cfg, nil

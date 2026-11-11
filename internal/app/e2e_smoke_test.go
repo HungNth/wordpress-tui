@@ -108,6 +108,19 @@ func TestTicket08_ComposedCreateFlowSmoke(t *testing.T) {
 	defer downloadServer.Close()
 
 	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/packages") {
+			catResp := packages.CatalogResponse{
+				Total: 2,
+				Data: []packages.CatalogItem{
+					{Name: "Test Plugin", Slug: "test-plugin", Type: "plugin", Version: "1.0.0"},
+					{Name: "Flatsome Theme", Slug: "flatsome", Type: "theme", Version: "1.0.0"},
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(catResp)
+			return
+		}
+
 		slug := "test-plugin"
 		typ := packages.PackageTypePlugin
 		if strings.Contains(r.URL.Path, "flatsome") {
@@ -130,9 +143,10 @@ func TestTicket08_ComposedCreateFlowSmoke(t *testing.T) {
 	// 2. Setup Config
 	cfgPath := filepath.Join(tempHome, ".config", "wptui", "config.json")
 	cfg := config.DefaultConfig(tempHome)
+	cfg.AppName = config.AppNameHerd
+	cfg.AppCommand = "herd"
 	cfg.PackagesAPIURL = apiServer.URL
 	cfg.PackagesAPIKey = "secret_key"
-	cfg.DefaultThemeSlug = "flatsome"
 	if err := config.Save(cfgPath, cfg); err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +201,10 @@ func TestTicket08_ComposedCreateFlowSmoke(t *testing.T) {
 					return &scriptedInputsA, nil
 				},
 				PromptPackages: func(ctx context.Context, cfg *config.Config, catalog []packages.CatalogItem) ([]string, []string, error) {
-					return []string{"test-plugin"}, nil, nil
+					return []string{"test-plugin"}, []string{"flatsome"}, nil
+				},
+				PromptActiveTheme: func(themes []string) (string, error) {
+					return "flatsome", nil
 				},
 			})
 		},
@@ -255,7 +272,10 @@ func TestTicket08_ComposedCreateFlowSmoke(t *testing.T) {
 					return &scriptedInputsB, nil
 				},
 				PromptPackages: func(ctx context.Context, cfg *config.Config, catalog []packages.CatalogItem) ([]string, []string, error) {
-					return []string{"test-plugin"}, nil, nil
+					return []string{"test-plugin"}, []string{"flatsome"}, nil
+				},
+				PromptActiveTheme: func(themes []string) (string, error) {
+					return "flatsome", nil
 				},
 			})
 		},
@@ -355,9 +375,9 @@ func TestTicket08_ComposedCreateFlowSmoke(t *testing.T) {
 func TestRunCreateFlow_ColorOutput(t *testing.T) {
 	tempHome := t.TempDir()
 	cfg := config.DefaultConfig(tempHome)
+	cfg.AppName = config.AppNameHerd
+	cfg.AppCommand = "herd"
 	cfg.WebsitesPath = filepath.Join(tempHome, "Herd")
-	cfg.DefaultThemeSlug = "" // skip default theme
-
 	runner := &e2eMockRunner{parkedPath: cfg.WebsitesPath}
 
 	deps := app.CreateFlowDependencies{

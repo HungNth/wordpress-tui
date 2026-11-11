@@ -20,6 +20,8 @@ func TestApp_LoadExistingConfig(t *testing.T) {
 	cfgPath := filepath.Join(tempHome, ".config", "wptui", "config.json")
 
 	cfg := config.DefaultConfig(tempHome)
+	cfg.AppName = config.AppNameHerd
+	cfg.AppCommand = "herd"
 	cfg.DefaultAdminUsername = "tester"
 	if err := config.Save(cfgPath, cfg); err != nil {
 		t.Fatalf("Save() failed: %v", err)
@@ -135,10 +137,11 @@ func TestRunCreateFlow_CustomPromptBypassCaughtBeforePackages(t *testing.T) {
 }
 
 type mockDeleteWPClient struct {
-	mu                sync.Mutex
-	configGetCalls    []string
-	dbDropCalls       []string
-	herdUnsecureCalls []string
+	mu                         sync.Mutex
+	configGetCalls             []string
+	dbDropCalls                []string
+	environmentUnsecureCalls   []string
+	environmentUnregisterCalls []string
 }
 
 func (m *mockDeleteWPClient) ConfigGet(ctx context.Context, dir, key string) (string, error) {
@@ -155,16 +158,25 @@ func (m *mockDeleteWPClient) DBDrop(ctx context.Context, dir string) error {
 	return nil
 }
 
-func (m *mockDeleteWPClient) HerdUnsecure(ctx context.Context, dir, slug string) error {
+func (m *mockDeleteWPClient) EnvironmentUnsecure(ctx context.Context, dir, slug string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.herdUnsecureCalls = append(m.herdUnsecureCalls, slug)
+	m.environmentUnsecureCalls = append(m.environmentUnsecureCalls, slug)
+	return nil
+}
+
+func (m *mockDeleteWPClient) EnvironmentUnregister(ctx context.Context, dir, slug string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.environmentUnregisterCalls = append(m.environmentUnregisterCalls, slug)
 	return nil
 }
 
 func TestRunDeleteFlow_EndToEndSingleSite(t *testing.T) {
 	tempDir := t.TempDir()
 	cfg := config.DefaultConfig(tempDir)
+	cfg.AppName = config.AppNameHerd
+	cfg.AppCommand = "herd"
 	cfg.WebsitesPath = filepath.Join(tempDir, "sites")
 
 	// 1. When websites_path is empty, returns gracefully
@@ -213,8 +225,8 @@ func TestRunDeleteFlow_EndToEndSingleSite(t *testing.T) {
 	// Verify WPClient calls
 	mockClient.mu.Lock()
 	defer mockClient.mu.Unlock()
-	if len(mockClient.herdUnsecureCalls) != 1 || mockClient.herdUnsecureCalls[0] != "site-one" {
-		t.Errorf("expected herd unsecure call for site-one, got %+v", mockClient.herdUnsecureCalls)
+	if len(mockClient.environmentUnsecureCalls) != 1 || mockClient.environmentUnsecureCalls[0] != "site-one" {
+		t.Errorf("expected environment unsecure call for site-one, got %+v", mockClient.environmentUnsecureCalls)
 	}
 	if len(mockClient.dbDropCalls) != 1 || mockClient.dbDropCalls[0] != siteDir {
 		t.Errorf("expected db drop call for %s, got %+v", siteDir, mockClient.dbDropCalls)
@@ -229,6 +241,8 @@ func TestRunDeleteFlow_EndToEndSingleSite(t *testing.T) {
 func TestRunDeleteFlow_ComposedMultiSite(t *testing.T) {
 	tempDir := t.TempDir()
 	cfg := config.DefaultConfig(tempDir)
+	cfg.AppName = config.AppNameHerd
+	cfg.AppCommand = "herd"
 	cfg.WebsitesPath = filepath.Join(tempDir, "sites")
 
 	// Create 3 sites
@@ -273,8 +287,8 @@ func TestRunDeleteFlow_ComposedMultiSite(t *testing.T) {
 
 	mockClient.mu.Lock()
 	defer mockClient.mu.Unlock()
-	if len(mockClient.herdUnsecureCalls) != 3 {
-		t.Errorf("expected 3 herd unsecure calls, got %d", len(mockClient.herdUnsecureCalls))
+	if len(mockClient.environmentUnsecureCalls) != 3 {
+		t.Errorf("expected 3 environment unsecure calls, got %d", len(mockClient.environmentUnsecureCalls))
 	}
 	if len(mockClient.dbDropCalls) != 3 {
 		t.Errorf("expected 3 db drop calls, got %d", len(mockClient.dbDropCalls))
@@ -285,6 +299,8 @@ func TestApp_RunWithContext_DispatchesDelete(t *testing.T) {
 	tempHome := t.TempDir()
 	cfgPath := filepath.Join(tempHome, ".config", "wptui", "config.json")
 	cfg := config.DefaultConfig(tempHome)
+	cfg.AppName = config.AppNameHerd
+	cfg.AppCommand = "herd"
 	if err := config.Save(cfgPath, cfg); err != nil {
 		t.Fatal(err)
 	}
@@ -319,6 +335,8 @@ func TestApp_RunWithContext_DispatchesRestore(t *testing.T) {
 	tempHome := t.TempDir()
 	cfgPath := filepath.Join(tempHome, ".config", "wptui", "config.json")
 	cfg := config.DefaultConfig(tempHome)
+	cfg.AppName = config.AppNameHerd
+	cfg.AppCommand = "herd"
 	if err := config.Save(cfgPath, cfg); err != nil {
 		t.Fatalf("Save() failed: %v", err)
 	}
@@ -353,6 +371,8 @@ func TestApp_RunWithContext_MasterDetail_AllSections(t *testing.T) {
 	tempHome := t.TempDir()
 	cfgPath := filepath.Join(tempHome, ".config", "wptui", "config.json")
 	cfg := config.DefaultConfig(tempHome)
+	cfg.AppName = config.AppNameHerd
+	cfg.AppCommand = "herd"
 	if err := config.Save(cfgPath, cfg); err != nil {
 		t.Fatalf("Save() failed: %v", err)
 	}
@@ -434,6 +454,8 @@ func TestApp_RunWithContext_MasterDetail_RestoreFlow(t *testing.T) {
 	tempHome := t.TempDir()
 	cfgPath := filepath.Join(tempHome, ".config", "wptui", "config.json")
 	cfg := config.DefaultConfig(tempHome)
+	cfg.AppName = config.AppNameHerd
+	cfg.AppCommand = "herd"
 	cfg.BackupPath = filepath.Join(tempHome, "backups")
 	if err := os.MkdirAll(cfg.BackupPath, 0755); err != nil {
 		t.Fatal(err)
@@ -517,6 +539,8 @@ func TestApp_RunWithContext_MasterDetail_DeleteFlow(t *testing.T) {
 	tempHome := t.TempDir()
 	cfgPath := filepath.Join(tempHome, ".config", "wptui", "config.json")
 	cfg := config.DefaultConfig(tempHome)
+	cfg.AppName = config.AppNameHerd
+	cfg.AppCommand = "herd"
 	sitesDir := filepath.Join(tempHome, "sites")
 	_ = os.MkdirAll(filepath.Join(sitesDir, "del-site"), 0755)
 	_ = os.WriteFile(filepath.Join(sitesDir, "del-site", "wp-config.php"), []byte("<?php"), 0644)
@@ -570,6 +594,8 @@ func TestApp_RunWithContext_MasterDetail_SettingsFlow(t *testing.T) {
 	tempHome := t.TempDir()
 	cfgPath := filepath.Join(tempHome, ".config", "wptui", "config.json")
 	cfg := config.DefaultConfig(tempHome)
+	cfg.AppName = config.AppNameHerd
+	cfg.AppCommand = "herd"
 	cfg.DefaultAdminUsername = "initial_admin"
 	if err := config.Save(cfgPath, cfg); err != nil {
 		t.Fatalf("Save() failed: %v", err)
@@ -644,6 +670,8 @@ func TestApp_RunWithContext_FirstRun_MissingConfigRunsWizard(t *testing.T) {
 		WizardFn: func(homeDir string) (*config.Config, error) {
 			wizardCalled = true
 			c := config.DefaultConfig(homeDir)
+			c.AppName = config.AppNameHerd
+			c.AppCommand = "herd"
 			c.DefaultAdminUsername = "wizard_user"
 			return c, nil
 		},
@@ -678,6 +706,8 @@ func TestApp_RunWithContext_MasterDetail_WebsitesHub_ConfigAction(t *testing.T) 
 	tempHome := t.TempDir()
 	cfgPath := filepath.Join(tempHome, ".config", "wptui", "config.json")
 	cfg := config.DefaultConfig(tempHome)
+	cfg.AppName = config.AppNameHerd
+	cfg.AppCommand = "herd"
 	siteDir := filepath.Join(tempHome, "sites", "mysite")
 	cfg.WebsitesPath = filepath.Join(tempHome, "sites")
 	if err := os.MkdirAll(siteDir, 0755); err != nil {
@@ -729,4 +759,3 @@ func TestApp_RunWithContext_MasterDetail_WebsitesHub_ConfigAction(t *testing.T) 
 		t.Errorf("expected AppRunner to execute Config action test")
 	}
 }
-

@@ -78,6 +78,8 @@ func (m *mockBackupWPClient) Run(ctx context.Context, dir, name string, args []s
 func TestApp_BackupMenuRouting(t *testing.T) {
 	tempDir := t.TempDir()
 	cfg := config.DefaultConfig(tempDir)
+	cfg.AppName = config.AppNameHerd
+	cfg.AppCommand = "herd"
 	cfg.WebsitesPath = tempDir
 	cfg.BackupPath = filepath.Join(tempDir, "backups")
 	cfgPath, err := config.ConfigPath(tempDir)

@@ -22,7 +22,7 @@ type BackupFlowDependencies struct {
 }
 
 func RunDefaultBackupFlow(ctx context.Context, cfg *config.Config) error {
-	client := wpcli.NewClient()
+	client := wpcli.NewClientForConfig(cfg)
 	var resolver backup.PackageResolver
 
 	if strings.TrimSpace(cfg.PackagesAPIURL) != "" {
