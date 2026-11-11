@@ -34,7 +34,13 @@ grill-with-docs
 
 Use `grill-me` instead of `grill-with-docs` only when persistent domain documentation is not desired.
 
-**Do not create Git commits without explicit user approval. This applies to all repository changes, including specs, ADRs, tickets, documentation, source code, tests, configuration, generated files, and fixes. Creating, editing, implementing, reviewing, testing, or validating changes does not imply approval to commit. Keep all changes uncommitted until the user explicitly authorizes the commit.**
+### Git Commits
+
+- Do not create Git commits without explicit user approval. This applies to all repository changes, including specs, ADRs, tickets, documentation, source code, tests, configuration, generated files, and fixes. Keep all changes uncommitted until the user explicitly authorizes the commit.
+- Format all commit messages according to Conventional Commits 1.0.0: `<type>[scope]: <description>`.
+- Valid types include `feat`, `fix`, `docs`, `refactor`, `perf`, `test`, `build`, `ci`, and `chore`.
+- Use lower-case types and scopes; write imperative, concise descriptions without trailing periods.
+- Use `!` or a `BREAKING CHANGE:` footer only when introducing breaking changes.
 
 Keep requirement discovery, specification, and ticket decomposition in the primary OMP context.
 
