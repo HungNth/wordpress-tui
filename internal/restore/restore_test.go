@@ -122,21 +122,33 @@ func (m *mockRestoreWPClient) CoreInstall(ctx context.Context, dir, url, title, 
 	}
 	return nil
 }
-func (m *mockRestoreWPClient) HerdSecure(ctx context.Context, dir, slug string) error {
-	m.calls = append(m.calls, fmt.Sprintf("HerdSecure %s in %s", slug, dir))
-	if m.failOnOp == "herd_secure" {
-		return fmt.Errorf("simulated herd secure error")
+func (m *mockRestoreWPClient) EnvironmentRegister(ctx context.Context, dir, slug string) (bool, error) {
+	m.calls = append(m.calls, fmt.Sprintf("EnvironmentRegister %s in %s", slug, dir))
+	if m.failOnOp == "environment_register" {
+		return false, fmt.Errorf("simulated environment register error")
+	}
+	return true, nil
+}
+
+func (m *mockRestoreWPClient) EnvironmentSecure(ctx context.Context, dir, slug string) error {
+	m.calls = append(m.calls, fmt.Sprintf("EnvironmentSecure %s in %s", slug, dir))
+	if m.failOnOp == "environment_secure" {
+		return fmt.Errorf("simulated environment secure error")
 	}
 	m.siteSecured = true
 	return nil
 }
 
-func (m *mockRestoreWPClient) HerdUnsecure(ctx context.Context, dir, slug string) error {
-	m.calls = append(m.calls, fmt.Sprintf("HerdUnsecure %s in %s", slug, dir))
+func (m *mockRestoreWPClient) EnvironmentUnsecure(ctx context.Context, dir, slug string) error {
+	m.calls = append(m.calls, fmt.Sprintf("EnvironmentUnsecure %s in %s", slug, dir))
 	m.siteSecured = false
 	return nil
 }
 
+func (m *mockRestoreWPClient) EnvironmentUnregister(ctx context.Context, dir, slug string) error {
+	m.calls = append(m.calls, fmt.Sprintf("EnvironmentUnregister %s in %s", slug, dir))
+	return nil
+}
 func (m *mockRestoreWPClient) IsSiteSecured(ctx context.Context, slug string) (bool, error) {
 	m.calls = append(m.calls, "IsSiteSecured "+slug)
 	return m.isSecuredVal, nil
@@ -202,7 +214,8 @@ func TestRestorer_FullZIP_Success(t *testing.T) {
 	createValidZipArchive(t, archivePath, "mysite.sql", "wptest_")
 
 	cfg := &config.Config{
-		UsedHerd:     true,
+		AppName:      config.AppNameHerd,
+		AppCommand:   "herd",
 		WebsitesPath: websitesPath,
 		DatabaseHost: "localhost",
 		DatabasePort: 3306,
@@ -265,7 +278,8 @@ func TestRestorer_FullZIP_RollbackOnImportFailure(t *testing.T) {
 	createValidZipArchive(t, archivePath, "mysite.sql", "wptest_")
 
 	cfg := &config.Config{
-		UsedHerd:     false,
+		AppName:      config.AppNameHerd,
+		AppCommand:   "herd",
 		WebsitesPath: websitesPath,
 		DatabaseHost: "localhost",
 		DatabasePort: 3306,
@@ -316,7 +330,8 @@ func TestRestorer_FullZIP_HerdWarningDoesNotRollback(t *testing.T) {
 	createValidZipArchive(t, archivePath, "mysite.sql", "wptest_")
 
 	cfg := &config.Config{
-		UsedHerd:     true,
+		AppName:      config.AppNameHerd,
+		AppCommand:   "herd",
 		WebsitesPath: websitesPath,
 		DatabaseHost: "localhost",
 		DatabasePort: 3306,
@@ -324,7 +339,7 @@ func TestRestorer_FullZIP_HerdWarningDoesNotRollback(t *testing.T) {
 	}
 
 	mockClient := &mockRestoreWPClient{
-		failOnOp: "herd_secure",
+		failOnOp: "environment_secure",
 	}
 
 	res := restore.NewRestorer(cfg, mockClient)
@@ -381,4 +396,149 @@ func createValidZipArchive(t *testing.T, archivePath, sqlName, prefix string) {
 	// Write SQL dump
 	w, _ = zw.Create(sqlName)
 	_, _ = w.Write([]byte("-- SQL Dump content\nCREATE TABLE `" + prefix + "users` (id int);\n"))
+}
+func TestRestorer_FlockRegistrationFailureRollsBack(t *testing.T) {
+	tempRoot := t.TempDir()
+	websitesPath := filepath.Join(tempRoot, "websites")
+	_ = os.MkdirAll(websitesPath, 0755)
+
+	archivePath := filepath.Join(tempRoot, "full_mysite_2026-09-18_12-00-00.zip")
+	createValidZipArchive(t, archivePath, "mysite.sql", "wptest_")
+
+	cfg := &config.Config{
+		AppName:      config.AppNameFlock,
+		AppCommand:   "flock",
+		WebsitesPath: websitesPath,
+		DatabaseHost: "localhost",
+		DatabasePort: 3306,
+		DBUsername:   "root",
+	}
+
+	mockClient := &mockRestoreWPClient{
+		failOnOp: "environment_register",
+	}
+
+	res := restore.NewRestorer(cfg, mockClient)
+	res.SetAdminUpdater(&mockAdminUpdater{})
+	req := restore.Request{
+		Strategy:    restore.StrategyFullZIP,
+		ArchivePath: archivePath,
+		WebsiteName: "Flock Fail",
+		WebsiteSlug: "flock-fail",
+	}
+
+	_, err := res.Restore(t.Context(), req, nil)
+	if err == nil {
+		t.Fatal("expected restore error on environment registration failure, got nil")
+	}
+
+	// Directory should be cleaned up
+	targetDir := filepath.Join(websitesPath, "flock-fail")
+	if _, err := os.Stat(targetDir); !os.IsNotExist(err) {
+		t.Errorf("expected site directory to be cleaned up after registration failure")
+	}
+}
+
+func TestRestorer_LaragonLifecycleAndRollback(t *testing.T) {
+	tempRoot := t.TempDir()
+	websitesPath := filepath.Join(tempRoot, "websites")
+	_ = os.MkdirAll(websitesPath, 0755)
+
+	archivePath := filepath.Join(tempRoot, "full_mysite_2026-09-18_12-00-00.zip")
+	createValidZipArchive(t, archivePath, "mysite.sql", "wptest_")
+
+	cfg := &config.Config{
+		AppName:      config.AppNameLaragon,
+		AppCommand:   "laragon.exe",
+		WebsitesPath: websitesPath,
+		DatabaseHost: "localhost",
+		DatabasePort: 3306,
+		DBUsername:   "root",
+	}
+
+	mockClient := &mockRestoreWPClient{
+		failOnOp: "db_import", // fail after directory creation and initial registration
+	}
+
+	res := restore.NewRestorer(cfg, mockClient)
+	res.SetAdminUpdater(&mockAdminUpdater{})
+	req := restore.Request{
+		Strategy:    restore.StrategyFullZIP,
+		ArchivePath: archivePath,
+		WebsiteName: "Laragon Restore",
+		WebsiteSlug: "laragon-restore",
+	}
+
+	_, err := res.Restore(t.Context(), req, nil)
+	if err == nil {
+		t.Fatal("expected restore error on db_import, got nil")
+	}
+
+	var regCalled, unregCalled bool
+	for _, call := range mockClient.calls {
+		if strings.Contains(call, "EnvironmentRegister laragon-restore") {
+			regCalled = true
+		}
+		targetDir := filepath.Join(websitesPath, "laragon-restore")
+		if strings.Contains(call, "EnvironmentUnregister laragon-restore in "+targetDir) {
+			unregCalled = true
+		}
+	}
+	if !regCalled {
+		t.Errorf("expected Laragon EnvironmentRegister to be called")
+	}
+	if !unregCalled {
+		t.Errorf("expected Laragon reload (EnvironmentUnregister) with parent dir after rollback deletion, calls: %v", mockClient.calls)
+	}
+}
+func TestRestorer_FullZIP_PreExistingTLSSkipsSecureAndPreservesHTTPS(t *testing.T) {
+	tempRoot := t.TempDir()
+	websitesPath := filepath.Join(tempRoot, "websites")
+	_ = os.MkdirAll(websitesPath, 0755)
+
+	archivePath := filepath.Join(tempRoot, "full_mysite_2026-09-18_12-00-00.zip")
+	createValidZipArchive(t, archivePath, "mysite.sql", "wptest_")
+
+	cfg := &config.Config{
+		AppName:      config.AppNameHerd,
+		AppCommand:   "herd",
+		WebsitesPath: websitesPath,
+		DatabaseHost: "localhost",
+		DatabasePort: 3306,
+		DBUsername:   "root",
+	}
+
+	mockClient := &mockRestoreWPClient{
+		isSecuredVal: true, // Pre-existing TLS
+	}
+
+	res := restore.NewRestorer(cfg, mockClient)
+	res.SetAdminUpdater(&mockAdminUpdater{})
+	req := restore.Request{
+		Strategy:    restore.StrategyFullZIP,
+		ArchivePath: archivePath,
+		WebsiteName: "Preexisting TLS Site",
+		WebsiteSlug: "preexisting-tls",
+	}
+
+	result, err := res.Restore(t.Context(), req, nil)
+	if err != nil {
+		t.Fatalf("unexpected restore error: %v", err)
+	}
+
+	if result.TLSError != "" {
+		t.Errorf("expected no TLSError for pre-existing TLS, got %q", result.TLSError)
+	}
+	if result.SiteURL != "https://preexisting-tls.test" {
+		t.Errorf("expected HTTPS URL %q, got %q", "https://preexisting-tls.test", result.SiteURL)
+	}
+
+	for _, call := range mockClient.calls {
+		if strings.Contains(call, "EnvironmentSecure") {
+			t.Errorf("EnvironmentSecure was unexpectedly called on pre-existing TLS: %s", call)
+		}
+		if strings.Contains(call, "EnvironmentUnsecure") {
+			t.Errorf("EnvironmentUnsecure was unexpectedly called on pre-existing TLS: %s", call)
+		}
+	}
 }

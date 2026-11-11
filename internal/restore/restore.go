@@ -12,6 +12,7 @@ import (
 	"wptui/internal/backup"
 	"wptui/internal/config"
 	"wptui/internal/core"
+	"wptui/internal/localenv"
 	"wptui/internal/packages"
 	"wptui/internal/siteconfig"
 	"wptui/internal/wpcli"
@@ -38,8 +39,10 @@ type WPClient interface {
 	OptionGet(ctx context.Context, dir, key string) (string, error)
 	AI1WMRestore(ctx context.Context, dir, archiveFileName string) error
 	CoreInstall(ctx context.Context, dir, url, title, adminUser, adminPass, adminEmail string) error
-	HerdSecure(ctx context.Context, dir, slug string) error
-	HerdUnsecure(ctx context.Context, dir, slug string) error
+	EnvironmentRegister(ctx context.Context, dir, slug string) (bool, error)
+	EnvironmentSecure(ctx context.Context, dir, slug string) error
+	EnvironmentUnsecure(ctx context.Context, dir, slug string) error
+	EnvironmentUnregister(ctx context.Context, dir, slug string) error
 	IsSiteSecured(ctx context.Context, slug string) (bool, error)
 	ConfigCreateWithOptions(ctx context.Context, dir, dbName string, conn DBConnection, opts ConfigCreateOptions) error
 }
@@ -181,20 +184,40 @@ type restoreTracker struct {
 	siteSlug   string
 	createdDir bool
 	createdDB  bool
+	createdReg bool
 	createdTLS bool
 	wpClient   WPClient
+	isLaragon  bool
 }
 
-func (t *restoreTracker) Rollback(ctx context.Context) {
+func (t *restoreTracker) Rollback(ctx context.Context) error {
+	var errs []error
 	if t.createdTLS && t.wpClient != nil && t.siteSlug != "" && t.siteDir != "" {
-		_ = t.wpClient.HerdUnsecure(ctx, t.siteDir, t.siteSlug)
+		if err := t.wpClient.EnvironmentUnsecure(ctx, t.siteDir, t.siteSlug); err != nil {
+			errs = append(errs, fmt.Errorf("environment unsecure cleanup failed: %w", err))
+		}
+	}
+	if t.createdReg && !t.isLaragon && t.wpClient != nil && t.siteSlug != "" && t.siteDir != "" {
+		if err := t.wpClient.EnvironmentUnregister(ctx, t.siteDir, t.siteSlug); err != nil {
+			errs = append(errs, fmt.Errorf("environment unregister cleanup failed: %w", err))
+		}
 	}
 	if t.createdDB && t.wpClient != nil && t.siteDir != "" {
-		_ = t.wpClient.DBDrop(ctx, t.siteDir)
+		if err := t.wpClient.DBDrop(ctx, t.siteDir); err != nil {
+			errs = append(errs, fmt.Errorf("database drop cleanup failed: %w", err))
+		}
 	}
 	if t.createdDir && t.siteDir != "" {
-		_ = os.RemoveAll(t.siteDir)
+		if err := os.RemoveAll(t.siteDir); err != nil {
+			errs = append(errs, fmt.Errorf("directory removal cleanup failed: %w", err))
+		}
 	}
+	if t.isLaragon && t.createdDir && t.wpClient != nil && t.siteDir != "" {
+		if err := t.wpClient.EnvironmentUnregister(ctx, t.siteDir, t.siteSlug); err != nil {
+			errs = append(errs, fmt.Errorf("laragon reload cleanup failed: %w", err))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 func (r *Restorer) Restore(ctx context.Context, req Request, onProgress ProgressFunc) (*Result, error) {
@@ -212,7 +235,7 @@ func (r *Restorer) Restore(ctx context.Context, req Request, onProgress Progress
 	}
 }
 
-func (r *Restorer) restoreFullZIP(ctx context.Context, req Request, progress ProgressFunc) (*Result, error) {
+func (r *Restorer) restoreFullZIP(ctx context.Context, req Request, progress ProgressFunc) (result *Result, err error) {
 	targetDir := filepath.Join(r.cfg.WebsitesPath, req.WebsiteSlug)
 	if _, err := os.Stat(targetDir); err == nil {
 		return nil, fmt.Errorf("directory already exists: %s", targetDir)
@@ -255,15 +278,19 @@ func (r *Restorer) restoreFullZIP(ctx context.Context, req Request, progress Pro
 		return nil, err
 	}
 
+	isLaragon := r.cfg != nil && strings.EqualFold(r.cfg.AppName, config.AppNameLaragon)
 	tracker := &restoreTracker{
-		siteDir:  targetDir,
-		siteSlug: req.WebsiteSlug,
-		wpClient: r.wpClient,
+		siteDir:   targetDir,
+		siteSlug:  req.WebsiteSlug,
+		wpClient:  r.wpClient,
+		isLaragon: isLaragon,
 	}
 	success := false
 	defer func() {
 		if !success {
-			tracker.Rollback(context.Background())
+			if rbErr := tracker.Rollback(context.Background()); rbErr != nil {
+				err = errors.Join(err, rbErr)
+			}
 		}
 	}()
 
@@ -276,6 +303,19 @@ func (r *Restorer) restoreFullZIP(ctx context.Context, req Request, progress Pro
 		return nil, fmt.Errorf("failed to create destination directory: %w", err)
 	}
 	tracker.createdDir = true
+
+	regDetail := "Registering environment..."
+	if isLaragon {
+		regDetail = "Reloading Laragon..."
+	}
+	progress("environment_register", regDetail)
+	registered, err := r.wpClient.EnvironmentRegister(ctx, targetDir, req.WebsiteSlug)
+	if registered {
+		tracker.createdReg = true
+	}
+	if err != nil {
+		return nil, fmt.Errorf("environment registration failed: %w", err)
+	}
 
 	if err := copyDirectory(wpRoot, targetDir); err != nil {
 		return nil, fmt.Errorf("failed to relocate files to destination: %w", err)
@@ -326,12 +366,7 @@ func (r *Restorer) restoreFullZIP(ctx context.Context, req Request, progress Pro
 	if oldURL == "" {
 		return nil, errors.New("prior siteurl is empty in imported database")
 	}
-	var newURL string
-	if r.cfg.UsedHerd {
-		newURL = "https://" + req.WebsiteSlug + ".test"
-	} else {
-		newURL = "http://" + req.WebsiteSlug + ".test"
-	}
+	newURL := localenv.SiteURL(r.cfg, req.WebsiteSlug)
 
 	if oldURL != "" && oldURL != newURL {
 		if err := r.wpClient.SearchReplace(ctx, targetDir, oldURL, newURL); err != nil {
@@ -357,21 +392,32 @@ func (r *Restorer) restoreFullZIP(ctx context.Context, req Request, progress Pro
 	if err := r.adminUpdater.UpdateAdminCredentials(ctx, targetDir, adminUser, adminPass, adminEmail); err != nil {
 		return nil, fmt.Errorf("failed to update admin credentials: %w", err)
 	}
-	// 11. Configure Herd TLS
+	// 11. Configure Environment TLS
 	var tlsWarning string
-	if r.cfg.UsedHerd {
-		alreadySecured, _ := r.wpClient.IsSiteSecured(ctx, req.WebsiteSlug)
-		progress("secure_herd", "Securing domain with Herd TLS...")
-		if err := r.wpClient.HerdSecure(ctx, targetDir, req.WebsiteSlug); err != nil {
-			tlsWarning = fmt.Sprintf("Herd TLS warning: %v", err)
+	if r.cfg != nil && !isLaragon && r.cfg.AppName != "" {
+		alreadySecured, probeErr := r.wpClient.IsSiteSecured(ctx, req.WebsiteSlug)
+		if probeErr != nil {
+			tlsWarning = fmt.Sprintf("Environment TLS probe warning: %v", probeErr)
 			httpURL := "http://" + req.WebsiteSlug + ".test"
 			if srErr := r.wpClient.SearchReplace(ctx, targetDir, newURL, httpURL); srErr != nil {
-				tlsWarning = fmt.Sprintf("Herd TLS warning: %v (failed to revert URL to HTTP: %v)", err, srErr)
+				tlsWarning = fmt.Sprintf("Environment TLS probe warning: %v (failed to revert URL to HTTP: %v)", probeErr, srErr)
 			} else {
 				newURL = httpURL
 			}
 		} else if !alreadySecured {
 			tracker.createdTLS = true
+			progress("environment_secure", "Securing domain environment...")
+			if err := r.wpClient.EnvironmentSecure(ctx, targetDir, req.WebsiteSlug); err != nil {
+				tlsWarning = fmt.Sprintf("Environment TLS warning: %v", err)
+				_ = r.wpClient.EnvironmentUnsecure(ctx, targetDir, req.WebsiteSlug)
+				tracker.createdTLS = false
+				httpURL := "http://" + req.WebsiteSlug + ".test"
+				if srErr := r.wpClient.SearchReplace(ctx, targetDir, newURL, httpURL); srErr != nil {
+					tlsWarning = fmt.Sprintf("Environment TLS warning: %v (failed to revert URL to HTTP: %v)", err, srErr)
+				} else {
+					newURL = httpURL
+				}
+			}
 		}
 	}
 	// 12. Strictly upon successful completion of entire lifecycle: remove selected SQL dump
@@ -391,7 +437,7 @@ func (r *Restorer) restoreFullZIP(ctx context.Context, req Request, progress Pro
 	}, nil
 }
 
-func (r *Restorer) restoreAI1WM(ctx context.Context, req Request, progress ProgressFunc) (*Result, error) {
+func (r *Restorer) restoreAI1WM(ctx context.Context, req Request, progress ProgressFunc) (result *Result, err error) {
 	targetDir := filepath.Join(r.cfg.WebsitesPath, req.WebsiteSlug)
 	if _, err := os.Stat(targetDir); err == nil {
 		return nil, fmt.Errorf("directory already exists: %s", targetDir)
@@ -399,15 +445,19 @@ func (r *Restorer) restoreAI1WM(ctx context.Context, req Request, progress Progr
 		return nil, fmt.Errorf("cannot inspect target directory %s: %w", targetDir, err)
 	}
 
+	isLaragon := r.cfg != nil && strings.EqualFold(r.cfg.AppName, config.AppNameLaragon)
 	tracker := &restoreTracker{
-		siteDir:  targetDir,
-		siteSlug: req.WebsiteSlug,
-		wpClient: r.wpClient,
+		siteDir:   targetDir,
+		siteSlug:  req.WebsiteSlug,
+		wpClient:  r.wpClient,
+		isLaragon: isLaragon,
 	}
 	success := false
 	defer func() {
 		if !success {
-			tracker.Rollback(context.Background())
+			if rbErr := tracker.Rollback(context.Background()); rbErr != nil {
+				err = errors.Join(err, rbErr)
+			}
 		}
 	}()
 
@@ -420,6 +470,19 @@ func (r *Restorer) restoreAI1WM(ctx context.Context, req Request, progress Progr
 		return nil, fmt.Errorf("failed to create website directory: %w", err)
 	}
 	tracker.createdDir = true
+
+	regDetail := "Registering environment..."
+	if isLaragon {
+		regDetail = "Reloading Laragon..."
+	}
+	progress("environment_register", regDetail)
+	registered, err := r.wpClient.EnvironmentRegister(ctx, targetDir, req.WebsiteSlug)
+	if registered {
+		tracker.createdReg = true
+	}
+	if err != nil {
+		return nil, fmt.Errorf("environment registration failed: %w", err)
+	}
 	// 2. Extract minimal WordPress core foundation
 	progress("extract_core", "Extracting WordPress core foundation...")
 	if err := r.coreExtract.ExtractCore(ctx, targetDir); err != nil {
@@ -455,12 +518,7 @@ func (r *Restorer) restoreAI1WM(ctx context.Context, req Request, progress Progr
 
 	// 5. Core install minimal foundation
 	progress("core_install", "Installing foundation WordPress...")
-	var targetURL string
-	if r.cfg.UsedHerd {
-		targetURL = "https://" + req.WebsiteSlug + ".test"
-	} else {
-		targetURL = "http://" + req.WebsiteSlug + ".test"
-	}
+	targetURL := localenv.SiteURL(r.cfg, req.WebsiteSlug)
 	if err := r.wpClient.CoreInstall(ctx, targetDir, targetURL, "Temporary", "temp", "temp", "temp@example.com"); err != nil {
 		return nil, fmt.Errorf("failed to install foundation core: %w", err)
 	}
@@ -537,21 +595,32 @@ func (r *Restorer) restoreAI1WM(ctx context.Context, req Request, progress Progr
 		return nil, fmt.Errorf("failed to update admin credentials: %w", err)
 	}
 
-	// 12. Configure Herd TLS
+	// 12. Configure Environment TLS
 	var tlsWarning string
-	if r.cfg.UsedHerd {
-		alreadySecured, _ := r.wpClient.IsSiteSecured(ctx, req.WebsiteSlug)
-		progress("secure_herd", "Securing domain with Herd TLS...")
-		if err := r.wpClient.HerdSecure(ctx, targetDir, req.WebsiteSlug); err != nil {
-			tlsWarning = fmt.Sprintf("Herd TLS warning: %v", err)
+	if r.cfg != nil && !isLaragon && r.cfg.AppName != "" {
+		alreadySecured, probeErr := r.wpClient.IsSiteSecured(ctx, req.WebsiteSlug)
+		if probeErr != nil {
+			tlsWarning = fmt.Sprintf("Environment TLS probe warning: %v", probeErr)
 			httpURL := "http://" + req.WebsiteSlug + ".test"
 			if srErr := r.wpClient.SearchReplace(ctx, targetDir, newURL, httpURL); srErr != nil {
-				tlsWarning = fmt.Sprintf("Herd TLS warning: %v (failed to revert URL to HTTP: %v)", err, srErr)
+				tlsWarning = fmt.Sprintf("Environment TLS probe warning: %v (failed to revert URL to HTTP: %v)", probeErr, srErr)
 			} else {
 				newURL = httpURL
 			}
 		} else if !alreadySecured {
 			tracker.createdTLS = true
+			progress("environment_secure", "Securing domain environment...")
+			if err := r.wpClient.EnvironmentSecure(ctx, targetDir, req.WebsiteSlug); err != nil {
+				tlsWarning = fmt.Sprintf("Environment TLS warning: %v", err)
+				_ = r.wpClient.EnvironmentUnsecure(ctx, targetDir, req.WebsiteSlug)
+				tracker.createdTLS = false
+				httpURL := "http://" + req.WebsiteSlug + ".test"
+				if srErr := r.wpClient.SearchReplace(ctx, targetDir, newURL, httpURL); srErr != nil {
+					tlsWarning = fmt.Sprintf("Environment TLS warning: %v (failed to revert URL to HTTP: %v)", err, srErr)
+				} else {
+					newURL = httpURL
+				}
+			}
 		}
 	}
 	success = true

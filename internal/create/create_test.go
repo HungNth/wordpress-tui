@@ -3,6 +3,7 @@ package create_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,22 +15,83 @@ import (
 	"wptui/internal/packages"
 	"wptui/internal/wpcli"
 )
+
+type mockFlockSite struct {
+	slug    string
+	path    string
+	secured bool
+}
+
 type mockRunner struct {
-	mu           sync.Mutex
-	calls        []string
-	failOnSubstr string
-	securedSites string
-	activeTheme  string
+	mu               sync.Mutex
+	calls            []string
+	failOnSubstr     string
+	failOnSubstrings []string
+	securedSites     string
+	activeTheme      string
+	flockSites       map[string]*mockFlockSite
 }
 
 func (m *mockRunner) Run(ctx context.Context, dir string, name string, args []string, stdin string) (string, string, error) {
 	full := name + " " + strings.Join(args, " ")
 	m.mu.Lock()
 	m.calls = append(m.calls, full)
+	if m.flockSites == nil {
+		m.flockSites = make(map[string]*mockFlockSite)
+	}
 	m.mu.Unlock()
+
 	if m.failOnSubstr != "" && strings.Contains(full, m.failOnSubstr) {
 		return "", "mock error for " + full, errors.New("simulated error")
 	}
+	for _, sub := range m.failOnSubstrings {
+		if strings.Contains(full, sub) {
+			return "", "mock error for " + full, errors.New("simulated error for " + sub)
+		}
+	}
+
+	if name == "flock" && len(args) > 0 {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		switch args[0] {
+		case "sites":
+			out := "SITE   PHP   URL   ROOT   PATH\n"
+			for _, s := range m.flockSites {
+				scheme := "http"
+				if s.secured {
+					scheme = "https"
+				}
+				siteURL := fmt.Sprintf("%s://%s.test", scheme, s.slug)
+				out += fmt.Sprintf("%s   8.3   %s   /   %s\n", s.slug, siteURL, s.path)
+			}
+			return out, "", nil
+		case "link":
+			if len(args) > 1 {
+				m.flockSites[args[1]] = &mockFlockSite{slug: args[1], path: dir, secured: false}
+			}
+			return "Linked", "", nil
+		case "secure":
+			if len(args) > 1 {
+				if s, ok := m.flockSites[args[1]]; ok {
+					s.secured = true
+				}
+			}
+			return "Secured", "", nil
+		case "unsecure":
+			if len(args) > 1 {
+				if s, ok := m.flockSites[args[1]]; ok {
+					s.secured = false
+				}
+			}
+			return "Unsecured", "", nil
+		case "unlink":
+			if len(args) > 1 {
+				delete(m.flockSites, args[1])
+			}
+			return "Unlinked", "", nil
+		}
+	}
+
 	if strings.Contains(full, "herd secured") {
 		return m.securedSites + "\n", "", nil
 	}
@@ -42,7 +104,6 @@ func (m *mockRunner) Run(ctx context.Context, dir string, name string, args []st
 
 	return "Success: Database created.", "", nil
 }
-
 func (m *mockRunner) LookPath(file string) (string, error) {
 	return "/bin/" + file, nil
 }
@@ -68,6 +129,14 @@ func mockCoreExtractor(archivePath, destDir string) error {
 	return nil
 }
 
+func newTestConfig(tempDir string) *config.Config {
+	cfg := config.DefaultConfig(tempDir)
+	cfg.AppName = config.AppNameHerd
+	cfg.AppCommand = "herd"
+	cfg.WebsitesPath = filepath.Join(tempDir, "sites")
+	return cfg
+}
+
 func newTestCreator(cfg *config.Config, client *wpcli.Client, checkDB create.DBExistsFunc, opts ...create.CreatorOption) *create.Creator {
 	defaultOpts := []create.CreatorOption{
 		create.WithCoreResolver(&mockCoreResolver{path: "/test/core.zip", version: "7.1"}),
@@ -79,14 +148,12 @@ func newTestCreator(cfg *config.Config, client *wpcli.Client, checkDB create.DBE
 
 func TestCreator_SuccessFlow(t *testing.T) {
 	tempDir := t.TempDir()
-	cfg := config.DefaultConfig(tempDir)
-	cfg.WebsitesPath = filepath.Join(tempDir, "sites")
+	cfg := newTestConfig(tempDir)
 	if err := os.MkdirAll(cfg.WebsitesPath, 0755); err != nil {
 		t.Fatal(err)
 	}
 	runner := &mockRunner{}
-	wpClient := wpcli.NewClientWithRunner(runner)
-
+	wpClient := wpcli.NewClientWithRunnerForConfig(runner, cfg)
 	creator := newTestCreator(cfg, wpClient, func(ctx context.Context, dbName string) (bool, error) {
 		return false, nil // no DB collision
 	})
@@ -124,9 +191,9 @@ func TestCreator_SuccessFlow(t *testing.T) {
 		t.Errorf("expected website directory to exist at %s", expectedPath)
 	}
 
-	// Verify herd_secure is the final progress step
-	if len(progressSteps) > 0 && progressSteps[len(progressSteps)-1] != "herd_secure" {
-		t.Errorf("expected herd_secure to be final progress step, got %s", progressSteps[len(progressSteps)-1])
+	// Verify environment_secure is the final progress step
+	if len(progressSteps) > 0 && progressSteps[len(progressSteps)-1] != "environment_secure" {
+		t.Errorf("expected environment_secure to be final progress step, got %s", progressSteps[len(progressSteps)-1])
 	}
 
 	// Verify progress steps include core_resolve and core_extract
@@ -163,10 +230,9 @@ func TestCreator_SuccessFlow(t *testing.T) {
 
 func TestCreator_PackageInstallAndDeduplication(t *testing.T) {
 	tempDir := t.TempDir()
-	cfg := config.DefaultConfig(tempDir)
-	cfg.WebsitesPath = filepath.Join(tempDir, "sites")
+	cfg := newTestConfig(tempDir)
 	runner := &mockRunner{}
-	wpClient := wpcli.NewClientWithRunner(runner)
+	wpClient := wpcli.NewClientWithRunnerForConfig(runner, cfg)
 
 	creator := newTestCreator(cfg, wpClient, func(ctx context.Context, dbName string) (bool, error) {
 		return false, nil
@@ -179,16 +245,12 @@ func TestCreator_PackageInstallAndDeduplication(t *testing.T) {
 	_ = os.WriteFile(defaultThemeZip, []byte("fake zip"), 0600)
 
 	req := create.Request{
-		WebsiteName:   "Pack Store",
-		WebsiteSlug:   "pack-store",
-		AdminUsername: "admin",
-		AdminPassword: "password",
-		AdminEmail:    "admin@demo.test",
-		DefaultTheme: &packages.Artifact{
-			Ref:     packages.PackageRef{Type: "theme", Slug: "flatsome"},
-			Version: "1.0.0",
-			Path:    defaultThemeZip,
-		},
+		WebsiteName:     "Pack Store",
+		WebsiteSlug:     "pack-store",
+		AdminUsername:   "admin",
+		AdminPassword:   "password",
+		AdminEmail:      "admin@demo.test",
+		ActiveThemeSlug: "flatsome",
 		PluginArtifacts: []packages.Artifact{
 			{
 				Ref:     packages.PackageRef{Type: "plugin", Slug: "acf-pro"},
@@ -198,7 +260,7 @@ func TestCreator_PackageInstallAndDeduplication(t *testing.T) {
 		},
 		ThemeArtifacts: []packages.Artifact{
 			{
-				Ref:     packages.PackageRef{Type: "theme", Slug: "flatsome"}, // duplicate of default theme!
+				Ref:     packages.PackageRef{Type: "theme", Slug: "flatsome"},
 				Version: "1.0.0",
 				Path:    defaultThemeZip,
 			},
@@ -235,13 +297,12 @@ func TestCreator_PackageInstallAndDeduplication(t *testing.T) {
 
 func TestCreator_ApplyTweaksBestEffort(t *testing.T) {
 	tempDir := t.TempDir()
-	cfg := config.DefaultConfig(tempDir)
-	cfg.WebsitesPath = filepath.Join(tempDir, "sites")
+	cfg := newTestConfig(tempDir)
 
 	runner := &mockRunner{
 		failOnSubstr: "wp rewrite structure",
 	}
-	wpClient := wpcli.NewClientWithRunner(runner)
+	wpClient := wpcli.NewClientWithRunnerForConfig(runner, cfg)
 
 	creator := newTestCreator(cfg, wpClient, func(ctx context.Context, dbName string) (bool, error) {
 		return false, nil
@@ -275,13 +336,12 @@ func TestCreator_ApplyTweaksBestEffort(t *testing.T) {
 
 func TestCreator_RollbackOnCoreInstallFailure(t *testing.T) {
 	tempDir := t.TempDir()
-	cfg := config.DefaultConfig(tempDir)
-	cfg.WebsitesPath = filepath.Join(tempDir, "sites")
+	cfg := newTestConfig(tempDir)
 
 	runner := &mockRunner{
 		failOnSubstr: "wp core install",
 	}
-	wpClient := wpcli.NewClientWithRunner(runner)
+	wpClient := wpcli.NewClientWithRunnerForConfig(runner, cfg)
 
 	creator := newTestCreator(cfg, wpClient, func(ctx context.Context, dbName string) (bool, error) {
 		return false, nil
@@ -321,13 +381,12 @@ func TestCreator_RollbackOnCoreInstallFailure(t *testing.T) {
 
 func TestCreator_DBCreateFailureDoesNotDropExternalDB(t *testing.T) {
 	tempDir := t.TempDir()
-	cfg := config.DefaultConfig(tempDir)
-	cfg.WebsitesPath = filepath.Join(tempDir, "sites")
+	cfg := newTestConfig(tempDir)
 
 	runner := &mockRunner{
 		failOnSubstr: "wp db create",
 	}
-	wpClient := wpcli.NewClientWithRunner(runner)
+	wpClient := wpcli.NewClientWithRunnerForConfig(runner, cfg)
 
 	creator := newTestCreator(cfg, wpClient, func(ctx context.Context, dbName string) (bool, error) {
 		return false, nil
@@ -363,11 +422,10 @@ func TestCreator_DBCreateFailureDoesNotDropExternalDB(t *testing.T) {
 
 func TestCreator_DBPreflightErrorHaltsBeforeMutation(t *testing.T) {
 	tempDir := t.TempDir()
-	cfg := config.DefaultConfig(tempDir)
-	cfg.WebsitesPath = filepath.Join(tempDir, "sites")
+	cfg := newTestConfig(tempDir)
 
 	runner := &mockRunner{}
-	wpClient := wpcli.NewClientWithRunner(runner)
+	wpClient := wpcli.NewClientWithRunnerForConfig(runner, cfg)
 
 	expectedErr := errors.New("connection refused to mysql")
 	creator := newTestCreator(cfg, wpClient, func(ctx context.Context, dbName string) (bool, error) {
@@ -407,12 +465,10 @@ func TestCreator_DBPreflightErrorHaltsBeforeMutation(t *testing.T) {
 
 func TestCreator_HerdPathTrustSucceedsWithoutParkedInspection(t *testing.T) {
 	tempDir := t.TempDir()
-	cfg := config.DefaultConfig(tempDir)
-	cfg.UsedHerd = true
-	cfg.WebsitesPath = filepath.Join(tempDir, "sites")
+	cfg := newTestConfig(tempDir)
 
 	runner := &mockRunner{}
-	wpClient := wpcli.NewClientWithRunner(runner)
+	wpClient := wpcli.NewClientWithRunnerForConfig(runner, cfg)
 
 	creator := newTestCreator(cfg, wpClient, func(ctx context.Context, dbName string) (bool, error) {
 		return false, nil
@@ -441,15 +497,14 @@ func TestCreator_HerdPathTrustSucceedsWithoutParkedInspection(t *testing.T) {
 
 func TestCreator_CollisionPreflight(t *testing.T) {
 	tempDir := t.TempDir()
-	cfg := config.DefaultConfig(tempDir)
-	cfg.WebsitesPath = filepath.Join(tempDir, "sites")
+	cfg := newTestConfig(tempDir)
 	collidedDir := filepath.Join(cfg.WebsitesPath, "existing-site")
 	if err := os.MkdirAll(collidedDir, 0755); err != nil {
 		t.Fatal(err)
 	}
 
 	runner := &mockRunner{}
-	wpClient := wpcli.NewClientWithRunner(runner)
+	wpClient := wpcli.NewClientWithRunnerForConfig(runner, cfg)
 
 	creator := newTestCreator(cfg, wpClient, func(ctx context.Context, dbName string) (bool, error) {
 		return false, nil
@@ -480,15 +535,14 @@ func TestCreator_CollisionPreflight(t *testing.T) {
 
 func TestCreator_PreExistingTLSRollbackDoesNotUnsecure(t *testing.T) {
 	tempDir := t.TempDir()
-	cfg := config.DefaultConfig(tempDir)
-	cfg.WebsitesPath = filepath.Join(tempDir, "sites")
+	cfg := newTestConfig(tempDir)
 
 	// Site was already secured prior to this run
 	runner := &mockRunner{
 		securedSites: "existing-secure.test",
 		failOnSubstr: "wp plugin install", // fail later to trigger rollback
 	}
-	wpClient := wpcli.NewClientWithRunner(runner)
+	wpClient := wpcli.NewClientWithRunnerForConfig(runner, cfg)
 
 	creator := newTestCreator(cfg, wpClient, func(ctx context.Context, dbName string) (bool, error) {
 		return false, nil
@@ -517,8 +571,11 @@ func TestCreator_PreExistingTLSRollbackDoesNotUnsecure(t *testing.T) {
 		t.Fatal("expected error on plugin install, got nil")
 	}
 
-	// Ensure herd unsecure was NOT invoked because TLS was pre-existing
+	// Ensure neither herd secure nor herd unsecure was invoked because TLS was pre-existing
 	for _, call := range runner.calls {
+		if strings.Contains(call, "herd secure") {
+			t.Errorf("pre-existing TLS was needlessly secured: %s", call)
+		}
 		if strings.Contains(call, "herd unsecure") {
 			t.Errorf("pre-existing TLS was improperly unsecured during rollback: %s", call)
 		}
@@ -527,14 +584,13 @@ func TestCreator_PreExistingTLSRollbackDoesNotUnsecure(t *testing.T) {
 
 func TestCreator_HerdProbeFailureHalts(t *testing.T) {
 	tempDir := t.TempDir()
-	cfg := config.DefaultConfig(tempDir)
-	cfg.WebsitesPath = filepath.Join(tempDir, "sites")
+	cfg := newTestConfig(tempDir)
 
 	// Probe failure on herd secured
 	runner := &mockRunner{
 		failOnSubstr: "herd secured",
 	}
-	wpClient := wpcli.NewClientWithRunner(runner)
+	wpClient := wpcli.NewClientWithRunnerForConfig(runner, cfg)
 
 	creator := newTestCreator(cfg, wpClient, func(ctx context.Context, dbName string) (bool, error) {
 		return false, nil
@@ -552,18 +608,17 @@ func TestCreator_HerdProbeFailureHalts(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on herd probe failure, got nil")
 	}
-	if !strings.Contains(err.Error(), "failed to verify herd TLS status") {
+	if !strings.Contains(err.Error(), "failed to verify environment TLS status") {
 		t.Errorf("expected probe failure error message, got %v", err)
 	}
 }
 
 func TestCreator_RollbackOnCoreExtractionFailure(t *testing.T) {
 	tempDir := t.TempDir()
-	cfg := config.DefaultConfig(tempDir)
-	cfg.WebsitesPath = filepath.Join(tempDir, "sites")
+	cfg := newTestConfig(tempDir)
 
 	runner := &mockRunner{}
-	wpClient := wpcli.NewClientWithRunner(runner)
+	wpClient := wpcli.NewClientWithRunnerForConfig(runner, cfg)
 
 	failingExtractor := func(archivePath, destDir string) error {
 		return errors.New("simulated extraction failure: corrupted zip entry")
@@ -596,3 +651,247 @@ func TestCreator_RollbackOnCoreExtractionFailure(t *testing.T) {
 	}
 }
 
+func TestCreator_NoActiveTheme(t *testing.T) {
+	tempDir := t.TempDir()
+	cfg := newTestConfig(tempDir)
+	runner := &mockRunner{}
+	wpClient := wpcli.NewClientWithRunnerForConfig(runner, cfg)
+
+	creator := newTestCreator(cfg, wpClient, func(ctx context.Context, dbName string) (bool, error) {
+		return false, nil
+	})
+
+	req := create.Request{
+		WebsiteName: "No Theme Site",
+		WebsiteSlug: "no-theme-site",
+	}
+
+	res, err := creator.Create(context.Background(), req, nil)
+	if err != nil {
+		t.Fatalf("expected create to succeed without active theme, got error: %v", err)
+	}
+	if res.ActiveTheme != "" {
+		t.Errorf("expected empty active theme, got %q", res.ActiveTheme)
+	}
+}
+
+func TestCreator_FlockLifecycleAndRollback(t *testing.T) {
+	tempDir := t.TempDir()
+	cfg := config.DefaultConfig(tempDir)
+	cfg.AppName = config.AppNameFlock
+	cfg.AppCommand = "flock"
+	cfg.WebsitesPath = filepath.Join(tempDir, "sites")
+
+	runner := &mockRunner{
+		failOnSubstr: "wp plugin install", // fail late to trigger rollback
+	}
+	wpClient := wpcli.NewClientWithRunnerForConfig(runner, cfg)
+
+	creator := newTestCreator(cfg, wpClient, func(ctx context.Context, dbName string) (bool, error) {
+		return false, nil
+	})
+
+	dummyZip := filepath.Join(tempDir, "p.zip")
+	_ = os.WriteFile(dummyZip, []byte("zip"), 0600)
+
+	req := create.Request{
+		WebsiteName: "Flock Test",
+		WebsiteSlug: "flock-test",
+		PluginArtifacts: []packages.Artifact{
+			{
+				Ref:     packages.PackageRef{Type: "plugin", Slug: "failing-plugin"},
+				Version: "1.0.0",
+				Path:    dummyZip,
+			},
+		},
+	}
+
+	_, err := creator.Create(context.Background(), req, nil)
+	if err == nil {
+		t.Fatal("expected create failure on plugin install, got nil")
+	}
+
+	// Verify link was executed, and rollback unlinked and removed directory
+	var linkCalled, unlinkCalled bool
+	for _, call := range runner.calls {
+		if strings.Contains(call, "flock link flock-test") {
+			linkCalled = true
+		}
+		if strings.Contains(call, "flock unlink flock-test") {
+			unlinkCalled = true
+		}
+	}
+	if !linkCalled {
+		t.Errorf("expected flock link to be called")
+	}
+	if !unlinkCalled {
+		t.Errorf("expected flock unlink to be called during rollback")
+	}
+}
+
+func TestCreator_LaragonLifecycleAndRollback(t *testing.T) {
+	tempDir := t.TempDir()
+	cfg := config.DefaultConfig(tempDir)
+	cfg.AppName = config.AppNameLaragon
+	cfg.AppCommand = "C:\\laragon\\laragon.exe"
+	cfg.WebsitesPath = filepath.Join(tempDir, "sites")
+
+	runner := &mockRunner{
+		failOnSubstr: "wp core install", // fail after directory creation
+	}
+	wpClient := wpcli.NewClientWithRunnerForConfig(runner, cfg)
+
+	creator := newTestCreator(cfg, wpClient, func(ctx context.Context, dbName string) (bool, error) {
+		return false, nil
+	})
+
+	req := create.Request{
+		WebsiteName: "Laragon Test",
+		WebsiteSlug: "laragon-test",
+	}
+
+	_, err := creator.Create(context.Background(), req, nil)
+	if err == nil {
+		t.Fatal("expected create failure on core install, got nil")
+	}
+
+	// Laragon reload should have been called twice: after dir creation, and again after rollback deletion
+	reloadCount := 0
+	for _, call := range runner.calls {
+		if strings.Contains(call, "laragon.exe reload") {
+			reloadCount++
+		}
+	}
+	if reloadCount != 2 {
+		t.Errorf("expected 2 laragon reload calls (creation and rollback), got %d (calls: %v)", reloadCount, runner.calls)
+	}
+}
+func TestCreator_InvalidActiveThemeSlugRejected(t *testing.T) {
+	tempDir := t.TempDir()
+	cfg := newTestConfig(tempDir)
+	runner := &mockRunner{}
+	wpClient := wpcli.NewClientWithRunnerForConfig(runner, cfg)
+
+	creator := newTestCreator(cfg, wpClient, func(ctx context.Context, dbName string) (bool, error) {
+		return false, nil
+	})
+
+	dummyZip := filepath.Join(tempDir, "theme.zip")
+	_ = os.WriteFile(dummyZip, []byte("theme"), 0600)
+
+	req := create.Request{
+		WebsiteName:     "Invalid Theme Site",
+		WebsiteSlug:     "invalid-theme-site",
+		ActiveThemeSlug: "nonexistent-theme",
+		ThemeArtifacts: []packages.Artifact{
+			{
+				Ref:     packages.PackageRef{Type: "theme", Slug: "selected-theme"},
+				Version: "1.0.0",
+				Path:    dummyZip,
+			},
+		},
+	}
+
+	_, err := creator.Create(context.Background(), req, nil)
+	if err == nil {
+		t.Fatal("expected error when ActiveThemeSlug is not in ThemeArtifacts, got nil")
+	}
+	if !strings.Contains(err.Error(), "active theme \"nonexistent-theme\" is not present in selected theme artifacts") {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	// Verify no directory was created
+	siteDir := filepath.Join(cfg.WebsitesPath, "invalid-theme-site")
+	if _, err := os.Stat(siteDir); !os.IsNotExist(err) {
+		t.Errorf("no directory mutation should have occurred before preflight check")
+	}
+}
+func TestCreator_RollbackUnlinkFailureExposedAndCleanupAttempted(t *testing.T) {
+	tempDir := t.TempDir()
+	cfg := config.DefaultConfig(tempDir)
+	cfg.AppName = config.AppNameFlock
+	cfg.AppCommand = "flock"
+	cfg.WebsitesPath = filepath.Join(tempDir, "sites")
+
+	runner := &mockRunner{
+		failOnSubstrings: []string{"wp core install", "flock unlink"},
+	}
+	wpClient := wpcli.NewClientWithRunnerForConfig(runner, cfg)
+
+	creator := newTestCreator(cfg, wpClient, func(ctx context.Context, dbName string) (bool, error) {
+		return false, nil
+	})
+
+	req := create.Request{
+		WebsiteName: "Flock Rollback Fail",
+		WebsiteSlug: "flock-rb-fail",
+	}
+
+	_, err := creator.Create(context.Background(), req, nil)
+	if err == nil {
+		t.Fatal("expected create error, got nil")
+	}
+
+	// Error must expose both the primary failure and the rollback cleanup failure
+	errStr := err.Error()
+	if !strings.Contains(errStr, "wp core install") {
+		t.Errorf("expected error to contain primary install failure, got: %s", errStr)
+	}
+	if !strings.Contains(errStr, "environment unregister cleanup failed") {
+		t.Errorf("expected error to contain rollback unregister failure, got: %s", errStr)
+	}
+
+	// DB drop must still have been attempted
+	var dbDropCalled bool
+	for _, call := range runner.calls {
+		if strings.Contains(call, "wp db drop") {
+			dbDropCalled = true
+			break
+		}
+	}
+	if !dbDropCalled {
+		t.Errorf("expected wp db drop to be attempted despite unregister failure")
+	}
+
+	// Directory must still have been cleaned up
+	siteDir := filepath.Join(cfg.WebsitesPath, "flock-rb-fail")
+	if _, err := os.Stat(siteDir); !os.IsNotExist(err) {
+		t.Errorf("expected directory to be deleted despite unregister failure, still exists at %s", siteDir)
+	}
+}
+
+func TestCreator_InvalidConfigPreflightFailsBeforeMutation(t *testing.T) {
+	tempDir := t.TempDir()
+	cfg := config.DefaultConfig(tempDir)
+	cfg.AppName = config.AppNameHerd
+	cfg.AppCommand = "" // invalid empty command
+	cfg.WebsitesPath = filepath.Join(tempDir, "sites")
+
+	runner := &mockRunner{}
+	wpClient := wpcli.NewClientWithRunnerForConfig(runner, cfg)
+
+	creator := newTestCreator(cfg, wpClient, func(ctx context.Context, dbName string) (bool, error) {
+		return false, nil
+	})
+
+	req := create.Request{
+		WebsiteName: "Invalid Config Site",
+		WebsiteSlug: "invalid-cfg-site",
+	}
+
+	_, err := creator.Create(context.Background(), req, nil)
+	if err == nil {
+		t.Fatal("expected preflight error for invalid config, got nil")
+	}
+
+	// Verify no directory was created
+	siteDir := filepath.Join(cfg.WebsitesPath, "invalid-cfg-site")
+	if _, err := os.Stat(siteDir); !os.IsNotExist(err) {
+		t.Errorf("no directory mutation should have occurred before preflight check")
+	}
+
+	// Verify no commands were run
+	if len(runner.calls) != 0 {
+		t.Errorf("expected 0 commands executed on preflight failure, got: %v", runner.calls)
+	}
+}

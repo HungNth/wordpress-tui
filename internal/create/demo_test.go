@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"wptui/internal/config"
 	"wptui/internal/create"
 	"wptui/internal/wpcli"
 )
@@ -27,12 +26,11 @@ func demoCoreExtractor(archivePath, destDir string) error {
 
 func TestTicket02_DemoBasicProvisioningAndRollback(t *testing.T) {
 	tempDir := t.TempDir()
-	cfg := config.DefaultConfig(tempDir)
-	cfg.WebsitesPath = filepath.Join(tempDir, "sites")
+	cfg := newTestConfig(tempDir)
 
 	// 1. Success Demo
 	runner := &mockRunner{}
-	client := wpcli.NewClientWithRunner(runner)
+	client := wpcli.NewClientWithRunnerForConfig(runner, cfg)
 	creator := create.NewCreator(cfg, client, func(ctx context.Context, dbName string) (bool, error) {
 		conn := wpcli.DBConnection{
 			Host:   cfg.DatabaseHost,
@@ -70,7 +68,7 @@ func TestTicket02_DemoBasicProvisioningAndRollback(t *testing.T) {
 	failingRunner := &mockRunner{
 		failOnSubstr: "wp core install",
 	}
-	failingClient := wpcli.NewClientWithRunner(failingRunner)
+	failingClient := wpcli.NewClientWithRunnerForConfig(failingRunner, cfg)
 	failingCreator := create.NewCreator(cfg, failingClient, func(ctx context.Context, dbName string) (bool, error) {
 		return false, nil
 	}, create.WithCoreResolver(&demoCoreResolver{}), create.WithCoreExtractor(demoCoreExtractor))
@@ -107,7 +105,7 @@ func TestTicket02_DemoBasicProvisioningAndRollback(t *testing.T) {
 
 	// 3. Database collision demo using CheckDatabaseExists
 	collisionRunner := &mockRunner{}
-	collisionClient := wpcli.NewClientWithRunner(collisionRunner)
+	collisionClient := wpcli.NewClientWithRunnerForConfig(collisionRunner, cfg)
 	collisionCreator := create.NewCreator(cfg, collisionClient, func(ctx context.Context, dbName string) (bool, error) {
 		if dbName == "existing-db" {
 			return true, nil

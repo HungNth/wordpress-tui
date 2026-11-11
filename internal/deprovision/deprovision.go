@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"wptui/internal/config"
 )
 
 // Candidate represents an eligible first-level directory for de-provisioning.
@@ -19,20 +21,21 @@ type Candidate struct {
 
 // Result records the outcome of de-provisioning a single Candidate.
 type Result struct {
-	Candidate Candidate
-	HerdErr   error
-	DBErr     error
-	DirErr    error
-	HerdDone  bool
-	DBDone    bool
-	DirDone   bool
+	Candidate       Candidate
+	EnvironmentErr  error
+	DBErr           error
+	DirErr          error
+	EnvironmentDone bool
+	DBDone          bool
+	DirDone         bool
 }
 
 // WPClient represents the interface required by de-provisioning.
 type WPClient interface {
 	ConfigGet(ctx context.Context, dir, key string) (string, error)
 	DBDrop(ctx context.Context, dir string) error
-	HerdUnsecure(ctx context.Context, dir, slug string) error
+	EnvironmentUnsecure(ctx context.Context, dir, slug string) error
+	EnvironmentUnregister(ctx context.Context, dir, slug string) error
 }
 
 // DiscoverCandidates scans websitesPath, filtering out hidden directories,
@@ -108,24 +111,31 @@ func ResolveCandidateDB(ctx context.Context, c *Candidate, client WPClient) {
 
 // DeprovisionOptions configures de-provisioning execution.
 type DeprovisionOptions struct {
-	UsedHerd    bool
+	Config      *config.Config
 	Concurrency int
 	OnProgress  func(r Result)
 }
 
 // DeprovisionSingle deletes a single candidate site, executing:
-// 1. Herd unsecure (best-effort, if used_herd)
+// 1. Environment unsecure/unregister (best-effort, if configured; for non-Laragon)
 // 2. Database drop (if detectedDB is present)
 // 3. Mandatory directory removal (always executed, even if previous steps failed)
-func DeprovisionSingle(ctx context.Context, c Candidate, client WPClient, usedHerd bool) Result {
+// 4. Laragon reload (if Laragon, executed after directory removal)
+func DeprovisionSingle(ctx context.Context, c Candidate, client WPClient, cfg *config.Config) Result {
 	res := Result{Candidate: c}
 
-	// 1. Herd Unsecure (best effort)
-	if usedHerd && client != nil {
-		if err := client.HerdUnsecure(ctx, c.Path, c.Slug); err != nil {
-			res.HerdErr = err
-		} else {
-			res.HerdDone = true
+	isLaragon := cfg != nil && strings.EqualFold(cfg.AppName, config.AppNameLaragon)
+
+	// 1. Environment cleanup before directory deletion for non-Laragon (Flock/Herd)
+	if !isLaragon && client != nil && cfg != nil && cfg.AppName != "" {
+		if err := client.EnvironmentUnsecure(ctx, c.Path, c.Slug); err != nil {
+			res.EnvironmentErr = err
+		}
+		if err := client.EnvironmentUnregister(ctx, c.Path, c.Slug); err != nil && res.EnvironmentErr == nil {
+			res.EnvironmentErr = err
+		}
+		if res.EnvironmentErr == nil {
+			res.EnvironmentDone = true
 		}
 	}
 
@@ -148,6 +158,15 @@ func DeprovisionSingle(ctx context.Context, c Candidate, client WPClient, usedHe
 		res.DirErr = err
 	} else {
 		res.DirDone = true
+	}
+
+	// 4. Laragon reload AFTER directory deletion
+	if isLaragon && client != nil && cfg != nil && cfg.AppName != "" {
+		if err := client.EnvironmentUnregister(ctx, c.Path, c.Slug); err != nil {
+			res.EnvironmentErr = err
+		} else {
+			res.EnvironmentDone = true
+		}
 	}
 
 	return res
@@ -202,7 +221,7 @@ func Deprovision(ctx context.Context, candidates []Candidate, client WPClient, o
 				wg.Done()
 			}()
 
-			res := DeprovisionSingle(ctx, cand, client, opts.UsedHerd)
+			res := DeprovisionSingle(ctx, cand, client, opts.Config)
 			results[idx] = res
 			if opts.OnProgress != nil {
 				opts.OnProgress(res)

@@ -11,14 +11,16 @@ import (
 	"testing"
 	"time"
 
+	"wptui/internal/config"
 	"wptui/internal/deprovision"
 )
 
 type mockWPClient struct {
-	mu             sync.Mutex
-	configGetFn    func(ctx context.Context, dir, key string) (string, error)
-	dbDropFn       func(ctx context.Context, dir string) error
-	herdUnsecureFn func(ctx context.Context, dir, slug string) error
+	mu              sync.Mutex
+	configGetFn     func(ctx context.Context, dir, key string) (string, error)
+	dbDropFn        func(ctx context.Context, dir string) error
+	envUnsecureFn   func(ctx context.Context, dir, slug string) error
+	envUnregisterFn func(ctx context.Context, dir, slug string) error
 }
 
 func (m *mockWPClient) ConfigGet(ctx context.Context, dir, key string) (string, error) {
@@ -41,9 +43,19 @@ func (m *mockWPClient) DBDrop(ctx context.Context, dir string) error {
 	return nil
 }
 
-func (m *mockWPClient) HerdUnsecure(ctx context.Context, dir, slug string) error {
+func (m *mockWPClient) EnvironmentUnsecure(ctx context.Context, dir, slug string) error {
 	m.mu.Lock()
-	fn := m.herdUnsecureFn
+	fn := m.envUnsecureFn
+	m.mu.Unlock()
+	if fn != nil {
+		return fn(ctx, dir, slug)
+	}
+	return nil
+}
+
+func (m *mockWPClient) EnvironmentUnregister(ctx context.Context, dir, slug string) error {
+	m.mu.Lock()
+	fn := m.envUnregisterFn
 	m.mu.Unlock()
 	if fn != nil {
 		return fn(ctx, dir, slug)
@@ -137,28 +149,29 @@ func TestDeprovisionSingle_MandatoryDirectoryRemovalOnFailure(t *testing.T) {
 		HasWPConfig: true,
 	}
 
-	// Simulate Herd and DB failure while DB_NAME still matches
+	// Simulate Environment and DB failure while DB_NAME still matches
 	var dbDropCalled bool
 	client := &mockWPClient{
 		configGetFn: func(ctx context.Context, dir, key string) (string, error) {
 			return "fail_db", nil
 		},
-		herdUnsecureFn: func(ctx context.Context, dir, slug string) error {
-			return errors.New("simulated herd unsecure failure")
+		envUnsecureFn: func(ctx context.Context, dir, slug string) error {
+			return errors.New("simulated environment unsecure failure")
 		},
 		dbDropFn: func(ctx context.Context, dir string) error {
 			dbDropCalled = true
 			return errors.New("simulated db drop failure")
 		},
 	}
-	res := deprovision.DeprovisionSingle(context.Background(), candidate, client, true)
+	cfg := &config.Config{AppName: config.AppNameHerd, AppCommand: "herd"}
+	res := deprovision.DeprovisionSingle(context.Background(), candidate, client, cfg)
 
 	if !dbDropCalled {
 		t.Errorf("expected dbDrop to be called when DB_NAME matches")
 	}
-	// Herd and DB should have errors
-	if res.HerdErr == nil {
-		t.Errorf("expected HerdErr to be set")
+	// Environment and DB should have errors
+	if res.EnvironmentErr == nil {
+		t.Errorf("expected EnvironmentErr to be set")
 	}
 	if res.DBErr == nil {
 		t.Errorf("expected DBErr to be set")
@@ -204,8 +217,7 @@ func TestDeprovisionSingle_DBMismatchSkipsDrop(t *testing.T) {
 		},
 	}
 
-	res := deprovision.DeprovisionSingle(context.Background(), candidate, client, false)
-
+	res := deprovision.DeprovisionSingle(context.Background(), candidate, client, nil)
 	if dbDropCalled {
 		t.Errorf("expected DBDrop to NOT be called when DB_NAME mismatches")
 	}
@@ -265,7 +277,7 @@ func TestDeprovision_ConcurrentBounded(t *testing.T) {
 			lastChar := dir[len(dir)-1:]
 			return "db-" + lastChar, nil
 		},
-		herdUnsecureFn: func(ctx context.Context, dir, slug string) error {
+		envUnsecureFn: func(ctx context.Context, dir, slug string) error {
 			cur := atomic.AddInt32(&currentWorkers, 1)
 			for {
 				peak := atomic.LoadInt32(&peakWorkers)
@@ -278,7 +290,7 @@ func TestDeprovision_ConcurrentBounded(t *testing.T) {
 
 			// Inject partial failure on site-3
 			if slug == "site-3" {
-				return errors.New("simulated herd error on site-3")
+				return errors.New("simulated env error on site-3")
 			}
 			return nil
 		},
@@ -291,8 +303,9 @@ func TestDeprovision_ConcurrentBounded(t *testing.T) {
 		},
 	}
 
+	cfg := &config.Config{AppName: config.AppNameHerd, AppCommand: "herd"}
 	results := deprovision.Deprovision(context.Background(), candidates, client, deprovision.DeprovisionOptions{
-		UsedHerd:    true,
+		Config:      cfg,
 		Concurrency: 4,
 	})
 
@@ -309,14 +322,14 @@ func TestDeprovision_ConcurrentBounded(t *testing.T) {
 	}
 
 	for i, res := range results {
-		// Partial failure verification: site-3 has HerdErr, site-5 has DBErr
+		// Partial failure verification: site-3 has EnvironmentErr, site-5 has DBErr
 		if res.Candidate.Slug == "site-3" {
-			if res.HerdErr == nil {
-				t.Errorf("site-3 expected HerdErr to be set")
+			if res.EnvironmentErr == nil {
+				t.Errorf("site-3 expected EnvironmentErr to be set")
 			}
 		} else {
-			if res.HerdErr != nil {
-				t.Errorf("site %s unexpected HerdErr: %v", res.Candidate.Slug, res.HerdErr)
+			if res.EnvironmentErr != nil {
+				t.Errorf("site %s unexpected EnvironmentErr: %v", res.Candidate.Slug, res.EnvironmentErr)
 			}
 		}
 
@@ -390,5 +403,92 @@ func TestDeprovision_OnProgressCallback(t *testing.T) {
 	}
 	if len(reported) != 3 {
 		t.Fatalf("expected 3 progress reports, got %d", len(reported))
+	}
+}
+func TestDeprovisionSingle_LaragonReloadAfterDeletion(t *testing.T) {
+	tempDir := t.TempDir()
+	siteDir := filepath.Join(tempDir, "laragon-site")
+	if err := os.MkdirAll(siteDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	candidate := deprovision.Candidate{
+		Slug:        "laragon-site",
+		Path:        siteDir,
+		HasWPConfig: false,
+	}
+
+	var unregisterCalled bool
+	var unregisterDir string
+	var dirExistedAtReload bool
+	client := &mockWPClient{
+		envUnregisterFn: func(ctx context.Context, dir, slug string) error {
+			unregisterCalled = true
+			unregisterDir = dir
+			_, err := os.Stat(siteDir)
+			dirExistedAtReload = !os.IsNotExist(err)
+			return nil
+		},
+	}
+
+	cfg := &config.Config{AppName: config.AppNameLaragon, AppCommand: "C:\\laragon\\laragon.exe"}
+	res := deprovision.DeprovisionSingle(context.Background(), candidate, client, cfg)
+
+	if !res.DirDone {
+		t.Errorf("expected directory removal to succeed")
+	}
+	if !unregisterCalled {
+		t.Fatalf("expected EnvironmentUnregister to be called for Laragon")
+	}
+	if dirExistedAtReload {
+		t.Errorf("expected site directory to be removed BEFORE Laragon reload")
+	}
+	if unregisterDir != siteDir {
+		t.Errorf("expected Laragon reload to run with site dir %q, got %q", siteDir, unregisterDir)
+	}
+	if !res.EnvironmentDone {
+		t.Errorf("expected EnvironmentDone to be true")
+	}
+}
+
+func TestDeprovisionSingle_FlockUnregisterBeforeDeletion(t *testing.T) {
+	tempDir := t.TempDir()
+	siteDir := filepath.Join(tempDir, "flock-site")
+	if err := os.MkdirAll(siteDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	candidate := deprovision.Candidate{
+		Slug:        "flock-site",
+		Path:        siteDir,
+		HasWPConfig: false,
+	}
+
+	var unsecureCalled, unregisterCalled bool
+	var dirExistedAtUnregister bool
+	client := &mockWPClient{
+		envUnsecureFn: func(ctx context.Context, dir, slug string) error {
+			unsecureCalled = true
+			return nil
+		},
+		envUnregisterFn: func(ctx context.Context, dir, slug string) error {
+			unregisterCalled = true
+			_, err := os.Stat(siteDir)
+			dirExistedAtUnregister = !os.IsNotExist(err)
+			return nil
+		},
+	}
+
+	cfg := &config.Config{AppName: config.AppNameFlock, AppCommand: "flock"}
+	res := deprovision.DeprovisionSingle(context.Background(), candidate, client, cfg)
+
+	if !unsecureCalled || !unregisterCalled {
+		t.Fatalf("expected Flock unsecure and unregister to be called")
+	}
+	if !dirExistedAtUnregister {
+		t.Errorf("expected site directory to still exist when Flock unregister runs")
+	}
+	if !res.DirDone || !res.EnvironmentDone {
+		t.Errorf("expected both DirDone and EnvironmentDone to be true")
 	}
 }

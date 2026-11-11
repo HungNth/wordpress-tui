@@ -10,21 +10,21 @@ import (
 
 	"wptui/internal/config"
 	"wptui/internal/core"
+	"wptui/internal/localenv"
 	"wptui/internal/packages"
 	"wptui/internal/wpcli"
 )
 
 type Request struct {
-	WebsiteName         string
-	WebsiteSlug         string
-	AdminUsername       string
-	AdminPassword       string
-	AdminEmail          string
-	ApplyTweaks         bool
-	DefaultTheme        *packages.Artifact // nil if skipped or disabled
-	DefaultThemeSkipped bool
-	PluginArtifacts     []packages.Artifact
-	ThemeArtifacts      []packages.Artifact
+	WebsiteName     string
+	WebsiteSlug     string
+	AdminUsername   string
+	AdminPassword   string
+	AdminEmail      string
+	ApplyTweaks     bool
+	ActiveThemeSlug string
+	PluginArtifacts []packages.Artifact
+	ThemeArtifacts  []packages.Artifact
 }
 
 type PackageStatusInfo struct {
@@ -36,15 +36,14 @@ type PackageStatusInfo struct {
 }
 
 type Result struct {
-	WebsitePath         string
-	WebsiteURL          string
-	InstalledPlugins    []string
-	InstalledThemes     []string
-	ActiveTheme         string
-	DefaultThemeSkipped bool
-	PackageStatuses     []PackageStatusInfo
-	FailedTweaks        []string
-	SkippedTweaks       []string
+	WebsitePath      string
+	WebsiteURL       string
+	InstalledPlugins []string
+	InstalledThemes  []string
+	ActiveTheme      string
+	PackageStatuses  []PackageStatusInfo
+	FailedTweaks     []string
+	SkippedTweaks    []string
 }
 
 type ProgressFunc func(step, detail string)
@@ -115,25 +114,45 @@ func NewCreator(cfg *config.Config, client *wpcli.Client, checkDB DBExistsFunc, 
 type ownershipTracker struct {
 	createdDir bool
 	createdDB  bool
+	createdReg bool
 	createdTLS bool
 	siteDir    string
 	siteSlug   string
 	wpClient   *wpcli.Client
+	isLaragon  bool
 }
 
-func (o *ownershipTracker) Rollback(ctx context.Context) {
+func (o *ownershipTracker) Rollback(ctx context.Context) error {
+	var errs []error
 	if o.createdTLS {
-		_ = o.wpClient.HerdUnsecure(ctx, o.siteDir, o.siteSlug)
+		if err := o.wpClient.EnvironmentUnsecure(ctx, o.siteDir, o.siteSlug); err != nil {
+			errs = append(errs, fmt.Errorf("environment unsecure cleanup failed: %w", err))
+		}
+	}
+	if o.createdReg && !o.isLaragon {
+		if err := o.wpClient.EnvironmentUnregister(ctx, o.siteDir, o.siteSlug); err != nil {
+			errs = append(errs, fmt.Errorf("environment unregister cleanup failed: %w", err))
+		}
 	}
 	if o.createdDB {
-		_ = o.wpClient.DBDrop(ctx, o.siteDir)
+		if err := o.wpClient.DBDrop(ctx, o.siteDir); err != nil {
+			errs = append(errs, fmt.Errorf("database drop cleanup failed: %w", err))
+		}
 	}
 	if o.createdDir && o.siteDir != "" {
-		_ = os.RemoveAll(o.siteDir)
+		if err := os.RemoveAll(o.siteDir); err != nil {
+			errs = append(errs, fmt.Errorf("directory removal cleanup failed: %w", err))
+		}
 	}
+	if o.isLaragon && o.createdDir {
+		if err := o.wpClient.EnvironmentUnregister(ctx, o.siteDir, o.siteSlug); err != nil {
+			errs = append(errs, fmt.Errorf("laragon reload cleanup failed: %w", err))
+		}
+	}
+	return errors.Join(errs...)
 }
 
-func (c *Creator) Create(ctx context.Context, req Request, progress ProgressFunc) (*Result, error) {
+func (c *Creator) Create(ctx context.Context, req Request, progress ProgressFunc) (result *Result, err error) {
 	if progress == nil {
 		progress = func(step, detail string) {}
 	}
@@ -144,6 +163,19 @@ func (c *Creator) Create(ctx context.Context, req Request, progress ProgressFunc
 
 	if err := ValidateSlug(req.WebsiteSlug); err != nil {
 		return nil, fmt.Errorf("invalid website slug: %w", err)
+	}
+
+	if req.ActiveThemeSlug != "" {
+		found := false
+		for _, art := range req.ThemeArtifacts {
+			if art.Ref.Slug == req.ActiveThemeSlug {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("active theme %q is not present in selected theme artifacts", req.ActiveThemeSlug)
+		}
 	}
 
 	adminUser := req.AdminUsername
@@ -162,7 +194,7 @@ func (c *Creator) Create(ctx context.Context, req Request, progress ProgressFunc
 	websitePath := filepath.Join(c.cfg.WebsitesPath, req.WebsiteSlug)
 
 	// Preflight 1: Dependencies in PATH
-	if err := c.wpClient.CheckDependencies(c.cfg.UsedHerd); err != nil {
+	if err := c.wpClient.CheckDependencies(); err != nil {
 		return nil, fmt.Errorf("dependency preflight failed: %w", err)
 	}
 	// Preflight 2: Directory collision
@@ -181,16 +213,20 @@ func (c *Creator) Create(ctx context.Context, req Request, progress ProgressFunc
 		}
 	}
 
+	isLaragon := c.cfg != nil && strings.EqualFold(c.cfg.AppName, config.AppNameLaragon)
 	owner := &ownershipTracker{
-		siteDir:  websitePath,
-		siteSlug: req.WebsiteSlug,
-		wpClient: c.wpClient,
+		siteDir:   websitePath,
+		siteSlug:  req.WebsiteSlug,
+		wpClient:  c.wpClient,
+		isLaragon: isLaragon,
 	}
 
 	success := false
 	defer func() {
 		if !success {
-			owner.Rollback(context.Background())
+			if rbErr := owner.Rollback(context.Background()); rbErr != nil {
+				err = errors.Join(err, rbErr)
+			}
 		}
 	}()
 
@@ -208,6 +244,20 @@ func (c *Creator) Create(ctx context.Context, req Request, progress ProgressFunc
 		return nil, fmt.Errorf("failed to create website directory: %w", err)
 	}
 	owner.createdDir = true
+
+	// Register environment (e.g. link for Flock, reload for Laragon)
+	regDetail := "Registering environment..."
+	if isLaragon {
+		regDetail = "Reloading Laragon..."
+	}
+	progress("environment_register", regDetail)
+	registered, err := c.wpClient.EnvironmentRegister(ctx, websitePath, req.WebsiteSlug)
+	if registered {
+		owner.createdReg = true
+	}
+	if err != nil {
+		return nil, fmt.Errorf("environment registration failed: %w", err)
+	}
 
 	// Step 2: Resolve and extract WordPress core
 	if c.coreResolver == nil {
@@ -257,12 +307,7 @@ func (c *Creator) Create(ctx context.Context, req Request, progress ProgressFunc
 		return nil, err
 	}
 	// Step 5: Core install
-	var siteURL string
-	if c.cfg.UsedHerd {
-		siteURL = "https://" + req.WebsiteSlug + ".test"
-	} else {
-		siteURL = "http://" + req.WebsiteSlug + ".test"
-	}
+	siteURL := localenv.SiteURL(c.cfg, req.WebsiteSlug)
 
 	progress("core_install", "Running WordPress installation...")
 	if err := c.wpClient.CoreInstall(
@@ -332,21 +377,11 @@ func (c *Creator) Create(ctx context.Context, req Request, progress ProgressFunc
 		})
 	}
 
-	if req.DefaultTheme != nil {
-		recordStatus(req.DefaultTheme)
-	}
 	for i := range req.PluginArtifacts {
 		recordStatus(&req.PluginArtifacts[i])
 	}
 	for i := range req.ThemeArtifacts {
 		recordStatus(&req.ThemeArtifacts[i])
-	}
-
-	if req.DefaultTheme != nil {
-		progress("theme_install", fmt.Sprintf("Installing default theme %s...", req.DefaultTheme.Ref.Slug))
-		if err := c.wpClient.ThemeInstall(ctx, websitePath, req.DefaultTheme.Path, true); err != nil {
-			return nil, fmt.Errorf("failed to install default theme: %w", err)
-		}
 	}
 
 	var installedPlugins []string
@@ -359,53 +394,49 @@ func (c *Creator) Create(ctx context.Context, req Request, progress ProgressFunc
 	}
 
 	var installedThemes []string
-	if req.DefaultTheme != nil {
-		installedThemes = append(installedThemes, req.DefaultTheme.Ref.Slug)
-	}
 	for _, art := range req.ThemeArtifacts {
-		// Deduplicate: avoid re-installing if already installed as default theme
-		if req.DefaultTheme != nil && art.Ref.Slug == req.DefaultTheme.Ref.Slug {
-			continue
-		}
-		progress("theme_install", fmt.Sprintf("Installing additional theme %s...", art.Ref.Slug))
-		if err := c.wpClient.ThemeInstall(ctx, websitePath, art.Path, false); err != nil {
-			return nil, fmt.Errorf("failed to install additional theme %s: %w", art.Ref.Slug, err)
+		activate := (req.ActiveThemeSlug != "" && art.Ref.Slug == req.ActiveThemeSlug)
+		progress("theme_install", fmt.Sprintf("Installing theme %s...", art.Ref.Slug))
+		if err := c.wpClient.ThemeInstall(ctx, websitePath, art.Path, activate); err != nil {
+			return nil, fmt.Errorf("failed to install theme %s: %w", art.Ref.Slug, err)
 		}
 		installedThemes = append(installedThemes, art.Ref.Slug)
 	}
 
-	// Always query WordPress for the active theme after installation
-	activeTheme, err := c.wpClient.ThemeGetActive(ctx, websitePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query active WordPress theme: %w", err)
+	var activeTheme string
+	if req.ActiveThemeSlug != "" {
+		act, err := c.wpClient.ThemeGetActive(ctx, websitePath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to query active WordPress theme: %w", err)
+		}
+		activeTheme = act
 	}
 
-	// Step 9: Secure with Herd if used_herd is true (final provisioning step)
-	if c.cfg.UsedHerd {
+	// Step 9: Secure environment TLS if configured and not Laragon
+	if c.cfg != nil && !isLaragon && c.cfg.AppName != "" {
 		alreadySecured, err := c.wpClient.IsSiteSecured(ctx, req.WebsiteSlug)
 		if err != nil {
-			return nil, fmt.Errorf("failed to verify herd TLS status: %w", err)
-		}
-		progress("herd_secure", "Securing site with Herd TLS...")
-		if err := c.wpClient.HerdSecure(ctx, websitePath, req.WebsiteSlug); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to verify environment TLS status: %w", err)
 		}
 		if !alreadySecured {
 			owner.createdTLS = true
+			progress("environment_secure", "Securing site environment...")
+			if err := c.wpClient.EnvironmentSecure(ctx, websitePath, req.WebsiteSlug); err != nil {
+				return nil, err
+			}
 		}
 	}
 
 	success = true
 
 	return &Result{
-		WebsitePath:         websitePath,
-		WebsiteURL:          siteURL,
-		InstalledPlugins:    installedPlugins,
-		InstalledThemes:     installedThemes,
-		ActiveTheme:         activeTheme,
-		DefaultThemeSkipped: req.DefaultThemeSkipped,
-		PackageStatuses:     packageStatuses,
-		FailedTweaks:        failedTweaks,
-		SkippedTweaks:       skippedTweaks,
+		WebsitePath:      websitePath,
+		WebsiteURL:       siteURL,
+		InstalledPlugins: installedPlugins,
+		InstalledThemes:  installedThemes,
+		ActiveTheme:      activeTheme,
+		PackageStatuses:  packageStatuses,
+		FailedTweaks:     failedTweaks,
+		SkippedTweaks:    skippedTweaks,
 	}, nil
 }

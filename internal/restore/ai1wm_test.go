@@ -56,7 +56,8 @@ func TestRestorer_AI1WM_Success(t *testing.T) {
 	}
 
 	cfg := &config.Config{
-		UsedHerd:     true,
+		AppName:      config.AppNameHerd,
+		AppCommand:   "herd",
 		WebsitesPath: websitesPath,
 		DatabaseHost: "localhost",
 		DatabasePort: 3306,
@@ -136,7 +137,8 @@ func TestRestorer_AI1WM_RollbackOnRestoreFailure(t *testing.T) {
 	_ = os.WriteFile(archivePath, []byte("wpress binary content"), 0644)
 
 	cfg := &config.Config{
-		UsedHerd:     false,
+		AppName:      config.AppNameHerd,
+		AppCommand:   "herd",
 		WebsitesPath: websitesPath,
 		DatabaseHost: "localhost",
 		DatabasePort: 3306,
@@ -193,7 +195,8 @@ func TestRestorer_AI1WM_HerdHTTPS_ReconcilesSiteURL(t *testing.T) {
 	}
 
 	cfg := &config.Config{
-		UsedHerd:     true,
+		AppName:      config.AppNameHerd,
+		AppCommand:   "herd",
 		WebsitesPath: websitesPath,
 		DatabaseHost: "localhost",
 		DatabasePort: 3306,
