@@ -45,7 +45,19 @@ const (
 	MinTerminalWidth  = 80
 	MinTerminalHeight = 24
 	SidebarWidth      = 28
+	MaxContentWidth   = 88
 )
+
+func (m *AppModel) contentWidth() int {
+	w := m.width - SidebarWidth - 4
+	if w > MaxContentWidth {
+		w = MaxContentWidth
+	}
+	if w < 20 {
+		w = 20
+	}
+	return w
+}
 
 type SidebarItem struct {
 	Section     Section
@@ -263,7 +275,7 @@ func (m *AppModel) SetInstallPackagesHandler(fn InstallPackagesHandlerFunc) {
 
 func (m *AppModel) StartProgress(title string, steps []ProgressStep) tea.Cmd {
 	m.progressMonitor = NewProgressMonitorModel(title, steps)
-	m.progressMonitor.SetSize(m.width-SidebarWidth-4, m.height-4)
+	m.progressMonitor.SetSize(m.contentWidth(), m.height-4)
 	m.isExecuting = true
 	m.focus = FocusContent
 	return m.progressMonitor.Init()
@@ -314,7 +326,7 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		if m.progressMonitor != nil {
-			m.progressMonitor.SetSize(m.width-SidebarWidth-4, m.height-4)
+			m.progressMonitor.SetSize(m.contentWidth(), m.height-4)
 		}
 		return m, nil
 
@@ -495,10 +507,7 @@ func (m *AppModel) View() tea.View {
 	if bodyHeight < 10 {
 		bodyHeight = 10
 	}
-	contentWidth := m.width - SidebarWidth - 4
-	if contentWidth < 20 {
-		contentWidth = 20
-	}
+	contentWidth := m.contentWidth()
 
 	// 3. Sidebar pane
 	var sb strings.Builder
@@ -653,7 +662,14 @@ func (m *AppModel) View() tea.View {
 	}
 	footerText := StyleMuted.Render(footerHelp)
 
-	v := tea.NewView(lipgloss.JoinVertical(lipgloss.Left, headerText, body, footerText))
+	bodyWidth := SidebarWidth + 2 + contentWidth
+	leftPad := (m.width - bodyWidth) / 2
+	if leftPad < 0 {
+		leftPad = 0
+	}
+
+	appStyle := lipgloss.NewStyle().MarginLeft(leftPad)
+	v := tea.NewView(appStyle.Render(lipgloss.JoinVertical(lipgloss.Left, headerText, body, footerText)))
 	v.AltScreen = true
 	return v
 }
