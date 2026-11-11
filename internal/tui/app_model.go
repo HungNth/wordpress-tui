@@ -156,6 +156,7 @@ func (m *AppModel) wireHubCallbacks() {
 			}
 		case WebsiteActionDelete:
 			if m.onDelete != nil {
+				m.clearSelectionOnFinish = true
 				return m.onDelete([]deprovision.Candidate{cand})
 			}
 		case WebsiteActionConfig:
@@ -180,6 +181,7 @@ func (m *AppModel) wireHubCallbacks() {
 	}
 	m.websitesHub.OnBatchDelete = func(cands []deprovision.Candidate) tea.Cmd {
 		if m.onDelete != nil {
+			m.clearSelectionOnFinish = true
 			return m.onDelete(cands)
 		}
 		return nil

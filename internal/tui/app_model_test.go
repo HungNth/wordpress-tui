@@ -2,17 +2,73 @@ package tui_test
 
 import (
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
 	"unicode/utf8"
 
 	"wptui/internal/config"
+	"wptui/internal/deprovision"
 	"wptui/internal/packages"
 	"wptui/internal/tui"
 
 	tea "charm.land/bubbletea/v2"
 )
+
+func TestAppModel_HubReturnsToListAfterDelete(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		keys []tea.KeyPressMsg
+	}{
+		{"batch", []tea.KeyPressMsg{{Code: ' ', Text: " "}, {Code: tea.KeyDown}, {Code: ' ', Text: " "}, {Code: 'd', Text: "d"}}},
+		{"single", []tea.KeyPressMsg{{Code: tea.KeyEnter}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sitesDir, slugs := createTestWebsites(t, 3)
+			cfg := config.DefaultConfig(sitesDir)
+			cfg.WebsitesPath = sitesDir
+			m := tui.NewAppModel(cfg)
+			m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+			m.SetDeleteHandler(func(cands []deprovision.Candidate) tea.Cmd {
+				for _, c := range cands {
+					os.RemoveAll(c.Path)
+				}
+				return m.StartProgress("Deleting", []tui.ProgressStep{{ID: "s", Title: "Delete"}})
+			})
+
+			m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}) // focus Websites hub
+			for _, k := range tc.keys {
+				m.Update(k)
+			}
+			if tc.name == "single" {
+				// Action menu: move cursor to Delete
+				for i := 0; i < 20 && m.WebsitesHub().SelectedAction() != tui.WebsiteActionDelete; i++ {
+					m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+				}
+				m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+			}
+			m.Update(tea.KeyPressMsg{Code: tea.KeyRight}) // Yes
+			m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+			if !m.IsExecuting() {
+				t.Fatalf("expected delete to start execution")
+			}
+			m.Update(tui.OperationCompleteMsg{Title: "Done", Success: true})
+			m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+
+			hub := m.WebsitesHub()
+			if hub.State() != tui.WebsitesHubList {
+				t.Fatalf("expected hub back in list after delete, got state %v", hub.State())
+			}
+			if hub.SelectedCount() != 0 {
+				t.Fatalf("expected selection cleared after delete, got %d selected", hub.SelectedCount())
+			}
+			if _, err := os.Stat(filepath.Join(sitesDir, slugs[2])); err != nil {
+				t.Fatalf("unselected site must remain: %v", err)
+			}
+		})
+	}
+}
 
 func TestAppModel_InitialLayoutAndDimensions(t *testing.T) {
 	cfg := config.DefaultConfig(t.TempDir())
