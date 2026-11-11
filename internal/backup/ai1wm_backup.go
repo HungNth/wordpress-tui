@@ -86,7 +86,7 @@ func FormatAI1WMExcludes(excludes []string) string {
 // 3. Move .wpress artifact to backupPath under ai1wm_<slug>_YYYY-MM-DD_HH-mm-ss.wpress
 // 4. Retain plugin on website.
 func RunAI1WMBackup(ctx context.Context, siteDir, slug, backupPath string, excludes []string, resolver PackageResolver, client siteconfig.WPClient, onProgress ProgressFunc) (*BackupResult, error) {
-	start := time.Now()
+	start := defaultNow()
 
 	if onProgress != nil {
 		onProgress(1, 3, fmt.Sprintf("Verifying %s...", AI1WMExtensionSlug))
@@ -110,7 +110,20 @@ func RunAI1WMBackup(ctx context.Context, siteDir, slug, backupPath string, exclu
 
 	stdout, stderr, err := client.Run(ctx, siteDir, "wp", args, "")
 	if err != nil {
-		return nil, fmt.Errorf("wp ai1wm backup failed: %w (%s)", err, strings.TrimSpace(stderr))
+		cause := fmt.Errorf("wp ai1wm backup failed: %w (%s)", err, strings.TrimSpace(stderr))
+		if loc, parseErr := ParseBackupLocation(stdout); parseErr == nil {
+			if _, statErr := os.Stat(loc); statErr == nil {
+				return nil, &ArtifactError{
+					Cause: cause,
+					Artifact: RetainedArtifact{
+						Kind:           ArtifactWpress,
+						Path:           loc,
+						CleanupOutcome: "Generated .wpress archive retained in website directory; no destination file created",
+					},
+				}
+			}
+		}
+		return nil, cause
 	}
 
 	sourceWpressPath, err := ParseBackupLocation(stdout)
@@ -118,22 +131,51 @@ func RunAI1WMBackup(ctx context.Context, siteDir, slug, backupPath string, exclu
 		return nil, err
 	}
 
+	if err := ctx.Err(); err != nil {
+		return nil, &ArtifactError{
+			Cause: fmt.Errorf("backup cancelled before relocating .wpress archive: %w", err),
+			Artifact: RetainedArtifact{
+				Kind:           ArtifactWpress,
+				Path:           sourceWpressPath,
+				CleanupOutcome: "Generated .wpress archive retained in website directory; no destination file created",
+			},
+		}
+	}
+
 	if onProgress != nil {
 		onProgress(3, 3, "Relocating .wpress archive to backup storage...")
 	}
 
 	if err := os.MkdirAll(backupPath, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create backup storage directory: %w", err)
+		return nil, &ArtifactError{
+			Cause: fmt.Errorf("failed to create backup storage directory: %w", err),
+			Artifact: RetainedArtifact{
+				Kind:           ArtifactWpress,
+				Path:           sourceWpressPath,
+				CleanupOutcome: "Generated .wpress archive retained in website directory",
+			},
+		}
 	}
 
-	timestamp := time.Now().Format("2006-01-02_15-04-05")
+	timestamp := defaultNow().Format("2006-01-02_15-04-05")
 	archiveName := fmt.Sprintf("ai1wm_%s_%s.wpress", slug, timestamp)
 	destPath := filepath.Join(backupPath, archiveName)
 
-	if err := RelocateFile(sourceWpressPath, destPath); err != nil {
-		return nil, fmt.Errorf("failed to relocate .wpress backup from %s to %s: %w", sourceWpressPath, destPath, err)
+	if err := defaultRelocator(sourceWpressPath, destPath); err != nil {
+		conflictPath := ""
+		if errors.Is(err, os.ErrExist) {
+			conflictPath = destPath
+		}
+		return nil, &ArtifactError{
+			Cause:        fmt.Errorf("failed to relocate .wpress backup from %s to %s: %w", sourceWpressPath, destPath, err),
+			ConflictPath: conflictPath,
+			Artifact: RetainedArtifact{
+				Kind:           ArtifactWpress,
+				Path:           sourceWpressPath,
+				CleanupOutcome: "Generated .wpress archive retained in website directory; partial destination cleaned",
+			},
+		}
 	}
-
 	info, err := os.Stat(destPath)
 	var fileSize int64
 	if err == nil {

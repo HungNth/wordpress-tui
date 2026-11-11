@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"wptui/internal/backup"
 	"wptui/internal/packages"
@@ -250,5 +251,84 @@ func TestRunAI1WMBackup_Success(t *testing.T) {
 	}
 	if !foundAI1WMCall {
 		t.Errorf("expected wp ai1wm backup command to be executed, calls: %v", mockCli.runs)
+	}
+}
+
+func TestRunAI1WMBackup_CollisionAndCancellationStructuredArtifactMetadata(t *testing.T) {
+	siteDir := t.TempDir()
+	slug := "structured-ai1wm"
+	backupDir := filepath.Join(t.TempDir(), "backups")
+	if err := os.MkdirAll(backupDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	fixedNow := time.Date(2026, 11, 11, 11, 22, 33, 0, time.Local)
+	restoreNow := backup.SetNowForTesting(func() time.Time { return fixedNow })
+	defer restoreNow()
+
+	collidingDest := filepath.Join(backupDir, fmt.Sprintf("ai1wm_%s_%s.wpress", slug, fixedNow.Format("2006-01-02_15-04-05")))
+	existingBytes := []byte("existing-wpress-protected")
+	if err := os.WriteFile(collidingDest, existingBytes, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	wpressDir := filepath.Join(siteDir, "wp-content", "ai1wm-backups")
+	_ = os.MkdirAll(wpressDir, 0755)
+	sourceWpress := filepath.Join(wpressDir, "generated.wpress")
+	sourceBytes := []byte("fresh-generated-wpress")
+	if err := os.WriteFile(sourceWpress, sourceBytes, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	mockCli := &mockAI1WMWPClient{
+		runAI1WMFn: func() (string, error) {
+			return fmt.Sprintf("Success: Backup complete.\nBackup location: %s", sourceWpress), nil
+		},
+	}
+
+	_, err := backup.RunAI1WMBackup(t.Context(), siteDir, slug, backupDir, nil, &mockAI1WMResolver{}, mockCli, nil)
+	if err == nil {
+		t.Fatal("expected collision error from RunAI1WMBackup")
+	}
+	artErr, ok := errors.AsType[*backup.ArtifactError](err)
+	if !ok {
+		t.Fatalf("expected *backup.ArtifactError, got %T (%v)", err, err)
+	}
+	if artErr.Artifact.Kind != backup.ArtifactWpress || artErr.Artifact.Path != sourceWpress {
+		t.Errorf("unexpected AI1WM retained artifact metadata: %+v", artErr.Artifact)
+	}
+	if artErr.ConflictPath != collidingDest {
+		t.Errorf("ConflictPath = %q, want %q", artErr.ConflictPath, collidingDest)
+	}
+	if artErr.Artifact.CleanupOutcome == "" {
+		t.Errorf("expected non-empty CleanupOutcome")
+	}
+	gotExisting, _ := os.ReadFile(collidingDest)
+	if string(gotExisting) != string(existingBytes) {
+		t.Errorf("existing .wpress overwritten: got %q, want %q", gotExisting, existingBytes)
+	}
+	gotSource, err := os.ReadFile(sourceWpress)
+	if err != nil || string(gotSource) != string(sourceBytes) {
+		t.Errorf("source .wpress should remain intact: err=%v, content=%q", err, gotSource)
+	}
+
+	// Cancellation after AI1WM archive generation before relocation
+	cancelCtx, cancel := context.WithCancel(t.Context())
+	cancelCli := &mockAI1WMWPClient{
+		runAI1WMFn: func() (string, error) {
+			cancel()
+			return fmt.Sprintf("Success: Backup complete.\nBackup location: %s", sourceWpress), nil
+		},
+	}
+	_, cancelErr := backup.RunAI1WMBackup(cancelCtx, siteDir, slug, backupDir, nil, &mockAI1WMResolver{}, cancelCli, nil)
+	if !errors.Is(cancelErr, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got: %v", cancelErr)
+	}
+	cancelArtErr, ok := errors.AsType[*backup.ArtifactError](cancelErr)
+	if !ok {
+		t.Fatalf("expected *backup.ArtifactError on AI1WM cancel after generation, got %T (%v)", cancelErr, cancelErr)
+	}
+	if cancelArtErr.Artifact.Path != sourceWpress {
+		t.Errorf("cancel AI1WM retained artifact = %q, want %q", cancelArtErr.Artifact.Path, sourceWpress)
 	}
 }

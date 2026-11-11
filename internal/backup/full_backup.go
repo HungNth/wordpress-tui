@@ -3,6 +3,7 @@ package backup
 import (
 	"archive/zip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -31,6 +32,44 @@ const (
 	StrategyAI1WM BackupStrategy = "ai1wm"
 )
 
+type ArtifactKind string
+
+const (
+	ArtifactSQLDump ArtifactKind = "sql_dump"
+	ArtifactWpress  ArtifactKind = "wpress_archive"
+)
+
+type RetainedArtifact struct {
+	Kind           ArtifactKind
+	Path           string
+	CleanupOutcome string
+}
+
+type ArtifactError struct {
+	Cause        error
+	Artifact     RetainedArtifact
+	ConflictPath string
+	FinalArchive string
+}
+
+func (e *ArtifactError) Error() string {
+	return e.Cause.Error()
+}
+
+func (e *ArtifactError) Unwrap() error {
+	return e.Cause
+}
+
+var defaultNow = time.Now
+
+func SetNowForTesting(fn func() time.Time) func() {
+	orig := defaultNow
+	defaultNow = fn
+	return func() {
+		defaultNow = orig
+	}
+}
+
 // ExportDatabase runs "wp db export <slug>.sql" in siteDir.
 func ExportDatabase(ctx context.Context, siteDir, slug string, client WPClient) (string, error) {
 	sqlFile := slug + ".sql"
@@ -39,7 +78,18 @@ func ExportDatabase(ctx context.Context, siteDir, slug string, client WPClient) 
 	args := []string{"db", "export", sqlFile}
 	_, stderr, err := client.Run(ctx, siteDir, "wp", args, "")
 	if err != nil {
-		return "", fmt.Errorf("wp db export failed: %w (%s)", err, strings.TrimSpace(stderr))
+		cause := fmt.Errorf("wp db export failed: %w (%s)", err, strings.TrimSpace(stderr))
+		if _, statErr := os.Stat(sqlPath); statErr == nil {
+			return "", &ArtifactError{
+				Cause: cause,
+				Artifact: RetainedArtifact{
+					Kind:           ArtifactSQLDump,
+					Path:           sqlPath,
+					CleanupOutcome: "Database dump retained in website directory; no archive created",
+				},
+			}
+		}
+		return "", cause
 	}
 
 	if _, err := os.Stat(sqlPath); err != nil {
@@ -193,16 +243,29 @@ func SetRelocatorForTesting(fn RelocatorFunc) func() {
 	}
 }
 
-// RelocateFile moves src to dest. When both paths share a volume it uses os.Rename;
-// otherwise it copies into a temp file in the destination directory, flushes and closes it,
-// renames it into place, then removes the source. The destination is never left partially written.
+// RelocateFile moves src to dest without ever overwriting an existing destination.
+// When both paths share a volume supporting hard links, it links src to dest atomically
+// and removes src; otherwise it copies into a flushed temporary file in the destination
+// directory, links or exclusively creates dest, and removes src.
 func RelocateFile(src, dest string) error {
-	if err := os.Rename(src, dest); err == nil {
-		return nil
+	if fi, err := os.Stat(dest); err == nil {
+		if fi.IsDir() {
+			return fmt.Errorf("destination %s is a directory", dest)
+		}
+		return fmt.Errorf("backup archive already exists at %s: %w", dest, os.ErrExist)
 	}
 
-	// Cross-volume fallback: copy into a temp file inside the destination directory,
-	// flush it to disk, then rename it into place so the destination is never partial.
+	if err := os.Link(src, dest); err == nil {
+		if rmErr := os.Remove(src); rmErr != nil {
+			return fmt.Errorf("failed to remove source archive after relocation: %w", rmErr)
+		}
+		return nil
+	} else if errors.Is(err, os.ErrExist) {
+		return fmt.Errorf("backup archive already exists at %s: %w", dest, err)
+	}
+
+	// Cross-volume or non-hardlink fallback: stage into a temp file inside the destination
+	// directory, flush it to disk, then place it at dest without overwriting.
 	destDir := filepath.Dir(dest)
 	tmpFile, err := os.CreateTemp(destDir, ".wptui-relocate-*")
 	if err != nil {
@@ -233,11 +296,51 @@ func RelocateFile(src, dest string) error {
 	if err := tmpFile.Close(); err != nil {
 		return fmt.Errorf("failed to close destination file: %w", err)
 	}
-	if err := os.Rename(tmpPath, dest); err != nil {
-		return fmt.Errorf("failed to finalize relocated archive: %w", err)
+
+	if err := os.Link(tmpPath, dest); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return fmt.Errorf("backup archive already exists at %s: %w", dest, err)
+		}
+		if exclErr := copyExclusiveNoOverwrite(tmpPath, dest); exclErr != nil {
+			return exclErr
+		}
 	}
+
 	if err := os.Remove(src); err != nil {
 		return fmt.Errorf("failed to remove source archive after relocation: %w", err)
+	}
+	return nil
+}
+
+func copyExclusiveNoOverwrite(src, dest string) error {
+	dstFile, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return fmt.Errorf("backup archive already exists at %s: %w", dest, err)
+		}
+		return fmt.Errorf("failed to finalize relocated archive at %s: %w", dest, err)
+	}
+	srcFile, err := os.Open(src)
+	if err != nil {
+		_ = dstFile.Close()
+		_ = os.Remove(dest)
+		return err
+	}
+	if _, err := io.Copy(dstFile, srcFile); err != nil {
+		_ = srcFile.Close()
+		_ = dstFile.Close()
+		_ = os.Remove(dest)
+		return fmt.Errorf("failed to write destination archive %s: %w", dest, err)
+	}
+	_ = srcFile.Close()
+	if err := dstFile.Sync(); err != nil {
+		_ = dstFile.Close()
+		_ = os.Remove(dest)
+		return fmt.Errorf("failed to flush destination archive %s: %w", dest, err)
+	}
+	if err := dstFile.Close(); err != nil {
+		_ = os.Remove(dest)
+		return fmt.Errorf("failed to close destination archive %s: %w", dest, err)
 	}
 	return nil
 }
@@ -248,7 +351,7 @@ func RelocateFile(src, dest string) error {
 // 3. Move zip to backupPath under full_<slug>_YYYY-MM-DD_HH-mm-ss.zip
 // 4. Delete <slug>.sql only if steps 2 and 3 succeed.
 func RunFullBackup(ctx context.Context, siteDir, slug, backupPath string, excludes []string, client WPClient, onProgress ProgressFunc) (*BackupResult, error) {
-	start := time.Now()
+	start := defaultNow()
 
 	if onProgress != nil {
 		onProgress(1, 4, fmt.Sprintf("Exporting database to %s.sql...", slug))
@@ -262,11 +365,18 @@ func RunFullBackup(ctx context.Context, siteDir, slug, backupPath string, exclud
 	// Create temp dir outside siteDir
 	tempDir, err := os.MkdirTemp("", "wptui-full-backup-*")
 	if err != nil {
-		return nil, fmt.Errorf("failed to create temporary workspace: %w", err)
+		return nil, &ArtifactError{
+			Cause: fmt.Errorf("failed to create temporary workspace: %w (database dump retained at %s)", err, sqlPath),
+			Artifact: RetainedArtifact{
+				Kind:           ArtifactSQLDump,
+				Path:           sqlPath,
+				CleanupOutcome: "Database dump retained; no temporary workspace created",
+			},
+		}
 	}
 	defer os.RemoveAll(tempDir)
 
-	timestamp := time.Now().Format("2006-01-02_15-04-05")
+	timestamp := defaultNow().Format("2006-01-02_15-04-05")
 	archiveName := fmt.Sprintf("full_%s_%s.zip", slug, timestamp)
 	tempZipPath := filepath.Join(tempDir, archiveName)
 
@@ -276,7 +386,14 @@ func RunFullBackup(ctx context.Context, siteDir, slug, backupPath string, exclud
 
 	if err := CreateFullZipArchive(ctx, siteDir, tempZipPath, backupPath, excludes, onProgress); err != nil {
 		// Strict invariant: keep <slug>.sql on disk when zip creation fails
-		return nil, fmt.Errorf("failed to create zip archive: %w (database dump retained at %s)", err, sqlPath)
+		return nil, &ArtifactError{
+			Cause: fmt.Errorf("failed to create zip archive: %w (database dump retained at %s)", err, sqlPath),
+			Artifact: RetainedArtifact{
+				Kind:           ArtifactSQLDump,
+				Path:           sqlPath,
+				CleanupOutcome: "Temporary archive workspace removed; database dump retained",
+			},
+		}
 	}
 
 	if onProgress != nil {
@@ -284,12 +401,31 @@ func RunFullBackup(ctx context.Context, siteDir, slug, backupPath string, exclud
 	}
 
 	if err := os.MkdirAll(backupPath, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create backup directory: %w (database dump retained at %s)", err, sqlPath)
+		return nil, &ArtifactError{
+			Cause: fmt.Errorf("failed to create backup directory: %w (database dump retained at %s)", err, sqlPath),
+			Artifact: RetainedArtifact{
+				Kind:           ArtifactSQLDump,
+				Path:           sqlPath,
+				CleanupOutcome: "Temporary archive workspace removed; database dump retained",
+			},
+		}
 	}
 
 	finalDestPath := filepath.Join(backupPath, archiveName)
 	if err := defaultRelocator(tempZipPath, finalDestPath); err != nil {
-		return nil, fmt.Errorf("failed to move archive to %s: %w (database dump retained at %s)", finalDestPath, err, sqlPath)
+		conflictPath := ""
+		if errors.Is(err, os.ErrExist) {
+			conflictPath = finalDestPath
+		}
+		return nil, &ArtifactError{
+			Cause:        fmt.Errorf("failed to move archive to %s: %w (database dump retained at %s)", finalDestPath, err, sqlPath),
+			ConflictPath: conflictPath,
+			Artifact: RetainedArtifact{
+				Kind:           ArtifactSQLDump,
+				Path:           sqlPath,
+				CleanupOutcome: "Temporary archive workspace removed; database dump retained",
+			},
+		}
 	}
 
 	// Step 4: Clean up <slug>.sql strictly after successful archive and move
@@ -297,7 +433,15 @@ func RunFullBackup(ctx context.Context, siteDir, slug, backupPath string, exclud
 		onProgress(4, 4, "Cleaning up temporary database dump...")
 	}
 	if err := os.Remove(sqlPath); err != nil {
-		return nil, fmt.Errorf("backup archive created at %s but failed to remove temporary database dump %s: %w", finalDestPath, sqlPath, err)
+		return nil, &ArtifactError{
+			Cause:        fmt.Errorf("backup archive created at %s but failed to remove temporary database dump %s: %w", finalDestPath, sqlPath, err),
+			FinalArchive: finalDestPath,
+			Artifact: RetainedArtifact{
+				Kind:           ArtifactSQLDump,
+				Path:           sqlPath,
+				CleanupOutcome: fmt.Sprintf("Backup archive saved at %s; temporary database dump retained", finalDestPath),
+			},
+		}
 	}
 
 	info, err := os.Stat(finalDestPath)

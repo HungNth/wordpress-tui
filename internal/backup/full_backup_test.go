@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"wptui/internal/backup"
 )
@@ -293,4 +294,265 @@ func TestRelocateFile_FailureRetainsSourceAndCleansTempDestination(t *testing.T)
 			t.Errorf("temporary destination file was not cleaned up: %s", entry.Name())
 		}
 	}
+}
+
+func TestRelocateFile_CollisionPreservesExistingDestinationAndSource(t *testing.T) {
+	tempDir := t.TempDir()
+	src := filepath.Join(tempDir, "new-archive.zip")
+	dest := filepath.Join(tempDir, "existing-archive.zip")
+
+	existingContent := []byte("original-protected-archive")
+	newContent := []byte("new-attempt-archive")
+	if err := os.WriteFile(dest, existingContent, 0644); err != nil {
+		t.Fatal(err)
+	}
+	fixedTime := time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC)
+	if err := os.Chtimes(dest, fixedTime, fixedTime); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(src, newContent, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := backup.RelocateFile(src, dest)
+	if err == nil {
+		t.Fatal("expected collision error when destination archive already exists")
+	}
+	if !errors.Is(err, os.ErrExist) {
+		t.Errorf("expected errors.Is(err, os.ErrExist), got: %v", err)
+	}
+	if !strings.Contains(err.Error(), dest) {
+		t.Errorf("expected collision error to identify destination %q, got: %v", dest, err)
+	}
+
+	gotDest, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatalf("failed reading existing destination: %v", err)
+	}
+	if string(gotDest) != string(existingContent) {
+		t.Errorf("existing destination content = %q, want %q", gotDest, existingContent)
+	}
+	info, err := os.Stat(dest)
+	if err != nil {
+		t.Fatalf("failed stating existing destination: %v", err)
+	}
+	if !info.ModTime().Equal(fixedTime) {
+		t.Errorf("existing destination mtime changed: got %v, want %v", info.ModTime(), fixedTime)
+	}
+
+	gotSrc, err := os.ReadFile(src)
+	if err != nil {
+		t.Fatalf("expected source archive to be preserved: %v", err)
+	}
+	if string(gotSrc) != string(newContent) {
+		t.Errorf("source content = %q, want %q", gotSrc, newContent)
+	}
+
+	entries, err := os.ReadDir(tempDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".wptui-relocate-") {
+			t.Errorf("temporary destination file was not cleaned up: %s", entry.Name())
+		}
+	}
+}
+
+func TestRelocateFile_CrossVolumeSuccessAndCollision(t *testing.T) {
+	cwdVol := filepath.VolumeName(mustAbs(t, "."))
+	srcBase := t.TempDir()
+	srcVol := filepath.VolumeName(srcBase)
+
+	var destBase string
+	if !strings.EqualFold(srcVol, cwdVol) {
+		var err error
+		destBase, err = os.MkdirTemp(".", ".wptui-crossvol-test-*")
+		if err != nil {
+			t.Skipf("cross-volume temp dir unavailable in workspace: %v", err)
+		}
+		destBase = mustAbs(t, destBase)
+		t.Cleanup(func() { _ = os.RemoveAll(destBase) })
+	} else {
+		t.Skipf("t.TempDir() (%s) and workspace (%s) share volume; cross-volume surface unavailable", srcVol, cwdVol)
+	}
+
+	// 1. Cross-volume success
+	src1 := filepath.Join(srcBase, "cross-source.zip")
+	dest1 := filepath.Join(destBase, "cross-dest.zip")
+	want := []byte("cross-volume-archive-payload")
+	if err := os.WriteFile(src1, want, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := backup.RelocateFile(src1, dest1); err != nil {
+		t.Fatalf("cross-volume RelocateFile failed: %v", err)
+	}
+	if _, err := os.Stat(src1); !os.IsNotExist(err) {
+		t.Errorf("expected cross-volume source to be removed, stat err: %v", err)
+	}
+	got, err := os.ReadFile(dest1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(want) {
+		t.Errorf("cross-volume dest = %q, want %q", got, want)
+	}
+
+	// 2. Cross-volume collision preserves existing dest and source
+	src2 := filepath.Join(srcBase, "cross-new.zip")
+	if err := os.WriteFile(src2, []byte("new-payload"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	err = backup.RelocateFile(src2, dest1)
+	if !errors.Is(err, os.ErrExist) {
+		t.Fatalf("expected cross-volume collision os.ErrExist, got: %v", err)
+	}
+	gotAfter, _ := os.ReadFile(dest1)
+	if string(gotAfter) != string(want) {
+		t.Errorf("cross-volume existing dest overwritten: got %q, want %q", gotAfter, want)
+	}
+	if _, err := os.Stat(src2); err != nil {
+		t.Errorf("cross-volume colliding source should remain: %v", err)
+	}
+}
+
+func mustAbs(t *testing.T, p string) string {
+	t.Helper()
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return abs
+}
+
+func TestRunFullBackup_CollisionAndCancellationStructuredArtifactMetadata(t *testing.T) {
+	siteDir := t.TempDir()
+	slug := "structured-full"
+	backupDir := filepath.Join(t.TempDir(), "backups")
+	if err := os.MkdirAll(backupDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(siteDir, "index.php"), []byte("<?php"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	fixedNow := time.Date(2026, 11, 11, 10, 20, 30, 0, time.Local)
+	restoreNow := backup.SetNowForTesting(func() time.Time { return fixedNow })
+	defer restoreNow()
+
+	collidingDest := filepath.Join(backupDir, fmt.Sprintf("full_%s_%s.zip", slug, fixedNow.Format("2006-01-02_15-04-05")))
+	originalBytes := []byte("existing-full-zip")
+	if err := os.WriteFile(collidingDest, originalBytes, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	mock := &mockWPClient{
+		runFn: func(ctx context.Context, dir, name string, args []string, stdin string) (string, string, error) {
+			if len(args) >= 3 && args[0] == "db" && args[1] == "export" {
+				_ = os.WriteFile(filepath.Join(dir, args[2]), []byte("-- sql dump"), 0644)
+			}
+			return "", "", nil
+		},
+	}
+
+	_, err := backup.RunFullBackup(t.Context(), siteDir, slug, backupDir, nil, mock, nil)
+	if err == nil {
+		t.Fatal("expected collision error from RunFullBackup")
+	}
+
+	artErr, ok := errors.AsType[*backup.ArtifactError](err)
+	if !ok {
+		t.Fatalf("expected *backup.ArtifactError, got %T (%v)", err, err)
+	}
+	expectedSQL := filepath.Join(siteDir, slug+".sql")
+	if artErr.Artifact.Kind != backup.ArtifactSQLDump || artErr.Artifact.Path != expectedSQL {
+		t.Errorf("unexpected retained artifact metadata: %+v", artErr.Artifact)
+	}
+	if artErr.ConflictPath != collidingDest {
+		t.Errorf("ConflictPath = %q, want %q", artErr.ConflictPath, collidingDest)
+	}
+	if artErr.Artifact.CleanupOutcome == "" {
+		t.Errorf("expected non-empty CleanupOutcome")
+	}
+	gotExisting, _ := os.ReadFile(collidingDest)
+	if string(gotExisting) != string(originalBytes) {
+		t.Errorf("colliding archive altered: got %q, want %q", gotExisting, originalBytes)
+	}
+	if _, statErr := os.Stat(expectedSQL); statErr != nil {
+		t.Errorf("expected SQL dump retained at %s: %v", expectedSQL, statErr)
+	}
+
+	// Cancellation after DB export must also return structured ArtifactError and retain dump.
+	_ = os.Remove(expectedSQL)
+	cancelCtx, cancel := context.WithCancel(t.Context())
+	cancelMock := &mockWPClient{
+		runFn: func(ctx context.Context, dir, name string, args []string, stdin string) (string, string, error) {
+			if len(args) >= 3 && args[0] == "db" && args[1] == "export" {
+				_ = os.WriteFile(filepath.Join(dir, args[2]), []byte("-- sql dump"), 0644)
+				cancel()
+			}
+			return "", "", nil
+		},
+	}
+	_, cancelErr := backup.RunFullBackup(cancelCtx, siteDir, slug, backupDir, nil, cancelMock, nil)
+	if !errors.Is(cancelErr, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got: %v", cancelErr)
+	}
+	cancelArtErr, ok := errors.AsType[*backup.ArtifactError](cancelErr)
+	if !ok {
+		t.Fatalf("expected *backup.ArtifactError on cancellation after dump, got %T (%v)", cancelErr, cancelErr)
+	}
+	if cancelArtErr.Artifact.Path != expectedSQL {
+		t.Errorf("cancel retained artifact path = %q, want %q", cancelArtErr.Artifact.Path, expectedSQL)
+	}
+}
+
+func TestExportDatabase_CancelOrFailureReportsRetainedDumpOnlyWhenFileExists(t *testing.T) {
+	t.Run("partial dump retained on cancel returns ArtifactError", func(t *testing.T) {
+		siteDir := t.TempDir()
+		slug := "bravo-slow"
+		expectedSQL := filepath.Join(siteDir, slug+".sql")
+
+		ctx, cancel := context.WithCancel(t.Context())
+		mock := &mockWPClient{
+			runFn: func(ctx context.Context, dir, name string, args []string, stdin string) (string, string, error) {
+				if err := os.WriteFile(expectedSQL, []byte("-- partial dump\n"), 0644); err != nil {
+					t.Fatal(err)
+				}
+				cancel()
+				return "", "killed", ctx.Err()
+			},
+		}
+
+		_, err := backup.RunFullBackup(ctx, siteDir, slug, filepath.Join(t.TempDir(), "backups"), nil, mock, nil)
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected context.Canceled, got: %v", err)
+		}
+		artErr, ok := errors.AsType[*backup.ArtifactError](err)
+		if !ok {
+			t.Fatalf("expected *backup.ArtifactError when partial SQL dump exists on disk, got %T (%v)", err, err)
+		}
+		if artErr.Artifact.Kind != backup.ArtifactSQLDump || artErr.Artifact.Path != expectedSQL {
+			t.Errorf("unexpected retained artifact: %+v", artErr.Artifact)
+		}
+		if artErr.Artifact.CleanupOutcome == "" {
+			t.Errorf("expected non-empty CleanupOutcome")
+		}
+	})
+
+	t.Run("failure without dump file returns plain error", func(t *testing.T) {
+		siteDir := t.TempDir()
+		mock := &mockWPClient{
+			runFn: func(ctx context.Context, dir, name string, args []string, stdin string) (string, string, error) {
+				return "", "connection refused", errors.New("exit status 1")
+			},
+		}
+		_, err := backup.RunFullBackup(t.Context(), siteDir, "no-dump", filepath.Join(t.TempDir(), "backups"), nil, mock, nil)
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if _, ok := errors.AsType[*backup.ArtifactError](err); ok {
+			t.Fatalf("did not expect *backup.ArtifactError when no dump file exists, got %v", err)
+		}
+	})
 }
