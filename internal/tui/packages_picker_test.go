@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"charm.land/huh/v2"
 	"wptui/internal/config"
 	"wptui/internal/packages"
 	"wptui/internal/tui"
@@ -43,46 +42,26 @@ func TestCatalogFilteringLogic(t *testing.T) {
 	}
 }
 
-func TestInlineSearchOptionAndExtraction(t *testing.T) {
-	// 1. When catalog is absent, no search option is appended and defaults remain intact
-	defaultOpts := []huh.Option[string]{
-		huh.NewOption("Plugin A", "plugin-a"),
-		huh.NewOption("Plugin B", "plugin-b"),
+func TestSelectPackagesFlow_EmptyCatalogReturnsNil(t *testing.T) {
+	res, err := tui.SelectPackagesFlow(context.Background(), packages.PackageTypePlugin, nil)
+	if err != nil {
+		t.Fatalf("expected nil error on empty catalog, got %v", err)
 	}
-	optsWithoutCat := tui.BuildPackageOptions(defaultOpts, false)
-	if len(optsWithoutCat) != 2 || optsWithoutCat[0].Value != "plugin-a" || optsWithoutCat[1].Value != "plugin-b" {
-		t.Errorf("expected defaults preserved without search option, got %+v", optsWithoutCat)
+	if res != nil {
+		t.Fatalf("expected nil results on empty catalog, got %v", res)
 	}
+}
 
-	// 2. When catalog is present, search option is prepended at index 0 and defaults follow in order
-	optsWithCat := tui.BuildPackageOptions(defaultOpts, true)
-	if len(optsWithCat) != 3 {
-		t.Fatalf("expected 3 options, got %d", len(optsWithCat))
-	}
-	if optsWithCat[0].Value != tui.SearchOptionKey {
-		t.Errorf("expected head option value %q, got %q", tui.SearchOptionKey, optsWithCat[0].Value)
-	}
-	if optsWithCat[1].Value != "plugin-a" || optsWithCat[2].Value != "plugin-b" {
-		t.Errorf("expected defaults preserved in order following search, got %+v", optsWithCat)
-	}
+func TestPromptPackageSelections_EmptyCatalogBypasses(t *testing.T) {
+	tempHome := t.TempDir()
+	cfg := config.DefaultConfig(tempHome)
+	cfg.PackagesAPIURL = "https://api.example.com"
 
-	// 3. ExtractSelectedPackages filters search trigger and reports wantsSearch
-	choicesWithSearch := []string{"plugin-one", tui.SearchOptionKey, "plugin-two"}
-	selected, wantsSearch := tui.ExtractSelectedPackages(choicesWithSearch)
-	if !wantsSearch {
-		t.Errorf("expected wantsSearch to be true")
+	plugins, themes, err := tui.PromptPackageSelections(context.Background(), cfg, []packages.CatalogItem{})
+	if err != nil {
+		t.Fatalf("expected nil error when catalog is empty, got %v", err)
 	}
-	if len(selected) != 2 || selected[0] != "plugin-one" || selected[1] != "plugin-two" {
-		t.Errorf("unexpected selected packages: %v", selected)
-	}
-
-	// 4. ExtractSelectedPackages without search trigger
-	choicesWithoutSearch := []string{"plugin-one"}
-	selected, wantsSearch = tui.ExtractSelectedPackages(choicesWithoutSearch)
-	if wantsSearch {
-		t.Errorf("expected wantsSearch to be false")
-	}
-	if len(selected) != 1 || selected[0] != "plugin-one" {
-		t.Errorf("unexpected selected packages: %v", selected)
+	if len(plugins) != 0 || len(themes) != 0 {
+		t.Errorf("expected empty selections when catalog is empty, got %v, %v", plugins, themes)
 	}
 }

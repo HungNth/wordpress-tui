@@ -5,9 +5,11 @@ import (
 	"strings"
 	"testing"
 
-	tea "charm.land/bubbletea/v2"
 	"wptui/internal/config"
+	"wptui/internal/packages"
 	"wptui/internal/tui"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 func TestAppModel_InitialLayoutAndDimensions(t *testing.T) {
@@ -252,7 +254,7 @@ func TestAppModel_VisualAlignment(t *testing.T) {
 	// 2. Test Create Wizard Alignment
 	m2 := tui.NewAppModel(cfg)
 	m2.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
-	m2.Update(tea.KeyPressMsg{Code: tea.KeyDown}) // Go to Create
+	m2.Update(tea.KeyPressMsg{Code: tea.KeyDown})  // Go to Create
 	m2.Update(tea.KeyPressMsg{Code: tea.KeyEnter}) // Focus Content
 
 	createView := m2.ViewString()
@@ -268,8 +270,8 @@ func TestAppModel_VisualAlignment(t *testing.T) {
 	// 3. Test Delete Alignment
 	mDelete := tui.NewAppModel(cfg)
 	mDelete.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
-	mDelete.Update(tea.KeyPressMsg{Code: tea.KeyDown}) // Create
-	mDelete.Update(tea.KeyPressMsg{Code: tea.KeyDown}) // Delete
+	mDelete.Update(tea.KeyPressMsg{Code: tea.KeyDown})  // Create
+	mDelete.Update(tea.KeyPressMsg{Code: tea.KeyDown})  // Delete
 	mDelete.Update(tea.KeyPressMsg{Code: tea.KeyEnter}) // Focus Content
 
 	deleteView := mDelete.ViewString()
@@ -285,9 +287,9 @@ func TestAppModel_VisualAlignment(t *testing.T) {
 	// 4. Test Restore Wizard Alignment
 	m3 := tui.NewAppModel(cfg)
 	m3.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
-	m3.Update(tea.KeyPressMsg{Code: tea.KeyDown}) // Create
-	m3.Update(tea.KeyPressMsg{Code: tea.KeyDown}) // Delete
-	m3.Update(tea.KeyPressMsg{Code: tea.KeyDown}) // Restore
+	m3.Update(tea.KeyPressMsg{Code: tea.KeyDown})  // Create
+	m3.Update(tea.KeyPressMsg{Code: tea.KeyDown})  // Delete
+	m3.Update(tea.KeyPressMsg{Code: tea.KeyDown})  // Restore
 	m3.Update(tea.KeyPressMsg{Code: tea.KeyEnter}) // Focus Content
 
 	restoreView := m3.ViewString()
@@ -303,10 +305,10 @@ func TestAppModel_VisualAlignment(t *testing.T) {
 	// 5. Test Settings Alignment
 	m4 := tui.NewAppModel(cfg)
 	m4.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
-	m4.Update(tea.KeyPressMsg{Code: tea.KeyDown}) // Create
-	m4.Update(tea.KeyPressMsg{Code: tea.KeyDown}) // Delete
-	m4.Update(tea.KeyPressMsg{Code: tea.KeyDown}) // Restore
-	m4.Update(tea.KeyPressMsg{Code: tea.KeyDown}) // Settings
+	m4.Update(tea.KeyPressMsg{Code: tea.KeyDown})  // Create
+	m4.Update(tea.KeyPressMsg{Code: tea.KeyDown})  // Delete
+	m4.Update(tea.KeyPressMsg{Code: tea.KeyDown})  // Restore
+	m4.Update(tea.KeyPressMsg{Code: tea.KeyDown})  // Settings
 	m4.Update(tea.KeyPressMsg{Code: tea.KeyEnter}) // Focus Content
 
 	settingsView := m4.ViewString()
@@ -317,6 +319,36 @@ func TestAppModel_VisualAlignment(t *testing.T) {
 				t.Errorf("Settings option has excessive leading spaces (%d): %q", spaces, line)
 			}
 		}
+	}
+}
+func TestAppModel_SettingsReload_InvalidatesCatalog(t *testing.T) {
+	tempDir := t.TempDir()
+	cfg := config.DefaultConfig(tempDir)
+	cfg.PackagesAPIURL = "https://api.example.com"
+
+	m := tui.NewAppModel(cfg)
+	catalog := []packages.CatalogItem{
+		{Name: "Plugin One", Slug: "plugin-one", Type: "plugin"},
+	}
+	m.SetCreateDependencies(catalog, nil)
+
+	// Invalidate catalog (as happens when URL or key changes in settings reload)
+	m.InvalidateCatalog()
+
+	// Verify create wizard now has empty catalog and submits directly
+	wizard := m.CreateWizard()
+	if wizard == nil {
+		t.Fatalf("expected createWizard to be non-nil")
+	}
+	for _, ch := range "New Site" {
+		wizard.Update(tea.KeyPressMsg{Code: rune(ch), Text: string(ch)})
+	}
+	for range 6 {
+		wizard.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	}
+	wizard.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if !wizard.IsSubmitted() {
+		t.Errorf("expected wizard to submit directly without package steps after catalog invalidation")
 	}
 }
 

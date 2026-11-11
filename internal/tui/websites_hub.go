@@ -12,6 +12,7 @@ import (
 	"wptui/internal/config"
 	"wptui/internal/deprovision"
 	"wptui/internal/launcher"
+	"wptui/internal/localenv"
 	"wptui/internal/packages"
 )
 
@@ -66,10 +67,12 @@ type WebsitesHubModel struct {
 	actions              []WebsiteAction
 	deleteConfirmChoice  bool // false = No, true = Yes
 	statusMsg            string
+	catalogWarning       string
 	runner               launcher.ProcessRunner
 	catalog              []packages.CatalogItem
 	packagePicker        *LiveSearchModel
-	themeActivateChoice  bool
+	themeChoices         []string
+	themeChoiceCursor    int
 	backupStrategyCursor int
 	backupStrategies     []backup.BackupStrategy
 	adminUsernameInput   string
@@ -79,24 +82,58 @@ type WebsitesHubModel struct {
 	OnAction             func(action WebsiteAction, cand deprovision.Candidate) tea.Cmd
 	OnBatchDelete        func(cands []deprovision.Candidate) tea.Cmd
 	OnChangeAdmin        func(cand deprovision.Candidate, username, password, email string) tea.Cmd
-	OnInstallPackages    func(cand deprovision.Candidate, pkgType packages.PackageType, slugs []string, activate bool) tea.Cmd
+	OnInstallPackages    func(cand deprovision.Candidate, pkgType packages.PackageType, slugs []string, activate bool, activeTheme ...string) tea.Cmd
 	OnBackup             func(cand deprovision.Candidate, strategy backup.BackupStrategy) tea.Cmd
+}
+
+func (m *WebsitesHubModel) updateActions() {
+	var acts []WebsiteAction
+	acts = append(acts, WebsiteActionConfig)
+
+	hasPlugins := false
+	hasThemes := false
+	for _, it := range m.catalog {
+		if it.Type == "plugin" {
+			hasPlugins = true
+		} else if it.Type == "theme" {
+			hasThemes = true
+		}
+	}
+	if hasPlugins {
+		acts = append(acts, WebsiteActionInstallPlugins)
+	}
+	if hasThemes {
+		acts = append(acts, WebsiteActionInstallThemes)
+	}
+	acts = append(acts,
+		WebsiteActionChangeAdmin,
+		WebsiteActionBackup,
+		WebsiteActionBrowser,
+		WebsiteActionEditor,
+		WebsiteActionDelete,
+		WebsiteActionBack,
+	)
+	m.actions = acts
+	if m.actionCursor >= len(m.actions) {
+		m.actionCursor = 0
+	}
 }
 
 func NewWebsitesHubModel(cfg *config.Config) *WebsitesHubModel {
 	candidates, _ := deprovision.DiscoverCandidates(context.Background(), cfg.WebsitesPath, cfg.DeleteExcludes)
-	return &WebsitesHubModel{
+	m := &WebsitesHubModel{
 		cfg:                  cfg,
 		candidates:           candidates,
 		cursor:               0,
 		selectedMap:          make(map[string]bool),
 		state:                WebsitesHubList,
 		actionCursor:         0,
-		actions:              DefaultWebsiteActions,
 		deleteConfirmChoice:  false,
 		backupStrategyCursor: 0,
 		backupStrategies:     []backup.BackupStrategy{backup.StrategyFull, backup.StrategyAI1WM},
 	}
+	m.updateActions()
+	return m
 }
 
 func (m *WebsitesHubModel) Refresh() {
@@ -132,10 +169,7 @@ func (m *WebsitesHubModel) clampScroll(maxVisible int) {
 }
 
 func (m *WebsitesHubModel) siteURL(slug string) string {
-	if m.cfg != nil && m.cfg.UsedHerd {
-		return fmt.Sprintf("https://%s.test", slug)
-	}
-	return fmt.Sprintf("http://%s.test", slug)
+	return localenv.SiteURL(m.cfg, slug)
 }
 
 func (m *WebsitesHubModel) SetRunner(r launcher.ProcessRunner) {
@@ -144,10 +178,21 @@ func (m *WebsitesHubModel) SetRunner(r launcher.ProcessRunner) {
 
 func (m *WebsitesHubModel) SetCatalog(catalog []packages.CatalogItem) {
 	m.catalog = catalog
+	m.updateActions()
+}
+
+func (m *WebsitesHubModel) SetCatalogWarning(warning string) {
+	m.catalogWarning = warning
 }
 
 func (m *WebsitesHubModel) State() WebsitesHubState {
 	return m.state
+}
+func (m *WebsitesHubModel) SelectedAction() WebsiteAction {
+	if m.actionCursor >= 0 && m.actionCursor < len(m.actions) {
+		return m.actions[m.actionCursor]
+	}
+	return ""
 }
 
 func (m *WebsitesHubModel) SelectedCandidate() deprovision.Candidate {
@@ -491,7 +536,8 @@ func (m *WebsitesHubModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.packagePicker = nil
 						return m, nil
 					}
-					m.themeActivateChoice = true
+					m.themeChoices = append([]string{""}, selected...)
+					m.themeChoiceCursor = 0
 					m.state = WebsitesHubThemeActivateConfirm
 					return m, nil
 				}
@@ -508,8 +554,15 @@ func (m *WebsitesHubModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case WebsitesHubThemeActivateConfirm:
 			switch str {
-			case "left", "right", "tab":
-				m.themeActivateChoice = !m.themeActivateChoice
+			case "up", "k":
+				if m.themeChoiceCursor > 0 {
+					m.themeChoiceCursor--
+				}
+				return m, nil
+			case "down", "j":
+				if m.themeChoiceCursor < len(m.themeChoices)-1 {
+					m.themeChoiceCursor++
+				}
 				return m, nil
 			case "esc":
 				m.state = WebsitesHubInstallThemes
@@ -520,11 +573,11 @@ func (m *WebsitesHubModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					selected = m.packagePicker.FinalSelected()
 				}
 				cand := m.SelectedCandidate()
-				activate := m.themeActivateChoice
+				activeTheme := m.themeChoices[m.themeChoiceCursor]
 				m.state = WebsitesHubList
 				m.packagePicker = nil
 				if m.OnInstallPackages != nil {
-					return m, m.OnInstallPackages(cand, packages.PackageTypeTheme, selected, activate)
+					return m, m.OnInstallPackages(cand, packages.PackageTypeTheme, selected, activeTheme != "", activeTheme)
 				}
 				return m, nil
 			}
@@ -665,8 +718,9 @@ func (m *WebsitesHubModel) Render(width, height int) string {
 
 		if m.statusMsg != "" {
 			sb.WriteString("\n  " + m.statusMsg + "\n")
+		} else if m.catalogWarning != "" {
+			sb.WriteString("\n  " + StyleWarning.Render(m.catalogWarning) + "\n")
 		}
-
 	case WebsitesHubBatchDeleteConfirm:
 		selected := m.SelectedCandidates()
 		sb.WriteString(StyleError.Render("  ⚠ Delete Selected Websites?") + "\n\n")
@@ -784,20 +838,20 @@ func (m *WebsitesHubModel) Render(width, height int) string {
 
 	case WebsitesHubThemeActivateConfirm:
 		cand := m.SelectedCandidate()
-		sb.WriteString(StyleFocus.Render("  Activate Theme after installation?") + "\n\n")
-		sb.WriteString(fmt.Sprintf("  Website: %s (%s)\n\n", cand.Slug, cand.Path))
-		yesStyle := StyleMuted
-		noStyle := StyleMuted
-		if m.themeActivateChoice {
-			yesStyle = StyleSuccess
-		} else {
-			noStyle = StyleFocus
+		sb.WriteString(StyleFocus.Render(fmt.Sprintf("  Select Active Theme for %s", cand.Slug)) + "\n")
+		sb.WriteString(StyleMuted.Render("  Choose which installed theme to activate (optional). Up/Down Navigate · Enter Confirm · Esc Back") + "\n\n")
+		for i, choice := range m.themeChoices {
+			cursor := "  "
+			label := choice
+			if choice == "" {
+				label = "None (do not activate any theme)"
+			}
+			if i == m.themeChoiceCursor {
+				cursor = StyleFocus.Render("> ")
+				label = StyleFocus.Render(label)
+			}
+			sb.WriteString(fmt.Sprintf("  %s%s\n", cursor, label))
 		}
-		sb.WriteString(fmt.Sprintf("  Activate theme:  %s    %s\n\n",
-			yesStyle.Render("[ Yes, Activate ]"),
-			noStyle.Render("[ No, Install Only ]")))
-		sb.WriteString(StyleMuted.Render("  Use Left/Right to toggle · Enter to confirm · Esc to go back"))
-
 	case WebsitesHubBackupStrategy:
 		cand := m.SelectedCandidate()
 		sb.WriteString(StyleFocus.Render("  Backup Website: "+cand.Slug) + "\n")

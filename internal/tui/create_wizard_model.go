@@ -15,8 +15,12 @@ type CreateWizardStep int
 
 const (
 	CreateWizardStepInputs CreateWizardStep = iota
-	CreateWizardStepPackages
+	CreateWizardStepPlugins
+	CreateWizardStepThemes
+	CreateWizardStepActiveTheme
 	CreateWizardConfirmDiscard
+
+	CreateWizardStepPackages = CreateWizardStepPlugins
 )
 
 const (
@@ -39,7 +43,11 @@ type CreateWizardModel struct {
 	inputs              CreateInputs
 	cleanInputs         CreateInputs
 	validationErr       string
-	packageModel        *LiveSearchModel
+	pluginModel         *LiveSearchModel
+	themeModel          *LiveSearchModel
+	activeThemeSlug     string
+	activeThemeCursor   int
+	activeThemeChoices  []string
 	shouldExitToSidebar bool
 	submitted           bool
 }
@@ -75,8 +83,32 @@ func (m *CreateWizardModel) FieldIndex() int {
 	return m.fieldIndex
 }
 
+func (m *CreateWizardModel) hasPlugins() bool {
+	for _, it := range m.catalog {
+		if it.Type == "plugin" {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *CreateWizardModel) hasThemes() bool {
+	for _, it := range m.catalog {
+		if it.Type == "theme" {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *CreateWizardModel) hasPackages() bool {
+	return m.hasPlugins() || m.hasThemes()
+}
+
 func (m *CreateWizardModel) Inputs() CreateInputs {
-	return m.inputs
+	inp := m.inputs
+	inp.ActiveThemeSlug = m.activeThemeSlug
+	return inp
 }
 
 func (m *CreateWizardModel) ShouldExitToSidebar() bool {
@@ -87,11 +119,29 @@ func (m *CreateWizardModel) IsSubmitted() bool {
 	return m.submitted
 }
 
-func (m *CreateWizardModel) SelectedPackages() []string {
-	if m.packageModel != nil {
-		return m.packageModel.FinalSelected()
+func (m *CreateWizardModel) SelectedPlugins() []string {
+	if m.pluginModel != nil {
+		return m.pluginModel.FinalSelected()
 	}
 	return nil
+}
+
+func (m *CreateWizardModel) SelectedThemes() []string {
+	if m.themeModel != nil {
+		return m.themeModel.FinalSelected()
+	}
+	return nil
+}
+
+func (m *CreateWizardModel) ActiveThemeSlug() string {
+	return m.activeThemeSlug
+}
+
+func (m *CreateWizardModel) SelectedPackages() []string {
+	var pkgs []string
+	pkgs = append(pkgs, m.SelectedPlugins()...)
+	pkgs = append(pkgs, m.SelectedThemes()...)
+	return pkgs
 }
 
 func (m *CreateWizardModel) IsDirty() bool {
@@ -116,8 +166,16 @@ func (m *CreateWizardModel) submitStep1() {
 
 	m.inputs.WebsiteSlug = resolvedSlug
 	m.validationErr = ""
-	m.packageModel = NewLiveSearchModel(packages.PackageTypePlugin, m.catalog, nil)
-	m.step = CreateWizardStepPackages
+
+	if m.hasPlugins() {
+		m.pluginModel = NewLiveSearchModel(packages.PackageTypePlugin, m.catalog, nil)
+		m.step = CreateWizardStepPlugins
+	} else if m.hasThemes() {
+		m.themeModel = NewLiveSearchModel(packages.PackageTypeTheme, m.catalog, nil)
+		m.step = CreateWizardStepThemes
+	} else {
+		m.submitted = true
+	}
 }
 
 func (m *CreateWizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -187,22 +245,76 @@ func (m *CreateWizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
-		case CreateWizardStepPackages:
+		case CreateWizardStepPlugins:
 			if str == "esc" {
 				m.step = CreateWizardStepInputs
 				return m, nil
 			}
 			if str == "enter" {
+				if m.hasThemes() {
+					m.themeModel = NewLiveSearchModel(packages.PackageTypeTheme, m.catalog, nil)
+					m.step = CreateWizardStepThemes
+					return m, nil
+				}
 				m.submitted = true
 				return m, nil
 			}
-			if m.packageModel != nil {
-				newM, cmd := m.packageModel.Update(msg)
-				m.packageModel = newM.(*LiveSearchModel)
+			if m.pluginModel != nil {
+				newM, cmd := m.pluginModel.Update(msg)
+				m.pluginModel = newM.(*LiveSearchModel)
 				return m, cmd
 			}
 			return m, nil
 
+		case CreateWizardStepThemes:
+			if str == "esc" {
+				if m.hasPlugins() {
+					m.step = CreateWizardStepPlugins
+				} else {
+					m.step = CreateWizardStepInputs
+				}
+				return m, nil
+			}
+			if str == "enter" {
+				selectedThemes := m.SelectedThemes()
+				if len(selectedThemes) > 0 {
+					m.activeThemeChoices = append([]string{""}, selectedThemes...)
+					m.activeThemeCursor = 0
+					m.step = CreateWizardStepActiveTheme
+					return m, nil
+				}
+				m.activeThemeSlug = ""
+				m.submitted = true
+				return m, nil
+			}
+			if m.themeModel != nil {
+				newM, cmd := m.themeModel.Update(msg)
+				m.themeModel = newM.(*LiveSearchModel)
+				return m, cmd
+			}
+			return m, nil
+
+		case CreateWizardStepActiveTheme:
+			switch str {
+			case "esc":
+				m.step = CreateWizardStepThemes
+				return m, nil
+			case "up", "k":
+				if m.activeThemeCursor > 0 {
+					m.activeThemeCursor--
+				}
+				return m, nil
+			case "down", "j":
+				if m.activeThemeCursor < len(m.activeThemeChoices)-1 {
+					m.activeThemeCursor++
+				}
+				return m, nil
+			case "enter":
+				m.activeThemeSlug = m.activeThemeChoices[m.activeThemeCursor]
+				m.submitted = true
+				return m, nil
+			}
+			return m, nil
 		case CreateWizardConfirmDiscard:
 			switch str {
 			case "y", "Y":
@@ -302,11 +414,14 @@ func (m *CreateWizardModel) Render(width, height int) string {
 			tweaksCursor = StyleFocus.Render("> ")
 			tweaksLabel = StyleFocus.Render(tweaksLabel)
 		}
-		sb.WriteString(fmt.Sprintf("%s%-16s : %s (clean default theme, sample posts)\n\n", tweaksCursor, tweaksLabel, check))
+		sb.WriteString(fmt.Sprintf("%s%-16s : %s (apply configured WordPress tweaks)\n\n", tweaksCursor, tweaksLabel, check))
 
 		// Submit button
 		btnCursor := "  "
 		btnText := "[ Next: Select Packages ]"
+		if !m.hasPackages() {
+			btnText = "[ Create Website ]"
+		}
 		if m.fieldIndex == createFieldSubmit {
 			btnCursor = StyleFocus.Render("> ")
 			btnText = StyleFocus.Render(btnText)
@@ -319,13 +434,35 @@ func (m *CreateWizardModel) Render(width, height int) string {
 			sb.WriteString("\n  " + StyleError.Render("✗ "+m.validationErr) + "\n")
 		}
 
-	case CreateWizardStepPackages:
-		sb.WriteString(StyleFocus.Render("  Select Packages (Plugins & Themes)") + "\n")
-		sb.WriteString(StyleMuted.Render("  Search catalog live · Space to toggle · Enter to confirm · Esc to go back") + "\n\n")
-		if m.packageModel != nil {
-			sb.WriteString(m.packageModel.ViewString())
+	case CreateWizardStepPlugins:
+		sb.WriteString(StyleFocus.Render("  Select Plugins") + "\n")
+		sb.WriteString(StyleMuted.Render("  Search catalog live · Space to toggle · Enter to continue · Esc to go back") + "\n\n")
+		if m.pluginModel != nil {
+			sb.WriteString(m.pluginModel.ViewString())
 		}
 
+	case CreateWizardStepThemes:
+		sb.WriteString(StyleFocus.Render("  Select Themes") + "\n")
+		sb.WriteString(StyleMuted.Render("  Search catalog live · Space to toggle · Enter to continue · Esc to go back") + "\n\n")
+		if m.themeModel != nil {
+			sb.WriteString(m.themeModel.ViewString())
+		}
+
+	case CreateWizardStepActiveTheme:
+		sb.WriteString(StyleFocus.Render("  Select Active Theme") + "\n")
+		sb.WriteString(StyleMuted.Render("  Choose which theme to activate (optional). Up/Down to navigate · Enter to confirm") + "\n\n")
+		for i, slug := range m.activeThemeChoices {
+			cursor := "  "
+			label := slug
+			if slug == "" {
+				label = "None (do not activate any theme)"
+			}
+			if i == m.activeThemeCursor {
+				cursor = StyleFocus.Render("> ")
+				label = StyleFocus.Render(label)
+			}
+			sb.WriteString(fmt.Sprintf("%s%s\n", cursor, label))
+		}
 	case CreateWizardConfirmDiscard:
 		sb.WriteString(StyleWarning.Render("  ⚠ Unsaved Changes") + "\n\n")
 		sb.WriteString("  You have modified form values that have not been submitted.\n\n")

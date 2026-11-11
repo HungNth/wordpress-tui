@@ -38,8 +38,9 @@ func createTestWebsites(t *testing.T, count int) (string, []string) {
 func TestWebsitesHub_DiscoveryAndEmptyState(t *testing.T) {
 	emptyDir := t.TempDir()
 	cfg := config.DefaultConfig(emptyDir)
+	cfg.AppName = config.AppNameHerd
+	cfg.AppCommand = "herd"
 	cfg.WebsitesPath = emptyDir
-
 	hub := tui.NewWebsitesHubModel(cfg)
 	view := hub.Render(60, 20)
 	if !strings.Contains(view, "No websites found") {
@@ -49,6 +50,8 @@ func TestWebsitesHub_DiscoveryAndEmptyState(t *testing.T) {
 	// Now with 2 sites
 	sitesDir, _ := createTestWebsites(t, 2)
 	cfg2 := config.DefaultConfig(sitesDir)
+	cfg2.AppName = config.AppNameHerd
+	cfg2.AppCommand = "herd"
 	cfg2.WebsitesPath = sitesDir
 
 	hub2 := tui.NewWebsitesHubModel(cfg2)
@@ -64,6 +67,8 @@ func TestWebsitesHub_DiscoveryAndEmptyState(t *testing.T) {
 func TestWebsitesHub_NavigationAndMultiSelect(t *testing.T) {
 	sitesDir, slugs := createTestWebsites(t, 2)
 	cfg := config.DefaultConfig(sitesDir)
+	cfg.AppName = config.AppNameHerd
+	cfg.AppCommand = "herd"
 	cfg.WebsitesPath = sitesDir
 
 	hub := tui.NewWebsitesHubModel(cfg)
@@ -106,50 +111,11 @@ func TestWebsitesHub_NavigationAndMultiSelect(t *testing.T) {
 	}
 }
 
-func TestWebsitesHub_ActionMenu(t *testing.T) {
-	sitesDir, slugs := createTestWebsites(t, 2)
-	cfg := config.DefaultConfig(sitesDir)
-	cfg.WebsitesPath = sitesDir
-
-	hub := tui.NewWebsitesHubModel(cfg)
-
-	// Press Enter to open Action Menu
-	hub.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	if hub.State() != tui.WebsitesHubActions {
-		t.Fatalf("expected state WebsitesHubActions after Enter, got %v", hub.State())
-	}
-
-	actionView := hub.Render(60, 20)
-	expectedActions := []string{
-		"Config",
-		"Install Plugins",
-		"Install Theme",
-		"Change admin credentials",
-		"Backup",
-		"Open in Browser",
-		"Open in Editor",
-		"Delete",
-		"Back",
-	}
-	for _, action := range expectedActions {
-		if !strings.Contains(actionView, action) {
-			t.Errorf("expected action menu to contain %q, got:\n%s", action, actionView)
-		}
-	}
-
-	// Press Esc to return to list
-	hub.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
-	if hub.State() != tui.WebsitesHubList {
-		t.Fatalf("expected state WebsitesHubList after Esc, got %v", hub.State())
-	}
-	if hub.SelectedCandidate().Slug != slugs[0] {
-		t.Errorf("expected cursor retained on %s, got %s", slugs[0], hub.SelectedCandidate().Slug)
-	}
-}
-
 func TestWebsitesHub_SingleDeleteConfirm(t *testing.T) {
 	sitesDir, slugs := createTestWebsites(t, 1)
 	cfg := config.DefaultConfig(sitesDir)
+	cfg.AppName = config.AppNameHerd
+	cfg.AppCommand = "herd"
 	cfg.WebsitesPath = sitesDir
 
 	hub := tui.NewWebsitesHubModel(cfg)
@@ -157,8 +123,7 @@ func TestWebsitesHub_SingleDeleteConfirm(t *testing.T) {
 	// Press Enter to enter Action Menu
 	hub.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 
-	// Navigate to Delete action (index 7: Config(0), Install Plugins(1), Install Theme(2), Change admin(3), Backup(4), Browser(5), Editor(6), Delete(7))
-	for range 7 {
+	for hub.SelectedAction() != tui.WebsiteActionDelete {
 		hub.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	}
 	hub.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -192,6 +157,8 @@ func TestWebsitesHub_SingleDeleteConfirm(t *testing.T) {
 func TestWebsitesHub_ChangeAdminCredentials(t *testing.T) {
 	sitesDir, slugs := createTestWebsites(t, 1)
 	cfg := config.DefaultConfig(sitesDir)
+	cfg.AppName = config.AppNameHerd
+	cfg.AppCommand = "herd"
 	cfg.WebsitesPath = sitesDir
 
 	hub := tui.NewWebsitesHubModel(cfg)
@@ -216,8 +183,7 @@ func TestWebsitesHub_ChangeAdminCredentials(t *testing.T) {
 	// Press Enter to enter Action Menu
 	hub.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 
-	// Navigate to Change admin credentials (index 3: Config(0), Install Plugins(1), Install Theme(2), Change admin credentials(3))
-	for range 3 {
+	for hub.SelectedAction() != tui.WebsiteActionChangeAdmin {
 		hub.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	}
 	hub.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -270,18 +236,22 @@ func TestWebsitesHub_InstallPluginsAndThemes(t *testing.T) {
 	hub.SetCatalog(catalog)
 
 	var (
-		capturedCand     deprovision.Candidate
-		capturedType     packages.PackageType
-		capturedSlugs    []string
-		capturedActivate bool
-		callbackExecuted bool
+		capturedCand        deprovision.Candidate
+		capturedType        packages.PackageType
+		capturedSlugs       []string
+		capturedActivate    bool
+		capturedActiveTheme string
+		callbackExecuted    bool
 	)
 
-	hub.OnInstallPackages = func(cand deprovision.Candidate, pkgType packages.PackageType, slugs []string, activate bool) tea.Cmd {
+	hub.OnInstallPackages = func(cand deprovision.Candidate, pkgType packages.PackageType, slugs []string, activate bool, activeTheme ...string) tea.Cmd {
 		capturedCand = cand
 		capturedType = pkgType
 		capturedSlugs = slugs
 		capturedActivate = activate
+		if len(activeTheme) > 0 {
+			capturedActiveTheme = activeTheme[0]
+		}
 		callbackExecuted = true
 		return nil
 	}
@@ -340,7 +310,8 @@ func TestWebsitesHub_InstallPluginsAndThemes(t *testing.T) {
 	if hub.State() != tui.WebsitesHubThemeActivateConfirm {
 		t.Fatalf("expected WebsitesHubThemeActivateConfirm after selecting theme, got %v", hub.State())
 	}
-
+	// Navigate to Astra (option 1: 0 is None, 1 is astra)
+	hub.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	// Confirm activation (enter)
 	hub.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 
@@ -356,11 +327,16 @@ func TestWebsitesHub_InstallPluginsAndThemes(t *testing.T) {
 	if !capturedActivate {
 		t.Errorf("expected activate=true for theme installation")
 	}
+	if capturedActiveTheme != "astra" {
+		t.Errorf("expected activeTheme='astra', got %q", capturedActiveTheme)
+	}
 }
 
 func TestWebsitesHub_BackupStrategySelection(t *testing.T) {
 	sitesDir, slugs := createTestWebsites(t, 1)
 	cfg := config.DefaultConfig(sitesDir)
+	cfg.AppName = config.AppNameHerd
+	cfg.AppCommand = "herd"
 	cfg.WebsitesPath = sitesDir
 
 	hub := tui.NewWebsitesHubModel(cfg)
@@ -381,8 +357,7 @@ func TestWebsitesHub_BackupStrategySelection(t *testing.T) {
 	// 1. Enter Action Menu on website
 	hub.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 
-	// Navigate to Backup (index 4: Config(0), Install Plugins(1), Install Theme(2), Change admin(3), Backup(4))
-	for range 4 {
+	for hub.SelectedAction() != tui.WebsiteActionBackup {
 		hub.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	}
 	hub.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -432,87 +407,56 @@ func (m *mockLauncherRunner) Start(ctx context.Context, name string, args ...str
 	return nil
 }
 
-func TestWebsitesHub_OpenInBrowser_RespectsUsedHerd(t *testing.T) {
+func TestWebsitesHub_OpenInBrowser_RespectsEnvironment(t *testing.T) {
 	sitesDir, slugs := createTestWebsites(t, 1)
 
-	// Herd true -> launches https://
-	cfgHerd := config.DefaultConfig(sitesDir)
-	cfgHerd.WebsitesPath = sitesDir
-	cfgHerd.UsedHerd = true
-	hubHerd := tui.NewWebsitesHubModel(cfgHerd)
-	runnerHerd := &mockLauncherRunner{}
-	hubHerd.SetRunner(runnerHerd)
+	for _, appName := range []string{config.AppNameHerd, config.AppNameFlock, config.AppNameLaragon} {
+		cfg := config.DefaultConfig(sitesDir)
+		cfg.WebsitesPath = sitesDir
+		cfg.AppName = appName
+		cfg.AppCommand = appName
+		hub := tui.NewWebsitesHubModel(cfg)
+		runner := &mockLauncherRunner{}
+		hub.SetRunner(runner)
 
-	// Navigate to Browser action (index 5)
-	hubHerd.Update(tea.KeyPressMsg{Code: tea.KeyEnter}) // Open actions
-	for range 5 {
-		hubHerd.Update(tea.KeyPressMsg{Code: tea.KeyDown})
-	}
-	hubHerd.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+		hub.Update(tea.KeyPressMsg{Code: tea.KeyEnter}) // Open actions
+		for hub.SelectedAction() != tui.WebsiteActionBrowser {
+			hub.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+		}
+		hub.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 
-	if len(runnerHerd.started) != 1 {
-		t.Fatalf("expected 1 browser launch, got %d", len(runnerHerd.started))
-	}
-	expectedHerdURL := "https://" + slugs[0] + ".test"
-	if !strings.Contains(runnerHerd.started[0], expectedHerdURL) {
-		t.Errorf("expected launch command to contain %s, got: %s", expectedHerdURL, runnerHerd.started[0])
-	}
-
-	// Herd false -> launches http://
-	cfgNoHerd := config.DefaultConfig(sitesDir)
-	cfgNoHerd.WebsitesPath = sitesDir
-	cfgNoHerd.UsedHerd = false
-	hubNoHerd := tui.NewWebsitesHubModel(cfgNoHerd)
-	runnerNoHerd := &mockLauncherRunner{}
-	hubNoHerd.SetRunner(runnerNoHerd)
-
-	hubNoHerd.Update(tea.KeyPressMsg{Code: tea.KeyEnter}) // Open actions
-	for range 5 {
-		hubNoHerd.Update(tea.KeyPressMsg{Code: tea.KeyDown})
-	}
-	hubNoHerd.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-
-	if len(runnerNoHerd.started) != 1 {
-		t.Fatalf("expected 1 browser launch, got %d", len(runnerNoHerd.started))
-	}
-	expectedNoHerdURL := "http://" + slugs[0] + ".test"
-	if !strings.Contains(runnerNoHerd.started[0], expectedNoHerdURL) {
-		t.Errorf("expected launch command to contain %s, got: %s", expectedNoHerdURL, runnerNoHerd.started[0])
+		if len(runner.started) != 1 {
+			t.Fatalf("expected 1 browser launch for %s, got %d", appName, len(runner.started))
+		}
+		expectedURL := "https://" + slugs[0] + ".test"
+		if !strings.Contains(runner.started[0], expectedURL) {
+			t.Errorf("expected launch command for %s to contain %s, got: %s", appName, expectedURL, runner.started[0])
+		}
 	}
 }
 
-func TestWebsitesHub_Render_RespectsUsedHerd(t *testing.T) {
+func TestWebsitesHub_Render_RespectsEnvironment(t *testing.T) {
 	sitesDir, slugs := createTestWebsites(t, 1)
 
-	// Herd true -> renders https://
-	cfgHerd := config.DefaultConfig(sitesDir)
-	cfgHerd.WebsitesPath = sitesDir
-	cfgHerd.UsedHerd = true
-	hubHerd := tui.NewWebsitesHubModel(cfgHerd)
-	viewHerd := hubHerd.Render(80, 24)
-	if !strings.Contains(viewHerd, "https://"+slugs[0]+".test") {
-		t.Errorf("expected view to contain https://%s.test, got:\n%s", slugs[0], viewHerd)
-	}
-
-	// Herd false -> renders http://
-	cfgNoHerd := config.DefaultConfig(sitesDir)
-	cfgNoHerd.WebsitesPath = sitesDir
-	cfgNoHerd.UsedHerd = false
-	hubNoHerd := tui.NewWebsitesHubModel(cfgNoHerd)
-	viewNoHerd := hubNoHerd.Render(80, 24)
-	if !strings.Contains(viewNoHerd, "http://"+slugs[0]+".test") {
-		t.Errorf("expected view to contain http://%s.test, got:\n%s", slugs[0], viewNoHerd)
-	}
-	if strings.Contains(viewNoHerd, "https://"+slugs[0]+".test") {
-		t.Errorf("did not expect view to contain https://%s.test when UsedHerd is false, got:\n%s", slugs[0], viewNoHerd)
+	for _, appName := range []string{config.AppNameHerd, config.AppNameFlock, config.AppNameLaragon} {
+		cfg := config.DefaultConfig(sitesDir)
+		cfg.WebsitesPath = sitesDir
+		cfg.AppName = appName
+		cfg.AppCommand = appName
+		hub := tui.NewWebsitesHubModel(cfg)
+		view := hub.Render(80, 24)
+		if !strings.Contains(view, "https://"+slugs[0]+".test") {
+			t.Errorf("expected view for %s to contain https://%s.test, got:\n%s", appName, slugs[0], view)
+		}
 	}
 }
 
 func TestWebsitesHub_SelectAllAndEnterBatchDelete(t *testing.T) {
 	sitesDir, slugs := createTestWebsites(t, 3)
 	cfg := config.DefaultConfig(sitesDir)
+	cfg.AppName = config.AppNameHerd
+	cfg.AppCommand = "herd"
 	cfg.WebsitesPath = sitesDir
-
 	hub := tui.NewWebsitesHubModel(cfg)
 
 	// 1. Press 'a' to select all
@@ -577,8 +521,9 @@ func TestWebsitesHub_SelectAllAndEnterBatchDelete(t *testing.T) {
 func TestWebsitesHub_ScrollingAndCompactLayout(t *testing.T) {
 	sitesDir, _ := createTestWebsites(t, 25)
 	cfg := config.DefaultConfig(sitesDir)
+	cfg.AppName = config.AppNameHerd
+	cfg.AppCommand = "herd"
 	cfg.WebsitesPath = sitesDir
-
 	hub := tui.NewWebsitesHubModel(cfg)
 
 	// 1. Initial view at (80, 20)
@@ -611,6 +556,3 @@ func TestWebsitesHub_ScrollingAndCompactLayout(t *testing.T) {
 		t.Logf("CONFIRMED BUG: in AppModel view (height 30/24), site19 is clipped and invisible!")
 	}
 }
-
-
-

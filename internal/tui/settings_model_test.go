@@ -33,6 +33,8 @@ func (m *mockProcessRunner) Start(ctx context.Context, name string, args ...stri
 func TestSettingsModel_NavigationAndActions(t *testing.T) {
 	tempDir := t.TempDir()
 	cfg := config.DefaultConfig(tempDir)
+	cfg.AppName = config.AppNameHerd
+	cfg.AppCommand = "herd"
 	cfgPath := filepath.Join(tempDir, "config.json")
 	if err := config.Save(cfgPath, cfg); err != nil {
 		t.Fatal(err)

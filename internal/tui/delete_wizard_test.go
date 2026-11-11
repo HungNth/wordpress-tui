@@ -45,15 +45,15 @@ func TestBuildDeleteConfirmMultiForm(t *testing.T) {
 func TestPrintDeleteSummary_ColorOutput(t *testing.T) {
 	results := []deprovision.Result{
 		{
-			Candidate: deprovision.Candidate{Slug: "test-site", Path: "/sites/test-site", DetectedDB: "test_db"},
-			HerdDone:  true,
-			DBDone:    true,
-			DirDone:   true,
+			Candidate:       deprovision.Candidate{Slug: "test-site", Path: "/sites/test-site", DetectedDB: "test_db"},
+			EnvironmentDone: true,
+			DBDone:          true,
+			DirDone:         true,
 		},
 		{
-			Candidate: deprovision.Candidate{Slug: "fail-site", Path: "/sites/fail-site"},
-			HerdErr:   errors.New("stale cert"),
-			DirErr:    errors.New("permission denied"),
+			Candidate:      deprovision.Candidate{Slug: "fail-site", Path: "/sites/fail-site"},
+			EnvironmentErr: errors.New("stale cert"),
+			DirErr:         errors.New("permission denied"),
 		},
 	}
 	// Capture stdout
@@ -74,7 +74,7 @@ func TestPrintDeleteSummary_ColorOutput(t *testing.T) {
 	output := buf.String()
 
 	// Assert rendered ANSI color tokens for Success (Green), Warning (Yellow), and Error (Red)
-	expectedSuccess := lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575")).Bold(true).Render("unsecured")
+	expectedSuccess := lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575")).Bold(true).Render("cleaned")
 	expectedWarning := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFA500")).Bold(true).Render("warning: stale cert")
 	expectedError := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF4444")).Bold(true).Render("error: permission denied")
 	expectedPath := lipgloss.NewStyle().Foreground(lipgloss.Color("#00FFFF")).Bold(true).Render("test-site")

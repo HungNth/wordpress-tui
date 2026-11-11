@@ -21,7 +21,7 @@ type BackupHandlerFunc func(candidate deprovision.Candidate, strategy backup.Bac
 type DeleteHandlerFunc func(candidates []deprovision.Candidate) tea.Cmd
 type ConfigHandlerFunc func(candidate deprovision.Candidate) tea.Cmd
 type ChangeAdminHandlerFunc func(cand deprovision.Candidate, username, password, email string) tea.Cmd
-type InstallPackagesHandlerFunc func(cand deprovision.Candidate, pkgType packages.PackageType, slugs []string, activate bool) tea.Cmd
+type InstallPackagesHandlerFunc func(cand deprovision.Candidate, pkgType packages.PackageType, slugs []string, activate bool, activeTheme ...string) tea.Cmd
 
 type FocusMode int
 
@@ -64,29 +64,29 @@ var DefaultSidebarItems = []SidebarItem{
 
 // AppModel is the root Bubble Tea application model for WPTUI.
 type AppModel struct {
-	cfg             *config.Config
-	width           int
-	height          int
-	focus           FocusMode
-	activeSec       Section
-	sidebarIndex    int
-	sidebarItems    []SidebarItem
-	websitesHub     *WebsitesHubModel
-	deleteModel     *DeleteModel
-	createWizard    *CreateWizardModel
-	restoreWizard   *RestoreWizardModel
-	settingsModel   *SettingsModel
-	progressMonitor *ProgressMonitorModel
-	isExecuting     bool
-	catalog         []packages.CatalogItem
-	checker         SlugAvailabilityChecker
-	opEventChan     <-chan tea.Msg
-	onCreate        CreateHandlerFunc
-	onRestore       RestoreHandlerFunc
-	onBackup        BackupHandlerFunc
-	onDelete        DeleteHandlerFunc
-	onConfig        ConfigHandlerFunc
-	onChangeAdmin   ChangeAdminHandlerFunc
+	cfg               *config.Config
+	width             int
+	height            int
+	focus             FocusMode
+	activeSec         Section
+	sidebarIndex      int
+	sidebarItems      []SidebarItem
+	websitesHub       *WebsitesHubModel
+	deleteModel       *DeleteModel
+	createWizard      *CreateWizardModel
+	restoreWizard     *RestoreWizardModel
+	settingsModel     *SettingsModel
+	progressMonitor   *ProgressMonitorModel
+	isExecuting       bool
+	catalog           []packages.CatalogItem
+	checker           SlugAvailabilityChecker
+	opEventChan       <-chan tea.Msg
+	onCreate          CreateHandlerFunc
+	onRestore         RestoreHandlerFunc
+	onBackup          BackupHandlerFunc
+	onDelete          DeleteHandlerFunc
+	onConfig          ConfigHandlerFunc
+	onChangeAdmin     ChangeAdminHandlerFunc
 	onInstallPackages InstallPackagesHandlerFunc
 }
 
@@ -163,9 +163,9 @@ func (m *AppModel) wireHubCallbacks() {
 		}
 		return nil
 	}
-	m.websitesHub.OnInstallPackages = func(cand deprovision.Candidate, pkgType packages.PackageType, slugs []string, activate bool) tea.Cmd {
+	m.websitesHub.OnInstallPackages = func(cand deprovision.Candidate, pkgType packages.PackageType, slugs []string, activate bool, activeTheme ...string) tea.Cmd {
 		if m.onInstallPackages != nil {
-			return m.onInstallPackages(cand, pkgType, slugs, activate)
+			return m.onInstallPackages(cand, pkgType, slugs, activate, activeTheme...)
 		}
 		return nil
 	}
@@ -197,6 +197,29 @@ func (m *AppModel) SetCreateDependencies(catalog []packages.CatalogItem, checker
 	m.createWizard = NewCreateWizardModel(m.cfg, catalog, checker)
 	if m.websitesHub != nil {
 		m.websitesHub.SetCatalog(catalog)
+	}
+}
+func (m *AppModel) SetConfig(newCfg *config.Config) {
+	m.cfg = newCfg
+	if m.websitesHub != nil {
+		m.websitesHub.cfg = newCfg
+	}
+	if m.deleteModel != nil {
+		m.deleteModel.cfg = newCfg
+	}
+	if m.restoreWizard != nil {
+		m.restoreWizard.cfg = newCfg
+	}
+	if m.createWizard != nil {
+		m.createWizard.cfg = newCfg
+	}
+}
+
+func (m *AppModel) InvalidateCatalog() {
+	m.catalog = nil
+	m.createWizard = NewCreateWizardModel(m.cfg, nil, m.checker)
+	if m.websitesHub != nil {
+		m.websitesHub.SetCatalog(nil)
 	}
 }
 
@@ -584,6 +607,14 @@ func (m *AppModel) View() tea.View {
 				footerHelp = "  Up/Down (j/k) Navigate · Space Select · a Toggle All · Enter Details/Delete · Esc Sidebar"
 			case WebsitesHubActions:
 				footerHelp = "  Up/Down (j/k) Select Action · Enter Run · Esc Back to List"
+			case WebsitesHubInstallPlugins, WebsitesHubInstallThemes:
+				footerHelp = "  Type to filter · Up/Down Navigate · Space Toggle · Enter Confirm · Esc Cancel"
+			case WebsitesHubThemeActivateConfirm:
+				footerHelp = "  Up/Down (j/k) Navigate · Enter Confirm · Esc Back to Themes"
+			case WebsitesHubChangeAdmin:
+				footerHelp = "  Enter Next/Submit · Esc Back to Actions"
+			case WebsitesHubBackupStrategy:
+				footerHelp = "  Up/Down (j/k) Format · Enter Select · Esc Back to Actions"
 			default:
 				footerHelp = "  Left/Right Toggle Choice · Enter Confirm · Esc Cancel"
 			}
@@ -591,8 +622,10 @@ func (m *AppModel) View() tea.View {
 			switch m.createWizard.Step() {
 			case CreateWizardStepInputs:
 				footerHelp = "  Tab/Shift+Tab Navigate · Space Toggle · Enter Next · Esc Sidebar"
-			case CreateWizardStepPackages:
-				footerHelp = "  Up/Down Navigate · Space Select · Enter Confirm · Esc Back to Form"
+			case CreateWizardStepPlugins, CreateWizardStepThemes:
+				footerHelp = "  Type to filter · Up/Down Navigate · Space Toggle · Enter Continue · Esc Back"
+			case CreateWizardStepActiveTheme:
+				footerHelp = "  Up/Down (j/k) Navigate · Enter Confirm · Esc Back to Themes"
 			default:
 				footerHelp = "  y Discard Changes · n Keep Editing"
 			}

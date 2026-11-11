@@ -112,13 +112,13 @@ func PrintDeleteResult(res deprovision.Result) {
 	fmt.Printf("\n%s\n", StyleHighlight.Render(fmt.Sprintf("=== De-provisioning Result for %q ===", res.Candidate.Slug)))
 	fmt.Printf("Path: %s\n", StyleHighlight.Render(res.Candidate.Path))
 
-	// Herd
-	if res.HerdDone {
-		fmt.Printf("  - Herd TLS:       %s\n", StyleSuccess.Render("unsecured"))
-	} else if res.HerdErr != nil {
-		fmt.Printf("  - Herd TLS:       %s\n", StyleWarning.Render(fmt.Sprintf("warning: %v", res.HerdErr)))
+	// Environment
+	if res.EnvironmentDone {
+		fmt.Printf("  - Environment:    %s\n", StyleSuccess.Render("unregistered / unsecured"))
+	} else if res.EnvironmentErr != nil {
+		fmt.Printf("  - Environment:    %s\n", StyleWarning.Render(fmt.Sprintf("warning: %v", res.EnvironmentErr)))
 	} else {
-		fmt.Printf("  - Herd TLS:       %s\n", StyleMuted.Render("not applicable"))
+		fmt.Printf("  - Environment:    %s\n", StyleMuted.Render("not applicable"))
 	}
 
 	// Database
@@ -140,6 +140,7 @@ func PrintDeleteResult(res deprovision.Result) {
 	}
 	fmt.Println()
 }
+
 // PrintDeleteSummary prints a formatted aggregate report for all de-provisioning results.
 func PrintDeleteSummary(results []deprovision.Result) {
 	if len(results) == 0 {
@@ -149,19 +150,18 @@ func PrintDeleteSummary(results []deprovision.Result) {
 	fmt.Println("\n" + StyleHighlight.Render("=== De-provisioning Summary ==="))
 	var totalDeletedDirs int
 	var totalDroppedDBs int
-	var totalUnsecuredHerd int
-
+	var totalCleanedEnv int
 	for i, res := range results {
 		fmt.Printf("[%d/%d] %s (%s)\n", i+1, len(results), StyleHighlight.Render(res.Candidate.Slug), res.Candidate.Path)
 
-		// Herd status
-		if res.HerdDone {
-			fmt.Printf("    • Herd TLS:  %s\n", StyleSuccess.Render("unsecured"))
-			totalUnsecuredHerd++
-		} else if res.HerdErr != nil {
-			fmt.Printf("    • Herd TLS:  %s\n", StyleWarning.Render(fmt.Sprintf("warning: %v", res.HerdErr)))
+		// Environment status
+		if res.EnvironmentDone {
+			fmt.Printf("    • Environment:  %s\n", StyleSuccess.Render("cleaned"))
+			totalCleanedEnv++
+		} else if res.EnvironmentErr != nil {
+			fmt.Printf("    • Environment:  %s\n", StyleWarning.Render(fmt.Sprintf("warning: %v", res.EnvironmentErr)))
 		} else {
-			fmt.Printf("    • Herd TLS:  %s\n", StyleMuted.Render("not applicable"))
+			fmt.Printf("    • Environment:  %s\n", StyleMuted.Render("not applicable"))
 		}
 
 		// DB status
@@ -185,8 +185,8 @@ func PrintDeleteSummary(results []deprovision.Result) {
 		}
 	}
 
-	fmt.Printf("\nTotals: %s directories deleted, %s databases dropped, %s TLS certs unsecured.\n\n",
+	fmt.Printf("\nTotals: %s directories deleted, %s databases dropped, %s environments cleaned.\n\n",
 		StyleSuccess.Render(fmt.Sprintf("%d/%d", totalDeletedDirs, len(results))),
 		StyleSuccess.Render(fmt.Sprintf("%d", totalDroppedDBs)),
-		StyleSuccess.Render(fmt.Sprintf("%d", totalUnsecuredHerd)))
+		StyleSuccess.Render(fmt.Sprintf("%d", totalCleanedEnv)))
 }

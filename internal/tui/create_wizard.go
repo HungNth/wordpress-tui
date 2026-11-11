@@ -10,12 +10,13 @@ import (
 )
 
 type CreateInputs struct {
-	WebsiteName   string
-	WebsiteSlug   string
-	AdminUsername string
-	AdminPassword string
-	AdminEmail    string
-	ApplyTweaks   bool
+	WebsiteName     string
+	WebsiteSlug     string
+	AdminUsername   string
+	AdminPassword   string
+	AdminEmail      string
+	ApplyTweaks     bool
+	ActiveThemeSlug string
 }
 
 // SlugAvailabilityChecker checks whether a website slug collides with an existing directory or database.

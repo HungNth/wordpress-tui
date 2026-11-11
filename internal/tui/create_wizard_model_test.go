@@ -96,12 +96,11 @@ func TestCreateWizard_FieldNavigationAndAutoSlug(t *testing.T) {
 		t.Fatalf("expected step CreateWizardStepPackages, got %v", wizard.Step())
 	}
 
-	// View in Step 2 should display package search
+	// View in Step 2 should display plugin search
 	view2 := wizard.Render(70, 20)
-	if !strings.Contains(view2, "Select Packages") || !strings.Contains(view2, "ACF Pro") {
-		t.Errorf("expected step 2 view to contain package picker, got:\n%s", view2)
+	if !strings.Contains(view2, "Select Plugins") || !strings.Contains(view2, "ACF Pro") {
+		t.Errorf("expected step 2 view to contain plugin picker, got:\n%s", view2)
 	}
-
 	// Press Esc in Step 2 -> returns to Step 1 with data intact
 	wizard.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	if wizard.Step() != tui.CreateWizardStepInputs {
@@ -185,8 +184,10 @@ func TestCreateWizard_DirtyStateAndDiscardPrompt(t *testing.T) {
 
 func TestCreateWizard_TweaksEnterAdvancesToSubmit(t *testing.T) {
 	cfg := config.DefaultConfig(t.TempDir())
-	wizard := tui.NewCreateWizardModel(cfg, nil, nil)
-
+	catalog := []packages.CatalogItem{
+		{Name: "Plugin A", Slug: "plugin-a", Type: "plugin"},
+	}
+	wizard := tui.NewCreateWizardModel(cfg, catalog, nil)
 	// Navigate to ApplyTweaks (field 5) using Enter from field 0..4
 	// Field 0: Name -> type "My Site" -> Enter -> Field 1: Slug
 	for _, ch := range "My Site" {
@@ -302,4 +303,90 @@ func TestCreateWizard_VietnameseIMEInputAndBackspace(t *testing.T) {
 	}
 }
 
+func TestCreateWizard_NoCatalogSubmitsDirectly(t *testing.T) {
+	cfg := config.DefaultConfig(t.TempDir())
+	wizard := tui.NewCreateWizardModel(cfg, nil, nil)
 
+	for _, ch := range "Direct Site" {
+		wizard.Update(tea.KeyPressMsg{Code: rune(ch), Text: string(ch)})
+	}
+	// Tab to Submit button
+	for range 6 {
+		wizard.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	}
+	wizard.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+
+	if !wizard.IsSubmitted() {
+		t.Fatalf("expected wizard to submit directly when catalog is empty")
+	}
+	if wizard.ActiveThemeSlug() != "" {
+		t.Errorf("expected empty active theme slug, got %s", wizard.ActiveThemeSlug())
+	}
+	if len(wizard.SelectedPackages()) != 0 {
+		t.Errorf("expected empty selected packages, got %v", wizard.SelectedPackages())
+	}
+}
+
+func TestCreateWizard_PluginsAndThemes_ActiveThemeSelection(t *testing.T) {
+	cfg := config.DefaultConfig(t.TempDir())
+	catalog := []packages.CatalogItem{
+		{Name: "Plugin One", Slug: "plugin-one", Type: "plugin"},
+		{Name: "Theme Alpha", Slug: "theme-alpha", Type: "theme"},
+		{Name: "Theme Beta", Slug: "theme-beta", Type: "theme"},
+	}
+	wizard := tui.NewCreateWizardModel(cfg, catalog, nil)
+
+	for _, ch := range "Dual Site" {
+		wizard.Update(tea.KeyPressMsg{Code: rune(ch), Text: string(ch)})
+	}
+	// Tab to Submit button
+	for range 6 {
+		wizard.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	}
+	// Submit Step 1 -> advances to Plugins
+	wizard.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if wizard.Step() != tui.CreateWizardStepPlugins {
+		t.Fatalf("expected step Plugins, got %v", wizard.Step())
+	}
+
+	// Select plugin-one
+	wizard.Update(tea.KeyPressMsg{Code: ' ', Text: " "})
+	// Enter on Plugins -> advances to Themes
+	wizard.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if wizard.Step() != tui.CreateWizardStepThemes {
+		t.Fatalf("expected step Themes, got %v", wizard.Step())
+	}
+
+	// Select theme-alpha (cursor 0)
+	wizard.Update(tea.KeyPressMsg{Code: ' ', Text: " "})
+	// Move down to theme-beta (cursor 1) and select
+	wizard.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	wizard.Update(tea.KeyPressMsg{Code: ' ', Text: " "})
+
+	// Enter on Themes -> advances to Active Theme selection
+	wizard.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if wizard.Step() != tui.CreateWizardStepActiveTheme {
+		t.Fatalf("expected step ActiveTheme, got %v", wizard.Step())
+	}
+
+	// Choice 0: None, Choice 1: theme-alpha, Choice 2: theme-beta
+	// Down -> theme-alpha
+	wizard.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	// Enter -> confirm active theme
+	wizard.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+
+	if !wizard.IsSubmitted() {
+		t.Fatalf("expected wizard submitted after active theme confirmation")
+	}
+	if wizard.ActiveThemeSlug() != "theme-alpha" {
+		t.Errorf("expected active theme 'theme-alpha', got %q", wizard.ActiveThemeSlug())
+	}
+	plugins := wizard.SelectedPlugins()
+	if len(plugins) != 1 || plugins[0] != "plugin-one" {
+		t.Errorf("expected [plugin-one], got %v", plugins)
+	}
+	themes := wizard.SelectedThemes()
+	if len(themes) != 2 {
+		t.Errorf("expected 2 themes, got %v", themes)
+	}
+}

@@ -31,6 +31,8 @@ func setupTestWebsites(t *testing.T) (*config.Config, []string) {
 	}
 
 	cfg := config.DefaultConfig(tmpDir)
+	cfg.AppName = config.AppNameHerd
+	cfg.AppCommand = "herd"
 	cfg.WebsitesPath = sitesDir
 	return cfg, sites
 }
@@ -198,6 +200,8 @@ func TestDeleteModel_ScrollingAndCompactLayout(t *testing.T) {
 		_ = os.WriteFile(filepath.Join(sDir, "wp-config.php"), []byte("<?php"), 0644)
 	}
 	cfg := config.DefaultConfig(tmpDir)
+	cfg.AppName = config.AppNameHerd
+	cfg.AppCommand = "herd"
 	cfg.WebsitesPath = sitesDir
 	m := tui.NewDeleteModel(cfg)
 
@@ -222,4 +226,3 @@ func TestDeleteModel_ScrollingAndCompactLayout(t *testing.T) {
 		t.Errorf("expected site1 to have scrolled out of view when focused on site19, got:\n%s", viewScrolled)
 	}
 }
-

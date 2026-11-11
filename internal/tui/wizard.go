@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -15,7 +16,8 @@ import (
 
 // WizardInputs holds the values collected during first-run setup.
 type WizardInputs struct {
-	UsedHerd             bool
+	AppName              string
+	AppCommand           string
 	WebsitesPath         string
 	BackupPath           string
 	PackagesAPIURL       string
@@ -30,26 +32,110 @@ type WizardInputs struct {
 	DBSocket             string
 }
 
-// BuildEnvironmentForm creates the first step asking about Laravel Herd.
-func BuildEnvironmentForm(inputs *WizardInputs) *huh.Form {
+// EnvironmentOptions returns the available local development environment options filtered by platform.
+func EnvironmentOptions(targetOS ...string) []huh.Option[string] {
+	goos := runtime.GOOS
+	if len(targetOS) > 0 && targetOS[0] != "" {
+		goos = targetOS[0]
+	}
+
+	opts := []huh.Option[string]{
+		huh.NewOption("Laravel Herd", config.AppNameHerd),
+		huh.NewOption("Flock", config.AppNameFlock),
+	}
+	if goos == "windows" {
+		opts = append(opts, huh.NewOption("Laragon", config.AppNameLaragon))
+	}
+	return opts
+}
+
+// DefaultWebsitesPath returns the suggested websites directory for the given environment and home dir.
+func DefaultWebsitesPath(appName, homeDir string) string {
+	switch strings.ToLower(strings.TrimSpace(appName)) {
+	case config.AppNameHerd:
+		return filepath.Join(homeDir, "Herd")
+	case config.AppNameFlock:
+		return filepath.Join(homeDir, "Sites")
+	case config.AppNameLaragon:
+		return `C:\laragon\www`
+	default:
+		return ""
+	}
+}
+
+// DefaultAppCommand returns the suggested executable command for the given environment.
+func DefaultAppCommand(appName string) string {
+	switch strings.ToLower(strings.TrimSpace(appName)) {
+	case config.AppNameHerd:
+		return "herd"
+	case config.AppNameFlock:
+		return "flock"
+	case config.AppNameLaragon:
+		return `C:\laragon\laragon.exe`
+	default:
+		return ""
+	}
+}
+
+func websitesPathDescription(appName string) string {
+	switch strings.ToLower(strings.TrimSpace(appName)) {
+	case config.AppNameLaragon:
+		return "Laragon Document Root (C:\\laragon\\www). Prerequisites: Websites must be under Document Root, hostname pattern must be {name}.test, and Auto SSL must be enabled in Laragon."
+	case config.AppNameFlock:
+		return "Directory where local WordPress sites will be stored (linked and secured via Flock)"
+	case config.AppNameHerd:
+		return "Directory where local WordPress sites will be stored (parked and secured via Herd)"
+	default:
+		return "Directory where local WordPress sites will be stored"
+	}
+}
+
+func appCommandDescription(appName string) string {
+	switch strings.ToLower(strings.TrimSpace(appName)) {
+	case config.AppNameLaragon:
+		return "Path to Laragon executable used to reload virtual hosts (default: C:\\laragon\\laragon.exe)"
+	case config.AppNameFlock:
+		return "Executable name or path for Flock CLI (default: flock)"
+	case config.AppNameHerd:
+		return "Executable name or path for Herd CLI (default: herd)"
+	default:
+		return "Executable name or path for the local development environment"
+	}
+}
+
+// EnvironmentSentinel is the label for the placeholder option requiring explicit selection.
+const EnvironmentSentinel = "Choose an environment…"
+
+// BuildEnvironmentForm creates the first step asking for the local development environment.
+func BuildEnvironmentForm(inputs *WizardInputs, targetOS ...string) *huh.Form {
+	opts := append([]huh.Option[string]{
+		huh.NewOption(EnvironmentSentinel, ""),
+	}, EnvironmentOptions(targetOS...)...)
+
 	return huh.NewForm(
 		huh.NewGroup(
-			huh.NewConfirm().
-				Title("Laravel Herd Environment").
-				Description("Do you use Laravel Herd for local web serving?").
-				Value(&inputs.UsedHerd),
+			huh.NewSelect[string]().
+				Title("Local Development Environment").
+				Description("Choose your local WordPress development environment").
+				Options(opts...).
+				Value(&inputs.AppName).
+				Validate(func(s string) error {
+					if strings.TrimSpace(s) == "" {
+						return errors.New("environment selection is required")
+					}
+					return nil
+				}),
 		),
 	).WithTheme(CustomTheme())
 }
 
-// BuildMainWizardForm creates the remaining groups once Herd preference is chosen.
+// BuildMainWizardForm creates the remaining groups once the environment is chosen.
 func BuildMainWizardForm(inputs *WizardInputs, homeDir string) *huh.Form {
 	if inputs.WebsitesPath == "" {
-		if inputs.UsedHerd {
-			inputs.WebsitesPath = filepath.Join(homeDir, "Herd")
-		} else {
-			inputs.WebsitesPath = filepath.Join(homeDir, "Sites")
-		}
+		inputs.WebsitesPath = DefaultWebsitesPath(inputs.AppName, homeDir)
+	}
+	if inputs.AppCommand == "" {
+		inputs.AppCommand = DefaultAppCommand(inputs.AppName)
 	}
 	if inputs.DefaultAdminUsername == "" {
 		inputs.DefaultAdminUsername = "admin"
@@ -74,16 +160,22 @@ func BuildMainWizardForm(inputs *WizardInputs, homeDir string) *huh.Form {
 		huh.NewGroup(
 			huh.NewInput().
 				Title("Websites Storage Path").
-				Description(func() string {
-					if !inputs.UsedHerd {
-						return "Directory where sites will be stored. Prerequisite: an external wildcard stack must serve this directory's children at *.test hostnames."
-					}
-					return "Directory where local WordPress sites will be stored"
-				}()).
+				Description(websitesPathDescription(inputs.AppName)).
 				Value(&inputs.WebsitesPath).
 				Validate(func(s string) error {
 					if strings.TrimSpace(s) == "" {
 						return errors.New("websites storage path cannot be empty")
+					}
+					return nil
+				}),
+
+			huh.NewInput().
+				Title("Environment Executable Command").
+				Description(appCommandDescription(inputs.AppName)).
+				Value(&inputs.AppCommand).
+				Validate(func(s string) error {
+					if strings.TrimSpace(s) == "" {
+						return errors.New("environment executable command cannot be empty")
 					}
 					return nil
 				}),
@@ -180,28 +272,34 @@ func BuildMainWizardForm(inputs *WizardInputs, homeDir string) *huh.Form {
 
 // ConvertInputsToConfig merges collected inputs into a full default config.
 func ConvertInputsToConfig(inputs WizardInputs, homeDir string) (*config.Config, error) {
-	port := 3306
-	if strings.TrimSpace(inputs.DatabasePortStr) != "" {
-		if p, err := strconv.Atoi(strings.TrimSpace(inputs.DatabasePortStr)); err == nil && p > 0 {
+	socket := strings.TrimSpace(inputs.DBSocket)
+	portStr := strings.TrimSpace(inputs.DatabasePortStr)
+	var port int
+
+	if portStr != "" {
+		p, err := strconv.Atoi(portStr)
+		if err != nil || p <= 0 || p > 65535 {
+			if socket == "" {
+				return nil, fmt.Errorf("invalid database port %q: must be a number between 1 and 65535", portStr)
+			}
+		} else {
 			port = p
 		}
+	} else if socket == "" {
+		port = 3306
 	}
 
 	cfg := config.DefaultConfig(homeDir)
-	cfg.UsedHerd = inputs.UsedHerd
-
-	// If websites path was untouched or empty, assign based on UsedHerd
+	cfg.AppName = strings.TrimSpace(inputs.AppName)
+	cfg.AppCommand = strings.TrimSpace(inputs.AppCommand)
 	targetPath := strings.TrimSpace(inputs.WebsitesPath)
-	if targetPath == "" || (targetPath == filepath.Join(homeDir, "Herd") && !inputs.UsedHerd) {
-		if inputs.UsedHerd {
-			targetPath = filepath.Join(homeDir, "Herd")
-		} else {
-			targetPath = filepath.Join(homeDir, "Sites")
-		}
+	if targetPath == "" && cfg.AppName != "" {
+		targetPath = DefaultWebsitesPath(cfg.AppName, homeDir)
 	}
 	cfg.WebsitesPath = targetPath
+
 	backupPath := strings.TrimSpace(inputs.BackupPath)
-	if backupPath == "" {
+	if backupPath == "" && targetPath != "" {
 		backupPath = filepath.Join(targetPath, "backups")
 	}
 	cfg.BackupPath = backupPath
@@ -233,9 +331,7 @@ func RunConfigWizard(homeDir string) (*config.Config, error) {
 		}
 	}
 
-	inputs := WizardInputs{
-		UsedHerd: true,
-	}
+	var inputs WizardInputs
 
 	altScreenHook := func(v tea.View) tea.View {
 		v.AltScreen = true

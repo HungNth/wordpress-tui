@@ -3,18 +3,22 @@ package tui_test
 import (
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
+	"charm.land/huh/v2"
 	"wptui/internal/config"
 	"wptui/internal/tui"
 )
 
-func TestWizard_NonHerdUntouchedPathDefaultsToSites(t *testing.T) {
+func TestWizard_ClearedAppCommandFailsValidation(t *testing.T) {
 	tempHome := t.TempDir()
 
 	inputs := tui.WizardInputs{
-		UsedHerd:             false,
-		WebsitesPath:         "", // untouched
+		AppName:              config.AppNameHerd,
+		WebsitesPath:         filepath.Join(tempHome, "Herd"),
+		AppCommand:           "", // explicitly cleared
 		DefaultAdminUsername: "admin",
 		DefaultAdminPassword: "admin",
 		DefaultAdminEmail:    "admin@admin.com",
@@ -23,26 +27,99 @@ func TestWizard_NonHerdUntouchedPathDefaultsToSites(t *testing.T) {
 		DBUsername:           "root",
 	}
 
-	cfg, err := tui.ConvertInputsToConfig(inputs, tempHome)
-	if err != nil {
-		t.Fatalf("ConvertInputsToConfig failed: %v", err)
+	_, err := tui.ConvertInputsToConfig(inputs, tempHome)
+	if err == nil {
+		t.Fatal("expected error when app_command is cleared, got nil")
 	}
-
-	expectedSites := filepath.Join(tempHome, "Sites")
-	if cfg.WebsitesPath != expectedSites {
-		t.Errorf("expected WebsitesPath %s when UsedHerd is false, got %s", expectedSites, cfg.WebsitesPath)
-	}
-	if cfg.UsedHerd {
-		t.Errorf("expected UsedHerd to be false")
+	if !strings.Contains(err.Error(), "app_command is required") {
+		t.Errorf("expected 'app_command is required' error, got: %v", err)
 	}
 }
 
-func TestWizard_HerdUntouchedPathDefaultsToHerd(t *testing.T) {
+func TestWizard_MalformedDatabasePortReturnsError(t *testing.T) {
 	tempHome := t.TempDir()
 
 	inputs := tui.WizardInputs{
-		UsedHerd:             true,
-		WebsitesPath:         "", // untouched
+		AppName:              config.AppNameFlock,
+		WebsitesPath:         filepath.Join(tempHome, "Sites"),
+		AppCommand:           "flock",
+		DefaultAdminUsername: "admin",
+		DefaultAdminPassword: "admin",
+		DefaultAdminEmail:    "admin@admin.com",
+		DatabaseHost:         "localhost",
+		DatabasePortStr:      "not-a-number",
+		DBUsername:           "root",
+	}
+
+	_, err := tui.ConvertInputsToConfig(inputs, tempHome)
+	if err == nil {
+		t.Fatal("expected error for nonnumeric database port, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid database port") {
+		t.Errorf("expected 'invalid database port' error, got: %v", err)
+	}
+}
+
+func TestWizard_OutOfRangeDatabasePortReturnsError(t *testing.T) {
+	tempHome := t.TempDir()
+
+	for _, invalidPort := range []string{"0", "-1", "70000"} {
+		inputs := tui.WizardInputs{
+			AppName:              config.AppNameFlock,
+			WebsitesPath:         filepath.Join(tempHome, "Sites"),
+			AppCommand:           "flock",
+			DefaultAdminUsername: "admin",
+			DefaultAdminPassword: "admin",
+			DefaultAdminEmail:    "admin@admin.com",
+			DatabaseHost:         "localhost",
+			DatabasePortStr:      invalidPort,
+			DBUsername:           "root",
+		}
+
+		_, err := tui.ConvertInputsToConfig(inputs, tempHome)
+		if err == nil {
+			t.Fatalf("expected error for out-of-range database port %q, got nil", invalidPort)
+		}
+		if !strings.Contains(err.Error(), "invalid database port") {
+			t.Errorf("expected 'invalid database port' error for %q, got: %v", invalidPort, err)
+		}
+	}
+}
+
+func TestWizard_SocketMayOmitPort(t *testing.T) {
+	tempHome := t.TempDir()
+
+	inputs := tui.WizardInputs{
+		AppName:              config.AppNameFlock,
+		WebsitesPath:         filepath.Join(tempHome, "Sites"),
+		AppCommand:           "flock",
+		DefaultAdminUsername: "admin",
+		DefaultAdminPassword: "admin",
+		DefaultAdminEmail:    "admin@admin.com",
+		DBSocket:             "/tmp/mysql.sock",
+		DatabasePortStr:      "", // omitted
+		DBUsername:           "root",
+	}
+
+	cfg, err := tui.ConvertInputsToConfig(inputs, tempHome)
+	if err != nil {
+		t.Fatalf("expected socket without port to succeed, got error: %v", err)
+	}
+	if cfg.DBSocket != "/tmp/mysql.sock" {
+		t.Errorf("expected DBSocket '/tmp/mysql.sock', got %q", cfg.DBSocket)
+	}
+}
+
+func TestWizard_CustomPathAndCommandPreserved(t *testing.T) {
+	tempHome := t.TempDir()
+
+	customPath := filepath.Join(tempHome, "CustomSites")
+	customCmd := "/custom/bin/flock"
+
+	inputs := tui.WizardInputs{
+		AppName:              config.AppNameFlock,
+		WebsitesPath:         customPath,
+		AppCommand:           customCmd,
 		DefaultAdminUsername: "admin",
 		DefaultAdminPassword: "admin",
 		DefaultAdminEmail:    "admin@admin.com",
@@ -56,12 +133,137 @@ func TestWizard_HerdUntouchedPathDefaultsToHerd(t *testing.T) {
 		t.Fatalf("ConvertInputsToConfig failed: %v", err)
 	}
 
-	expectedHerd := filepath.Join(tempHome, "Herd")
-	if cfg.WebsitesPath != expectedHerd {
-		t.Errorf("expected WebsitesPath %s when UsedHerd is true, got %s", expectedHerd, cfg.WebsitesPath)
+	if cfg.WebsitesPath != customPath {
+		t.Errorf("expected WebsitesPath %s, got %s", customPath, cfg.WebsitesPath)
 	}
-	if !cfg.UsedHerd {
-		t.Errorf("expected UsedHerd to be true")
+	if cfg.AppCommand != customCmd {
+		t.Errorf("expected AppCommand %s, got %s", customCmd, cfg.AppCommand)
+	}
+}
+
+func TestWizard_NoEnvironmentSelectedReturnsError(t *testing.T) {
+	tempHome := t.TempDir()
+
+	inputs := tui.WizardInputs{
+		AppName:              "", // no environment selected
+		DefaultAdminUsername: "admin",
+		DefaultAdminPassword: "admin",
+		DefaultAdminEmail:    "admin@admin.com",
+		DatabaseHost:         "localhost",
+		DatabasePortStr:      "3306",
+		DBUsername:           "root",
+	}
+
+	_, err := tui.ConvertInputsToConfig(inputs, tempHome)
+	if err == nil {
+		t.Fatal("expected error when no environment is selected, got nil")
+	}
+}
+
+func TestEnvironmentOptions_PlatformFiltering(t *testing.T) {
+	// Windows exposes Herd, Flock, and Laragon
+	winOpts := tui.EnvironmentOptions("windows")
+	if len(winOpts) != 3 {
+		t.Fatalf("expected 3 options on windows, got %d", len(winOpts))
+	}
+	expectedWin := []string{config.AppNameHerd, config.AppNameFlock, config.AppNameLaragon}
+	for i, opt := range winOpts {
+		if opt.Value != expectedWin[i] {
+			t.Errorf("windows opt[%d]: expected %s, got %s", i, expectedWin[i], opt.Value)
+		}
+	}
+
+	// macOS excludes Laragon
+	macOpts := tui.EnvironmentOptions("darwin")
+	if len(macOpts) != 2 {
+		t.Fatalf("expected 2 options on darwin, got %d", len(macOpts))
+	}
+	expectedMac := []string{config.AppNameHerd, config.AppNameFlock}
+	for i, opt := range macOpts {
+		if opt.Value != expectedMac[i] {
+			t.Errorf("darwin opt[%d]: expected %s, got %s", i, expectedMac[i], opt.Value)
+		}
+	}
+
+	// Linux also excludes Laragon
+	linuxOpts := tui.EnvironmentOptions("linux")
+	if len(linuxOpts) != 2 {
+		t.Fatalf("expected 2 options on linux, got %d", len(linuxOpts))
+	}
+}
+
+func TestBuildEnvironmentForm(t *testing.T) {
+	var inputs tui.WizardInputs
+	form := tui.BuildEnvironmentForm(&inputs, "windows")
+	if form == nil {
+		t.Fatal("expected non-nil form from BuildEnvironmentForm")
+	}
+}
+
+func TestBuildEnvironmentForm_SentinelBehavior(t *testing.T) {
+	var inputs tui.WizardInputs
+	form := tui.BuildEnvironmentForm(&inputs, "windows")
+	if form == nil {
+		t.Fatal("expected non-nil form from BuildEnvironmentForm")
+	}
+
+	// 1. Initial state: inputs.AppName must remain empty (sentinel selected, NOT preselecting Herd)
+	if inputs.AppName != "" {
+		t.Errorf("expected inputs.AppName to be empty on initialization, got %q", inputs.AppName)
+	}
+
+	// 2. Pressing Enter on sentinel option fails validation: does not complete, inputs.AppName remains empty
+	m, cmd := form.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	updatedForm, ok := m.(*huh.Form)
+	if !ok {
+		t.Fatalf("expected *huh.Form, got %T", m)
+	}
+	if updatedForm.State == huh.StateCompleted {
+		t.Error("expected form not to complete on sentinel option")
+	}
+	if cmd != nil {
+		t.Errorf("expected no completion command on failed sentinel validation, got %v", cmd)
+	}
+	if inputs.AppName != "" {
+		t.Errorf("expected inputs.AppName to remain empty after rejected Enter, got %q", inputs.AppName)
+	}
+
+	// 3. Navigating down selects Herd, updating inputs.AppName
+	m, _ = updatedForm.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	if inputs.AppName != config.AppNameHerd {
+		t.Errorf("expected inputs.AppName to be %q after first KeyDown, got %q", config.AppNameHerd, inputs.AppName)
+	}
+
+	// 4. Navigating down again selects Flock
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	if inputs.AppName != config.AppNameFlock {
+		t.Errorf("expected inputs.AppName to be %q after second KeyDown, got %q", config.AppNameFlock, inputs.AppName)
+	}
+
+	// 5. Navigating down again on Windows selects Laragon
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	if inputs.AppName != config.AppNameLaragon {
+		t.Errorf("expected inputs.AppName to be %q after third KeyDown, got %q", config.AppNameLaragon, inputs.AppName)
+	}
+}
+
+func TestBuildMainWizardForm_SuggestionsPopulated(t *testing.T) {
+	tempHome := t.TempDir()
+
+	inputs := &tui.WizardInputs{
+		AppName: config.AppNameLaragon,
+	}
+
+	form := tui.BuildMainWizardForm(inputs, tempHome)
+	if form == nil {
+		t.Fatal("expected non-nil form from BuildMainWizardForm")
+	}
+
+	if inputs.WebsitesPath != `C:\laragon\www` {
+		t.Errorf("expected WebsitesPath `C:\\laragon\\www`, got %s", inputs.WebsitesPath)
+	}
+	if inputs.AppCommand != `C:\laragon\laragon.exe` {
+		t.Errorf("expected AppCommand `C:\\laragon\\laragon.exe`, got %s", inputs.AppCommand)
 	}
 }
 

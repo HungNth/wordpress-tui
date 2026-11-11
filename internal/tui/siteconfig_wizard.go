@@ -1,10 +1,10 @@
 package tui
 
 import (
+	"charm.land/huh/v2"
 	"errors"
 	"fmt"
 	"strings"
-	"charm.land/huh/v2"
 	"wptui/internal/config"
 	"wptui/internal/deprovision"
 	"wptui/internal/siteconfig"
@@ -13,8 +13,8 @@ import (
 type ConfigAction string
 
 const (
-	ActionApplyTweaks ConfigAction = "tweaks"
-	ActionChangeAdmin ConfigAction = "admin"
+	ActionApplyTweaks    ConfigAction = "tweaks"
+	ActionChangeAdmin    ConfigAction = "admin"
 	ActionInstallPlugins ConfigAction = "plugins"
 	ActionInstallThemes  ConfigAction = "themes"
 	ActionBack           ConfigAction = "back"
@@ -60,13 +60,31 @@ func SelectWebsiteForConfig(websites []deprovision.Candidate) (*deprovision.Cand
 }
 
 // SelectConfigAction displays the sub-menu for the selected website.
-func SelectConfigAction(siteSlug string) (ConfigAction, error) {
-	options := []huh.Option[ConfigAction]{
-		huh.NewOption("Apply wp_tweaks from config.json", ActionApplyTweaks),
-		huh.NewOption("Change administrator credentials", ActionChangeAdmin),
-		huh.NewOption("Install plugins", ActionInstallPlugins),
-		huh.NewOption("Install themes", ActionInstallThemes),
-		huh.NewOption("Back to Website Selection", ActionBack),
+func SelectConfigAction(siteSlug string, availableActions ...ConfigAction) (ConfigAction, error) {
+	var options []huh.Option[ConfigAction]
+	if len(availableActions) > 0 {
+		for _, act := range availableActions {
+			switch act {
+			case ActionApplyTweaks:
+				options = append(options, huh.NewOption("Apply wp_tweaks from config.json", ActionApplyTweaks))
+			case ActionChangeAdmin:
+				options = append(options, huh.NewOption("Change administrator credentials", ActionChangeAdmin))
+			case ActionInstallPlugins:
+				options = append(options, huh.NewOption("Install plugins", ActionInstallPlugins))
+			case ActionInstallThemes:
+				options = append(options, huh.NewOption("Install themes", ActionInstallThemes))
+			case ActionBack:
+				options = append(options, huh.NewOption("Back to Website Selection", ActionBack))
+			}
+		}
+	} else {
+		options = []huh.Option[ConfigAction]{
+			huh.NewOption("Apply wp_tweaks from config.json", ActionApplyTweaks),
+			huh.NewOption("Change administrator credentials", ActionChangeAdmin),
+			huh.NewOption("Install plugins", ActionInstallPlugins),
+			huh.NewOption("Install themes", ActionInstallThemes),
+			huh.NewOption("Back to Website Selection", ActionBack),
+		}
 	}
 	var choice ConfigAction
 	form := huh.NewForm(
@@ -83,6 +101,34 @@ func SelectConfigAction(siteSlug string) (ConfigAction, error) {
 		return "", err
 	}
 
+	return choice, nil
+}
+
+// PromptActiveTheme asks the user which installed theme to activate, or None.
+func PromptActiveTheme(themeSlugs []string) (string, error) {
+	if len(themeSlugs) == 0 {
+		return "", nil
+	}
+	options := make([]huh.Option[string], 0, len(themeSlugs)+1)
+	options = append(options, huh.NewOption("None (do not activate any theme)", ""))
+	for _, slug := range themeSlugs {
+		options = append(options, huh.NewOption(slug, slug))
+	}
+
+	var choice string
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Select Active Theme").
+				Description("Optionally choose which installed theme to activate").
+				Options(options...).
+				Value(&choice),
+		),
+	).WithTheme(CustomTheme())
+
+	if err := form.Run(); err != nil {
+		return "", err
+	}
 	return choice, nil
 }
 

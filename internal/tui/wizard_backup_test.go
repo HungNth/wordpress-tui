@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"wptui/internal/config"
 	"wptui/internal/tui"
 )
 
@@ -12,7 +13,8 @@ func TestConvertInputsToConfig_BackupPath(t *testing.T) {
 
 	// 1. When user leaves BackupPath empty, it defaults to <websites_path>/backups
 	inputsDefault := tui.WizardInputs{
-		UsedHerd:             true,
+		AppName:              config.AppNameHerd,
+		AppCommand:           "herd",
 		WebsitesPath:         filepath.Join(tempDir, "sites"),
 		BackupPath:           "",
 		DefaultAdminUsername: "admin",
@@ -36,7 +38,8 @@ func TestConvertInputsToConfig_BackupPath(t *testing.T) {
 	// 2. When user specifies a custom BackupPath
 	customBackupPath := filepath.Join(tempDir, "custom-backups")
 	inputsCustom := tui.WizardInputs{
-		UsedHerd:             true,
+		AppName:              config.AppNameHerd,
+		AppCommand:           "herd",
 		WebsitesPath:         filepath.Join(tempDir, "sites"),
 		BackupPath:           customBackupPath,
 		DefaultAdminUsername: "admin",

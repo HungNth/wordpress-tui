@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"wptui/internal/config"
 	"wptui/internal/deprovision"
+	"wptui/internal/localenv"
 )
 
 type DeleteModelState int
@@ -128,10 +129,7 @@ func (m *DeleteModel) SelectedCandidates() []deprovision.Candidate {
 }
 
 func (m *DeleteModel) siteURL(slug string) string {
-	if m.cfg != nil && m.cfg.UsedHerd {
-		return fmt.Sprintf("https://%s.test", slug)
-	}
-	return fmt.Sprintf("http://%s.test", slug)
+	return localenv.SiteURL(m.cfg, slug)
 }
 
 func (m *DeleteModel) Init() tea.Cmd {
