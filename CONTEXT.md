@@ -20,9 +20,25 @@ _Avoid_: Project slug, folder name
 The MySQL database configured for and referenced by a Website; its identity is independent of the Website Slug.
 _Avoid_: Slug database, assumed database
 
+**Local Development Environment**:
+The external platform selected to serve Website hostnames and HTTPS. Supported environments are Laravel Herd, Flock, and Laragon.
+_Avoid_: App, stack, web server
+
+**Website Registration**:
+The association maintained by the selected Local Development Environment between a Website directory and its `.test` hostname. Registration is required for a Website to be considered successfully served.
+_Avoid_: Link, virtual host entry
+
+**Package Service**:
+The external service configured to supply the Package Catalog and Package archives.
+_Avoid_: Package repository, fallback catalog
+
 **Package**:
 An installable WordPress plugin or theme offered by the configured package service.
 _Avoid_: Extension, asset
+
+**Active Theme**:
+The optional single theme explicitly chosen from selected theme Packages to render a Website frontend.
+_Avoid_: Default theme, first selected theme
 
 **Package Catalog**:
 The complete collection of Packages returned by the configured package service for local filtering and selection.
@@ -49,11 +65,11 @@ The local storage containing the verified Core Archive and its manifest record t
 _Avoid_: Core folder, WordPress cache, temporary core
 
 **Provisioning**:
-The operation that creates a Website atomically through its critical core, database, Herd, and Package steps, then applies WordPress tweaks on a best-effort basis. Individual tweak failures are reported without removing the Website.
+The operation that creates a Website atomically through its critical core, database, Local Development Environment, and Package steps, then applies WordPress tweaks on a best-effort basis. Individual tweak failures are reported without removing the Website.
 _Avoid_: Setup, scaffolding
 
 **De-provisioning**:
-The operation that destroys one or more existing Websites, safely unsecuring Herd TLS, dropping the accurately extracted database, and removing the Website directory.
+The operation that destroys one or more existing Websites, safely unregistering applicable Local Development Environment resources, dropping the accurately extracted database, and removing the Website directory.
 _Avoid_: Cleanup, wipe, uninstall
 
 **Batch De-provisioning**:

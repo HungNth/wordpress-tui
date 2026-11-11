@@ -37,12 +37,12 @@ For example:
 ```text
 ┌─ WPTUI ──────────────────┬─ Websites Hub ─────────────────────────────────────┐
 │                          │ narrow01                                           │
-│ > Websites               │   URL:       http://narrow01.test                  │
-│   Create                 │   Directory: F:/laravel-herd/wordpress/narrow01    │
+│ > Websites               │   URL:       https://narrow01.test                 │
+│   Create                 │   Directory: F:/websites/narrow01                  │
 │   Restore                │                                                    │
 │   Settings               │ demo-site                                          │
-│   Exit                   │   URL:       http://demo-site.test                 │
-│                          │   Directory: F:/laravel-herd/wordpress/demo-site   │
+│   Exit                   │   URL:       https://demo-site.test                │
+│                          │   Directory: F:/websites/demo-site                 │
 │                          │                                                    │
 └──────────────────────────┴────────────────────────────────────────────────────┘
   Up/Down Navigate · Enter Open Details · Space Multi-Select · q Exit
@@ -82,6 +82,16 @@ Use conventional field and list controls with context-specific help:
 | q / Ctrl+C | Exit application when on Sidebar Navigation; cancel running background workflow |
 
 Navigating back to the Sidebar preserves entered form values until explicitly submitted or discarded. Dirty forms prompt `Discard changes? (y/n)` upon Esc to prevent accidental data loss. User cancellation during execution stops background tasks gracefully before re-enabling navigation.
+
+## Package visibility and selection
+
+Control package selection dynamically according to Package Service catalog availability:
+
+- **API-Only Source**: All selectable packages originate exclusively from the loaded Package Catalog. Static package lists and default theme options are removed.
+- **Hidden Controls**: If no Package Service is configured, or if catalog retrieval fails or returns empty, hide package steps and actions entirely. Do not render disabled or empty picker views. Log a concise warning and permit Website Provisioning to proceed without packages or an active theme.
+- **Independent Category Visibility**: If the catalog contains only plugins, omit theme selection steps; if the catalog contains only themes, omit plugin selection steps.
+- **Search and Selection Accumulation**: Separate searchable selection states are used for plugins and themes. Selection state is preserved across queries as search terms change.
+- **Optional Active Theme**: When one or more themes are selected, present an optional single-choice selection to designate at most one theme as the Active Theme. Selecting no active theme is explicitly supported. When no active theme is chosen, provisioning completes successfully and reports that WordPress administration is accessible while the frontend has no active renderer.
 
 ## Progress
 

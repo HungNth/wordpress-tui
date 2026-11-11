@@ -2,19 +2,20 @@
 
 WordPress TUI manages local WordPress **Websites** through an interactive terminal interface. It provides guided workflows to provision fresh Websites, configure existing installations, manage backups, restore archives, and maintain local development settings.
 
-## Supported Platforms
+## Supported Platforms and Environments
 
 - **macOS:** Intel (`amd64`) and Apple Silicon (`arm64`)
+  - Supported environments: **Laravel Herd**, **Flock**
 - **Windows:** 64-bit (`amd64`)
+  - Supported environments: **Laravel Herd**, **Flock**, **Laragon**
 
 > [!NOTE]
-> Linux and Windows ARM64 are not currently supported.
-
+> Linux and Windows ARM64 are not currently supported. Laragon is available on Windows only.
 ## Features
 
-- **Provisioning:** Create new local WordPress Websites with database creation, WordPress installation, local `.test` domain configuration, and optional WordPress tweaks and Package installations.
-- **Website Configuration:** Apply tweaks to existing Websites, update administrator credentials, and install or upgrade plugins and themes.
-- **De-provisioning:** Safely remove Websites with database preview and verification, directory removal, and optional Laravel Herd TLS cleanup.
+- **Provisioning:** Create new local WordPress Websites with database creation, WordPress installation, local `.test` domain configuration (via Laravel Herd, Flock, or Laragon), and optional WordPress tweaks and API-driven Package installations.
+- **Website Configuration:** Apply tweaks to existing Websites, update administrator credentials, and install or upgrade plugins and themes from the configured Package Service.
+- **De-provisioning:** Safely remove Websites with database preview and verification, directory removal, and environment cleanup (Herd unsecure, Flock unsecure/unlink, or Laragon reload).
 - **Website Backup:** Create full consolidated ZIP backups (database SQL dump and files) or export All-in-One WP Migration (`.wpress`) archives.
 - **Website Restoration:** Reconstitute Websites from full ZIP backups or All-in-One WP Migration archives into fresh, non-colliding local Websites.
 - **Application Settings:** Open the application configuration in VS Code (`code --wait`) or view the local user cache directory in the native file manager.
@@ -26,9 +27,12 @@ WPTUI orchestrates native tools on your machine. Ensure the following runtime de
 - **PHP** (`php`)
 - **WP-CLI** (`wp`)
 - **MySQL Client / Server** (`mysql`)
-- **Laravel Herd** (`herd`) _(optional, required only when Herd integration is enabled)_
+- **Local Development Environment executable:**
+  - **Laravel Herd** (`herd`)
+  - **Flock** (`flock`)
+  - **Laragon** (`laragon.exe` on Windows)
+  Configured via `app_name` and `app_command`. The executable must be installed and accessible in your `PATH` or specified via an editable path.
 - **Visual Studio Code** (`code`) _(optional, required only for editing configuration from Settings)_
-
 ## Installation
 
 Install WPTUI for the current user using the official installation scripts:
@@ -91,6 +95,56 @@ When launched for the first time, WPTUI automatically starts an interactive conf
 
 You can modify these settings anytime directly, through the first-run wizard, or via **Settings** in the main menu.
 
+
+### Local Development Environments
+
+WPTUI requires an explicit Local Development Environment selection:
+
+- **Laravel Herd (`herd`)**:
+  - Trusts the configured Websites directory being parked (default suggestion: `$HOME/Herd`).
+  - Automatically manages `.test` domains.
+  - Executes `herd secure <slug>` during provisioning to issue TLS certificates, and best-effort `herd unsecure <slug>` during de-provisioning.
+
+- **Flock (`flock`)**:
+  - Websites directory defaults to `$HOME/Sites`.
+  - Registers sites via `flock link <slug>` and secures TLS via `flock secure <slug>`.
+  - Source integration inspects `flock sites` status prior to linking to prevent replacing pre-existing site registrations.
+  - Rollback and de-provisioning reverse only resources created and owned by WPTUI (`flock unsecure <slug>` and `flock unlink <slug>`), protecting pre-existing registrations.
+  - Browser launching uses the native operating system URL launcher rather than an emulated CLI command.
+
+- **Laragon (`laragon`)** _(Windows only)_:
+  - Websites must be created within Laragon's Document Root (default suggestion: `C:\laragon\www`).
+  - Reloads virtual hosts via `app_command` (`laragon.exe reload`) following site creation, restoration, and deletion.
+  - Emits canonical `https://<slug>.test` URLs.
+  - **HTTPS Prerequisite:** Laragon HTTPS strictly requires that **Auto SSL** is externally enabled in Laragon's settings and the Document Root is configured with the `{name}.test` hostname pattern. WPTUI does not generate virtual-host templates or configure Auto SSL.
+
+### Packages & Themes
+
+- **API-Only Source**: All selectable plugins and themes originate strictly from the configured Package Service API (`package_service_url`). Static package lists in `config.json` and the built-in default theme have been removed.
+- **Conditional Visibility**: If no Package Service URL is configured, or if catalog fetching fails or returns an empty catalog, package selection steps in Provisioning and package actions in Website Configuration are hidden entirely. Provisioning proceeds cleanly without packages or an active theme.
+- **Independent Category Controls**: If the catalog contains only plugins, theme selection is omitted; if only themes, plugin selection is omitted.
+- **Search & Selection Accumulation**: Separate searchable pickers for plugins and themes preserve selected items across query modifications.
+- **Optional Active Theme**: When one or more themes are selected, users can optionally choose at most one as the Active Theme (or choose none). Provisioning without an active theme is fully supported; the administration interface is accessible while the frontend indicates no active theme is assigned.
+- **Deterministic Provenance**: Failed package resolutions are reported as errors; WPTUI never falls back to arbitrary WordPress.org slugs.
+
+### Configuration Schema & Strict Validation
+
+`config.json` stores your environment choice under `app_name` and the executable under `app_command`:
+
+```json
+{
+  "app_name": "flock",
+  "app_command": "flock",
+  "websites_path": "/Users/developer/Sites",
+  "mysql_host": "127.0.0.1",
+  "mysql_port": 3306,
+  "mysql_user": "root",
+  "mysql_password": ""
+}
+```
+
+> [!IMPORTANT]
+> Configuration validation strictly rejects missing/invalid environment names and legacy schema (`used_herd`, `themes`, `plugins`, `default_theme_slug`). WPTUI provides no automatic migration, aliases, or backward-compatibility fallbacks. If upgrading from an older version, run first-run setup or update your configuration file directly.
 ## Development
 
 To build and test WPTUI from source, ensure you have **Go 1.27.0** or later installed:

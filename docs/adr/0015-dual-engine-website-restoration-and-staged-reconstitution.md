@@ -43,8 +43,8 @@ WordPress TUI supports dual-strategy backups (ADR 0014: Full ZIP and All-in-One 
    - Administrative credentials (user login, password, email) are updated strictly **after** `wp ai1wm restore` completes.
 
 7. **Resilience & Rollback Policy**:
-   - Any critical failure during extraction, database creation, database import, search-replace, or administrative credential update triggers a full rollback: unsecuring any newly created Herd hostname, dropping the newly created database, removing the newly created Website directory, and cleaning staging artifacts. The source backup artifact is strictly preserved.
-   - If `herd secure` fails, the restore process logs a warning and proceeds without rolling back the restored Website.
+   - Any critical failure during extraction, database creation, database import, search-replace, administrative credential update, or environment registration/reload (per [ADR-0017](0017-selected-local-development-environment-integration.md)) triggers a full rollback: cleaning newly created environment registrations or certificates (while protecting pre-existing registrations), dropping the newly created database, removing the newly created Website directory, and cleaning staging artifacts. The source backup artifact is strictly preserved.
+   - If TLS setup (`secure`) fails during restoration under Herd or Flock, the restore process logs a warning, reconciles the restored database URL to HTTP (`http://<slug>.test`), and proceeds without rolling back the restored Website.
 
 - Prevents accidental data loss or corruption by enforcing non-colliding target directories and databases.
 - Supports both standardized WPTUI backup artifacts and generic third-party WordPress zip archives.

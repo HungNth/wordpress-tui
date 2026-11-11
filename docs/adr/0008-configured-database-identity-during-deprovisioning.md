@@ -6,7 +6,7 @@ status: accepted
 
 ## Context
 
-Users need to delete one or more Websites directly from WPTUI. De-provisioning is a destructive operation touching three distinct resources: Herd TLS certificates, the MySQL database, and the Website filesystem directory.
+Users need to delete one or more Websites directly from WPTUI. De-provisioning is a destructive operation touching three distinct resources: Local Development Environment registrations and TLS state (per [ADR-0017](0017-selected-local-development-environment-integration.md)), the MySQL database, and the Website filesystem directory.
 
 Assuming database names equal Website Slugs is unsafe because existing installations or custom configs may use arbitrary database names. Dropping databases by guessed names risks catastrophic data loss. Furthermore, users require that selected directories are removed even if prior resource steps fail, while preserving directory exclusions and avoiding unbounded goroutine concurrency.
 
@@ -30,11 +30,11 @@ Assuming database names equal Website Slugs is unsafe because existing installat
 5. **Execution Lifecycle and Bounded Concurrency**:
    - Multi-Website de-provisioning executes via a bounded worker pool of `min(4, count)` goroutines (matching existing repository concurrency defaults).
    - Step lifecycle per Website:
-     1. `herd unsecure <slug>` (if `used_herd = true`, best-effort).
+     1. Environment cleanup (best-effort, per [ADR-0017](0017-selected-local-development-environment-integration.md): `herd unsecure` for Herd, `flock unsecure` and `flock unlink` for Flock, or `laragon.exe reload` for Laragon).
      2. Prior to database drop, re-verify `DB_NAME` via `wp config get DB_NAME` against the confirmed preview value; if it has changed or is unreadable, skip database drop and record an error to minimize the race window and guard against accidental data loss. Otherwise, execute `wp db drop --yes` in the Website directory.
      3. `os.RemoveAll(siteDir)` is mandatory and always executed, regardless of Herd or database failures.
    - A failure on one Website never aborts others.
    - The final report gives distinct, per-resource outcomes for each Website:
-     - `Herd`: `unsecured`, `not applicable`, or error detail.
+     - `Environment`: `cleaned`, `not applicable`, or error detail (superseding the Herd-only `used_herd` flag).
      - `Database`: `deleted`, `unknown/skipped`, or error detail.
      - `Directory`: `deleted` or error detail.

@@ -3,6 +3,9 @@
 ## Status
 Accepted
 
+> [!NOTE]
+> Under [ADR-0017](0017-selected-local-development-environment-integration.md), all selectable packages originate strictly from the configured Package Service API (resolved to verified archives). Fallback installation by WordPress.org slug is removed. When no Package Service is configured or catalog loading fails, package actions are hidden entirely. When a catalog is available, the version comparison and progress feedback below apply to resolved package archives.
+
 ## Context
 When running Website Configuration on an existing Website, users previously received no real-time progress feedback while lengthy commands (such as database updates, tweak iterations, or package downloads) were running, resulting in a frozen-looking terminal.
 

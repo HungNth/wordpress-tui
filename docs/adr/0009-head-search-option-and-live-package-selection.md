@@ -1,6 +1,6 @@
 # 0009: Head Search Option and Interactive Live Package Catalog Selection
 
-Current presentation follows [DESIGN.md](../../DESIGN.md), including plain-text action labels in place of the decorative search emoji recorded below. The search-first placement and selection-accumulation behavior remain unchanged.
+Current presentation follows [DESIGN.md](../../DESIGN.md), including plain-text action labels in place of the decorative search emoji recorded below. Under [ADR-0017](0017-selected-local-development-environment-integration.md), static default package lists in `config.json` are removed; selectable packages originate exclusively from the configured Package Service API, and package UI is hidden entirely when no catalog is available. When a catalog is available, the search-first placement and selection-accumulation behavior remain unchanged across separate plugin and theme selections.
 
 ## Context
 
@@ -9,7 +9,7 @@ When selecting Packages (plugins or themes) during Website Provisioning, the sea
 ## Decision
 
 1. **Top-Level Search Trigger**:
-   - In package selection lists, the search option (`🔍 Type to search catalog...`) is positioned as the **very first option (index 0)**, preceding the default packages from `config.json`.
+   - In package selection lists, the search trigger is positioned at the very top of the live catalog picker.
    - Developers immediately see the search capability without needing to scroll past default items.
 
 2. **Interactive Live In-Memory Search with Selection Accumulation**:
