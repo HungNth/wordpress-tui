@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"wptui/internal/config"
+	"wptui/internal/backup"
 	"wptui/internal/create"
 	"wptui/internal/deprovision"
 	"wptui/internal/packages"
@@ -29,8 +30,11 @@ type Options struct {
 	ConfigFn   func(ctx context.Context, cfg *config.Config) error
 	SettingsFn func(ctx context.Context, cfg *config.Config, onReload func(*config.Config)) error
 	BackupFn   func(ctx context.Context, cfg *config.Config) error
-	RestoreFn  func(ctx context.Context, cfg *config.Config) error
+	RestoreFn      func(ctx context.Context, cfg *config.Config) error
+	BackupRunnerFn BackupRunnerFunc
 }
+
+type BackupRunnerFunc func(ctx context.Context, cand deprovision.Candidate, strategy backup.BackupStrategy, backupPath string, onProgress backup.ProgressFunc) (*backup.BackupResult, error)
 
 type App struct {
 	homeDir    string
@@ -44,7 +48,8 @@ type App struct {
 	configFn   func(ctx context.Context, cfg *config.Config) error
 	settingsFn func(ctx context.Context, cfg *config.Config, onReload func(*config.Config)) error
 	backupFn   func(ctx context.Context, cfg *config.Config) error
-	restoreFn  func(ctx context.Context, cfg *config.Config) error
+	restoreFn      func(ctx context.Context, cfg *config.Config) error
+	backupRunnerFn BackupRunnerFunc
 }
 
 func New(opts Options) *App {
@@ -109,7 +114,8 @@ func New(opts Options) *App {
 		configFn:   cfgFn,
 		settingsFn: sFn,
 		backupFn:   bFn,
-		restoreFn:  rFn,
+		restoreFn:      rFn,
+		backupRunnerFn: opts.BackupRunnerFn,
 	}
 }
 

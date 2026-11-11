@@ -21,6 +21,7 @@ type WebsitesHubState int
 const (
 	WebsitesHubList WebsitesHubState = iota
 	WebsitesHubActions
+	WebsitesHubBatchActions
 	WebsitesHubBatchDeleteConfirm
 	WebsitesHubSingleDeleteConfirm
 	WebsitesHubChangeAdmin
@@ -56,6 +57,12 @@ var DefaultWebsiteActions = []WebsiteAction{
 	WebsiteActionBack,
 }
 
+var BatchWebsiteActions = []WebsiteAction{
+	WebsiteActionBackup,
+	WebsiteActionDelete,
+	WebsiteActionBack,
+}
+
 type WebsitesHubModel struct {
 	cfg                  *config.Config
 	candidates           []deprovision.Candidate
@@ -75,6 +82,7 @@ type WebsitesHubModel struct {
 	themeChoiceCursor    int
 	backupStrategyCursor int
 	backupStrategies     []backup.BackupStrategy
+	batchStrategyMode    bool
 	adminUsernameInput   string
 	adminPasswordInput   string
 	adminEmailInput      string
@@ -84,6 +92,7 @@ type WebsitesHubModel struct {
 	OnChangeAdmin        func(cand deprovision.Candidate, username, password, email string) tea.Cmd
 	OnInstallPackages    func(cand deprovision.Candidate, pkgType packages.PackageType, slugs []string, activate bool, activeTheme ...string) tea.Cmd
 	OnBackup             func(cand deprovision.Candidate, strategy backup.BackupStrategy) tea.Cmd
+	OnBatchBackup        func(cands []deprovision.Candidate, strategy backup.BackupStrategy) tea.Cmd
 }
 
 func (m *WebsitesHubModel) updateActions() {
@@ -189,8 +198,12 @@ func (m *WebsitesHubModel) State() WebsitesHubState {
 	return m.state
 }
 func (m *WebsitesHubModel) SelectedAction() WebsiteAction {
-	if m.actionCursor >= 0 && m.actionCursor < len(m.actions) {
-		return m.actions[m.actionCursor]
+	acts := m.actions
+	if m.state == WebsitesHubBatchActions {
+		acts = BatchWebsiteActions
+	}
+	if m.actionCursor >= 0 && m.actionCursor < len(acts) {
+		return acts[m.actionCursor]
 	}
 	return ""
 }
@@ -224,6 +237,12 @@ func (m *WebsitesHubModel) SelectedCandidates() []deprovision.Candidate {
 		}
 	}
 	return out
+}
+
+func (m *WebsitesHubModel) ClearSelection() {
+	clear(m.selectedMap)
+	m.batchStrategyMode = false
+	m.state = WebsitesHubList
 }
 
 func (m *WebsitesHubModel) DeleteConfirmChoice() bool {
@@ -282,8 +301,9 @@ func (m *WebsitesHubModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			case "enter":
 				if m.SelectedCount() > 1 {
-					m.state = WebsitesHubBatchDeleteConfirm
-					m.deleteConfirmChoice = false
+					m.state = WebsitesHubBatchActions
+					m.actionCursor = 0
+					m.statusMsg = ""
 					return m, nil
 				}
 				if len(m.candidates) > 0 {
@@ -294,6 +314,41 @@ func (m *WebsitesHubModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
+
+		case WebsitesHubBatchActions:
+			switch str {
+			case "up", "k":
+				if m.actionCursor > 0 {
+					m.actionCursor--
+				}
+				return m, nil
+			case "down", "j":
+				if m.actionCursor < len(BatchWebsiteActions)-1 {
+					m.actionCursor++
+				}
+				return m, nil
+			case "esc":
+				m.state = WebsitesHubList
+				m.statusMsg = ""
+				return m, nil
+			case "enter":
+				switch BatchWebsiteActions[m.actionCursor] {
+				case WebsiteActionBackup:
+					m.state = WebsitesHubBackupStrategy
+					m.backupStrategyCursor = 0
+					m.batchStrategyMode = true
+					m.statusMsg = ""
+					return m, nil
+				case WebsiteActionDelete:
+					m.state = WebsitesHubBatchDeleteConfirm
+					m.deleteConfirmChoice = false
+					return m, nil
+				case WebsiteActionBack:
+					m.state = WebsitesHubList
+					m.statusMsg = ""
+					return m, nil
+				}
+			}
 		case WebsitesHubActions:
 			switch str {
 			case "up", "k":
@@ -350,6 +405,7 @@ func (m *WebsitesHubModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				case WebsiteActionBackup:
 					m.state = WebsitesHubBackupStrategy
 					m.backupStrategyCursor = 0
+					m.batchStrategyMode = false
 					m.statusMsg = ""
 					return m, nil
 				case WebsiteActionDelete:
@@ -595,15 +651,24 @@ func (m *WebsitesHubModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			case "esc":
-				m.state = WebsitesHubActions
+				m.exitBackupStrategyMenu()
 				return m, nil
 			case "enter":
 				if m.backupStrategyCursor == 2 { // Back
-					m.state = WebsitesHubActions
+					m.exitBackupStrategyMenu()
+					return m, nil
+				}
+				strategy := m.backupStrategies[m.backupStrategyCursor]
+				if m.batchStrategyMode {
+					cands := m.SelectedCandidates()
+					m.batchStrategyMode = false
+					m.state = WebsitesHubList
+					if m.OnBatchBackup != nil {
+						return m, m.OnBatchBackup(cands, strategy)
+					}
 					return m, nil
 				}
 				cand := m.SelectedCandidate()
-				strategy := m.backupStrategies[m.backupStrategyCursor]
 				m.state = WebsitesHubList
 				if m.OnBackup != nil {
 					return m, m.OnBackup(cand, strategy)
@@ -612,8 +677,16 @@ func (m *WebsitesHubModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	}
-
 	return m, nil
+}
+
+func (m *WebsitesHubModel) exitBackupStrategyMenu() {
+	if m.batchStrategyMode {
+		m.state = WebsitesHubBatchActions
+		m.actionCursor = 0
+		return
+	}
+	m.state = WebsitesHubActions
 }
 
 func (m *WebsitesHubModel) appendAdminChar(c string) {
@@ -721,6 +794,19 @@ func (m *WebsitesHubModel) Render(width, height int) string {
 		} else if m.catalogWarning != "" {
 			sb.WriteString("\n  " + StyleWarning.Render(m.catalogWarning) + "\n")
 		}
+	case WebsitesHubBatchActions:
+		sb.WriteString(StyleFocus.Render(fmt.Sprintf("  Selected Websites: %d", m.SelectedCount())) + "\n\n")
+		sb.WriteString(lipgloss.NewStyle().Bold(true).Render("  Select Batch Action:") + "\n")
+		for i, act := range BatchWebsiteActions {
+			cursor := "  "
+			label := string(act)
+			if i == m.actionCursor {
+				cursor = StyleFocus.Render("> ")
+				label = StyleFocus.Render(label)
+			}
+			sb.WriteString(fmt.Sprintf("  %s%s\n", cursor, label))
+		}
+
 	case WebsitesHubBatchDeleteConfirm:
 		selected := m.SelectedCandidates()
 		sb.WriteString(StyleError.Render("  ⚠ Delete Selected Websites?") + "\n\n")
@@ -853,11 +939,14 @@ func (m *WebsitesHubModel) Render(width, height int) string {
 			sb.WriteString(fmt.Sprintf("  %s%s\n", cursor, label))
 		}
 	case WebsitesHubBackupStrategy:
-		cand := m.SelectedCandidate()
-		sb.WriteString(StyleFocus.Render("  Backup Website: "+cand.Slug) + "\n")
-		sb.WriteString(fmt.Sprintf("    Directory: %s\n", cand.Path))
-		sb.WriteString(fmt.Sprintf("    URL:       %s\n\n", m.siteURL(cand.Slug)))
-
+		if m.batchStrategyMode {
+			sb.WriteString(StyleFocus.Render(fmt.Sprintf("  Backup Selected Websites: %d", m.SelectedCount())) + "\n\n")
+		} else {
+			cand := m.SelectedCandidate()
+			sb.WriteString(StyleFocus.Render("  Backup Website: "+cand.Slug) + "\n")
+			sb.WriteString(fmt.Sprintf("    Directory: %s\n", cand.Path))
+			sb.WriteString(fmt.Sprintf("    URL:       %s\n\n", m.siteURL(cand.Slug)))
+		}
 		sb.WriteString(lipgloss.NewStyle().Bold(true).Render("  Select Backup Format:") + "\n")
 		opts := []string{
 			"Full source code & database (.zip)",

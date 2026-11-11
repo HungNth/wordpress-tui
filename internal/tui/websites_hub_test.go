@@ -451,7 +451,7 @@ func TestWebsitesHub_Render_RespectsEnvironment(t *testing.T) {
 	}
 }
 
-func TestWebsitesHub_SelectAllAndEnterBatchDelete(t *testing.T) {
+func TestWebsitesHub_SelectAllAndBatchActionChooser(t *testing.T) {
 	sitesDir, slugs := createTestWebsites(t, 3)
 	cfg := config.DefaultConfig(sitesDir)
 	cfg.AppName = config.AppNameHerd
@@ -459,7 +459,7 @@ func TestWebsitesHub_SelectAllAndEnterBatchDelete(t *testing.T) {
 	cfg.WebsitesPath = sitesDir
 	hub := tui.NewWebsitesHubModel(cfg)
 
-	// 1. Press 'a' to select all
+	// 1. Press 'a' to select all, then 'a' again to deselect all
 	hub.Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
 	if hub.SelectedCount() != 3 {
 		t.Fatalf("expected 3 selected after 'a', got %d", hub.SelectedCount())
@@ -469,50 +469,124 @@ func TestWebsitesHub_SelectAllAndEnterBatchDelete(t *testing.T) {
 			t.Errorf("expected %s to be selected", slug)
 		}
 	}
-
-	// 2. Press 'a' again to deselect all
 	hub.Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
 	if hub.SelectedCount() != 0 {
 		t.Fatalf("expected 0 selected after second 'a', got %d", hub.SelectedCount())
 	}
 
-	// 3. When SelectedCount <= 1, Enter opens single website details
+	// 2. Enter with 0 selected opens single Website details
 	hub.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if hub.State() != tui.WebsitesHubActions {
-		t.Fatalf("expected WebsitesHubActions when SelectedCount <= 1, got %v", hub.State())
+		t.Fatalf("expected WebsitesHubActions when SelectedCount == 0, got %v", hub.State())
 	}
-
-	// Return to list
 	hub.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
-	if hub.State() != tui.WebsitesHubList {
-		t.Fatalf("expected WebsitesHubList after Esc, got %v", hub.State())
-	}
 
-	// 4. Select 2 sites with Space
+	// 3. Select 1 site: Enter still opens single Website details, while 'd' goes directly to batch delete confirm
 	hub.Update(tea.KeyPressMsg{Code: ' ', Text: " "}) // site 1
-	hub.Update(tea.KeyPressMsg{Code: 'j', Text: "j"}) // down
-	hub.Update(tea.KeyPressMsg{Code: ' ', Text: " "}) // site 2
+	hub.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if hub.State() != tui.WebsitesHubActions {
+		t.Fatalf("expected WebsitesHubActions when SelectedCount == 1, got %v", hub.State())
+	}
+	hub.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+
+	hub.Update(tea.KeyPressMsg{Code: 'd', Text: "d"})
+	if hub.State() != tui.WebsitesHubBatchDeleteConfirm {
+		t.Fatalf("expected 'd' shortcut to go directly to WebsitesHubBatchDeleteConfirm, got %v", hub.State())
+	}
+	hub.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+
+	// 4. Select a 2nd site -> Enter opens WebsitesHubBatchActions with Backup first & focused, Delete second
+	hub.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
+	hub.Update(tea.KeyPressMsg{Code: ' ', Text: " "})
 	if hub.SelectedCount() != 2 {
 		t.Fatalf("expected 2 selected sites, got %d", hub.SelectedCount())
 	}
-
-	// 5. Press Enter with 2 sites selected -> directly goes to WebsitesHubBatchDeleteConfirm
 	hub.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	if hub.State() != tui.WebsitesHubBatchDeleteConfirm {
-		t.Fatalf("expected WebsitesHubBatchDeleteConfirm when Enter pressed with 2 sites selected, got %v", hub.State())
+	if hub.State() != tui.WebsitesHubBatchActions {
+		t.Fatalf("expected WebsitesHubBatchActions when Enter pressed with >1 selected, got %v", hub.State())
+	}
+	if hub.SelectedAction() != tui.WebsiteActionBackup {
+		t.Fatalf("expected Backup focused first in batch chooser, got %q", hub.SelectedAction())
+	}
+	batchView := hub.Render(80, 24)
+	if strings.Index(batchView, "Backup") > strings.Index(batchView, "Delete") {
+		t.Errorf("expected Backup listed before Delete in batch chooser:\n%s", batchView)
 	}
 
-	// Verify single confirmation execution
+	// 5. Esc and Back from batch chooser return to list preserving selection
+	hub.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if hub.State() != tui.WebsitesHubList || hub.SelectedCount() != 2 {
+		t.Fatalf("expected WebsitesHubList with 2 selected after Esc, got state=%v selected=%d", hub.State(), hub.SelectedCount())
+	}
+	hub.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	hub.Update(tea.KeyPressMsg{Code: 'j', Text: "j"}) // Delete
+	if hub.SelectedAction() != tui.WebsiteActionDelete {
+		t.Fatalf("expected Delete second in batch chooser, got %q", hub.SelectedAction())
+	}
+	hub.Update(tea.KeyPressMsg{Code: 'j', Text: "j"}) // Back
+	if hub.SelectedAction() != tui.WebsiteActionBack {
+		t.Fatalf("expected Back third in batch chooser, got %q", hub.SelectedAction())
+	}
+	hub.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if hub.State() != tui.WebsitesHubList || hub.SelectedCount() != 2 {
+		t.Fatalf("expected WebsitesHubList with 2 selected after Back, got state=%v selected=%d", hub.State(), hub.SelectedCount())
+	}
+
+	// 6. Choosing Backup enters WebsitesHubBackupStrategy; Esc and Back return to WebsitesHubBatchActions preserving selection
+	hub.Update(tea.KeyPressMsg{Code: tea.KeyEnter}) // BatchActions (Backup focused)
+	hub.Update(tea.KeyPressMsg{Code: tea.KeyEnter}) // Choose Backup -> Strategy
+	if hub.State() != tui.WebsitesHubBackupStrategy {
+		t.Fatalf("expected WebsitesHubBackupStrategy, got %v", hub.State())
+	}
+	stratView := hub.Render(80, 24)
+	if !strings.Contains(stratView, "Full source code & database (.zip)") || !strings.Contains(stratView, "All-in-One WP Migration (.wpress)") {
+		t.Errorf("expected both backup formats in strategy view, got:\n%s", stratView)
+	}
+	hub.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if hub.State() != tui.WebsitesHubBatchActions || hub.SelectedCount() != 2 {
+		t.Fatalf("expected Esc from batch strategy to return to WebsitesHubBatchActions with 2 selected, got state=%v selected=%d", hub.State(), hub.SelectedCount())
+	}
+
+	hub.Update(tea.KeyPressMsg{Code: tea.KeyEnter}) // Strategy again
+	hub.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
+	hub.Update(tea.KeyPressMsg{Code: 'j', Text: "j"}) // Back
+	hub.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if hub.State() != tui.WebsitesHubBatchActions || hub.SelectedCount() != 2 {
+		t.Fatalf("expected Back from batch strategy to return to WebsitesHubBatchActions with 2 selected, got state=%v selected=%d", hub.State(), hub.SelectedCount())
+	}
+
+	// 7. Selecting a strategy invokes OnBatchBackup immediately with selected slice and strategy
+	var batchBackedUp []deprovision.Candidate
+	var batchStrategy backup.BackupStrategy
+	hub.OnBatchBackup = func(cands []deprovision.Candidate, strategy backup.BackupStrategy) tea.Cmd {
+		batchBackedUp = cands
+		batchStrategy = strategy
+		return nil
+	}
+	hub.Update(tea.KeyPressMsg{Code: tea.KeyEnter}) // Strategy
+	hub.Update(tea.KeyPressMsg{Code: 'j', Text: "j"}) // AI1WM
+	hub.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if len(batchBackedUp) != 2 || batchBackedUp[0].Slug != slugs[0] || batchBackedUp[1].Slug != slugs[1] {
+		t.Fatalf("expected OnBatchBackup with [%s, %s], got %+v", slugs[0], slugs[1], batchBackedUp)
+	}
+	if batchStrategy != backup.StrategyAI1WM {
+		t.Fatalf("expected StrategyAI1WM, got %v", batchStrategy)
+	}
+
+	// 8. Choosing Delete from batch chooser enters existing batch Delete confirmation with default No
+	hub.Update(tea.KeyPressMsg{Code: tea.KeyEnter})   // BatchActions
+	hub.Update(tea.KeyPressMsg{Code: 'j', Text: "j"}) // Delete
+	hub.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if hub.State() != tui.WebsitesHubBatchDeleteConfirm || hub.DeleteConfirmChoice() {
+		t.Fatalf("expected WebsitesHubBatchDeleteConfirm with default No, got state=%v choice=%v", hub.State(), hub.DeleteConfirmChoice())
+	}
 	var deleted []deprovision.Candidate
 	hub.OnBatchDelete = func(cands []deprovision.Candidate) tea.Cmd {
 		deleted = cands
 		return nil
 	}
-
-	// Toggle choice to Yes (Right arrow) and press Enter
 	hub.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	hub.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-
 	if len(deleted) != 2 {
 		t.Fatalf("expected OnBatchDelete to be called with 2 candidates, got %d", len(deleted))
 	}

@@ -3,8 +3,10 @@ package app
 import (
 	"context"
 	"fmt"
+	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 
@@ -126,27 +128,34 @@ func (a *App) BuildAppModel(ctx context.Context) *tui.AppModel {
 
 	m.SetBackupHandler(func(cand deprovision.Candidate, strategy backup.BackupStrategy) tea.Cmd {
 		ch := make(chan tea.Msg, 128)
-		var steps []tui.ProgressStep
-		var title string
+		steps := backupStepsForStrategy(strategy)
+		title := fmt.Sprintf("Full Backup for %s", cand.Slug)
 		if strategy == backup.StrategyAI1WM {
-			steps = []tui.ProgressStep{
-				{ID: "preflight", Title: "Verify WordPress Site", Status: tui.StepStatusPending},
-				{ID: "extension", Title: "Verify AI1WM Extension", Status: tui.StepStatusPending},
-				{ID: "ai1wm_backup", Title: "Generate AI1WM Backup", Status: tui.StepStatusPending},
-				{ID: "relocate", Title: "Relocate Archive", Status: tui.StepStatusPending},
-			}
 			title = fmt.Sprintf("AI1WM Backup for %s", cand.Slug)
-		} else {
-			steps = []tui.ProgressStep{
-				{ID: "preflight", Title: "Verify WordPress Site", Status: tui.StepStatusPending},
-				{ID: "db_export", Title: "Export Database", Status: tui.StepStatusPending},
-				{ID: "archive", Title: "Create Backup Archive", Status: tui.StepStatusPending},
-				{ID: "cleanup", Title: "Cleanup Staging", Status: tui.StepStatusPending},
-			}
-			title = fmt.Sprintf("Full Backup for %s", cand.Slug)
 		}
-		cmd := m.StartProgressWithChannel(title, steps, ch)
-		go a.runBackupExecution(ctx, cand, strategy, ch)
+		opCtx, cancel := context.WithCancel(ctx)
+		cmd := m.StartProgressWithCancel(title, steps, ch, cancel)
+		go func() {
+			defer cancel()
+			a.runBackupExecution(opCtx, cand, strategy, ch)
+		}()
+		return cmd
+	})
+
+	m.SetBatchBackupHandler(func(cands []deprovision.Candidate, strategy backup.BackupStrategy) tea.Cmd {
+		if len(cands) == 0 {
+			return nil
+		}
+		selected := slices.Clone(cands)
+		ch := make(chan tea.Msg, 256)
+		steps := backupStepsForStrategy(strategy)
+		title := batchBackupTitle(strategy, 1, len(selected), selected[0].Slug)
+		opCtx, cancel := context.WithCancel(ctx)
+		cmd := m.StartProgressWithCancel(title, steps, ch, cancel)
+		go func() {
+			defer cancel()
+			a.runBatchBackupExecution(opCtx, selected, strategy, ch)
+		}()
 		return cmd
 	})
 
@@ -403,130 +412,315 @@ func (a *App) runRestoreExecution(ctx context.Context, strategy restore.Strategy
 	}
 }
 
-func (a *App) runBackupExecution(ctx context.Context, cand deprovision.Candidate, strategy backup.BackupStrategy, ch chan<- tea.Msg) {
-	defer close(ch)
+func backupStepsForStrategy(strategy backup.BackupStrategy) []tui.ProgressStep {
+	if strategy == backup.StrategyAI1WM {
+		return []tui.ProgressStep{
+			{ID: "preflight", Title: "Verify WordPress Site", Status: tui.StepStatusPending},
+			{ID: "extension", Title: "Verify AI1WM Extension", Status: tui.StepStatusPending},
+			{ID: "ai1wm_backup", Title: "Generate AI1WM Backup", Status: tui.StepStatusPending},
+			{ID: "relocate", Title: "Relocate Archive", Status: tui.StepStatusPending},
+		}
+	}
+	return []tui.ProgressStep{
+		{ID: "preflight", Title: "Verify WordPress Site", Status: tui.StepStatusPending},
+		{ID: "db_export", Title: "Export Database", Status: tui.StepStatusPending},
+		{ID: "archive", Title: "Create Backup Archive", Status: tui.StepStatusPending},
+		{ID: "cleanup", Title: "Cleanup Staging", Status: tui.StepStatusPending},
+	}
+}
 
+func batchBackupTitle(strategy backup.BackupStrategy, idx, total int, slug string) string {
+	if strategy == backup.StrategyAI1WM {
+		return fmt.Sprintf("AI1WM Backup (%d/%d): %s", idx, total, slug)
+	}
+	return fmt.Sprintf("Full Backup (%d/%d): %s", idx, total, slug)
+}
+
+func backupFormatLabel(strategy backup.BackupStrategy) string {
+	if strategy == backup.StrategyAI1WM {
+		return "All-in-One WP Migration (.wpress)"
+	}
+	return "Full Source Code & Database (.zip)"
+}
+
+func (a *App) executeWebsiteBackup(
+	ctx context.Context,
+	cand deprovision.Candidate,
+	strategy backup.BackupStrategy,
+	backupPath string,
+	pkgResolver backup.PackageResolver,
+	client *wpcli.Client,
+	ch chan<- tea.Msg,
+) (res *backup.BackupResult, err error, preflightFailed bool) {
+	if err := ctx.Err(); err != nil {
+		return nil, err, false
+	}
+	ch <- tui.StepStartMsg{ID: "preflight", Title: "Verifying WordPress directory and configuration..."}
+	if _, err := os.Stat(cand.Path); err != nil {
+		ch <- tui.StepCompleteMsg{ID: "preflight", Status: tui.StepStatusFailed, Detail: "Directory missing"}
+		return nil, errors.New("Website directory not found"), true
+	}
+	wpConfigPath := filepath.Join(cand.Path, "wp-config.php")
+	if _, err := os.Stat(wpConfigPath); err != nil {
+		ch <- tui.StepCompleteMsg{ID: "preflight", Status: tui.StepStatusFailed, Detail: "wp-config.php missing"}
+		return nil, errors.New("wp-config.php not found"), true
+	}
+	ch <- tui.StepCompleteMsg{ID: "preflight", Status: tui.StepStatusSuccess, Detail: "Validated"}
+
+	runner := a.backupRunnerFn
+	if runner == nil {
+		runner = func(runCtx context.Context, target deprovision.Candidate, strat backup.BackupStrategy, destDir string, onProgress backup.ProgressFunc) (*backup.BackupResult, error) {
+			if strat == backup.StrategyAI1WM {
+				return backup.RunAI1WMBackup(runCtx, target.Path, target.Slug, destDir, a.config.BackupExcludes, pkgResolver, client, onProgress)
+			}
+			return backup.RunFullBackup(runCtx, target.Path, target.Slug, destDir, a.config.BackupExcludes, client, onProgress)
+		}
+	}
+
+	activeStep := "db_export"
+	initTitle := "Exporting database..."
+	finalStep, finalDetail := "cleanup", "Cleaned"
+	if strategy == backup.StrategyAI1WM {
+		activeStep = "extension"
+		initTitle = "Verifying AI1WM extension plugin..."
+		finalStep, finalDetail = "relocate", "Relocated"
+	}
+
+	ch <- tui.StepStartMsg{ID: activeStep, Title: initTitle}
+	progress := func(step, total int, message string) {
+		ch <- tui.LogLineMsg(a.redactSecrets(message))
+		if strategy == backup.StrategyAI1WM {
+			switch step {
+			case 1:
+				activeStep = "extension"
+				ch <- tui.StepStartMsg{ID: "extension", Title: message}
+			case 2:
+				ch <- tui.StepCompleteMsg{ID: "extension", Status: tui.StepStatusSuccess, Detail: "Verified"}
+				activeStep = "ai1wm_backup"
+				ch <- tui.StepStartMsg{ID: "ai1wm_backup", Title: message}
+			case 3:
+				ch <- tui.StepCompleteMsg{ID: "ai1wm_backup", Status: tui.StepStatusSuccess, Detail: "Generated"}
+				activeStep = "relocate"
+				ch <- tui.StepStartMsg{ID: "relocate", Title: message}
+			}
+			return
+		}
+		switch step {
+		case 1:
+			activeStep = "db_export"
+			ch <- tui.StepStartMsg{ID: "db_export", Title: message}
+		case 2:
+			ch <- tui.StepCompleteMsg{ID: "db_export", Status: tui.StepStatusSuccess, Detail: "Exported"}
+			activeStep = "archive"
+			ch <- tui.StepStartMsg{ID: "archive", Title: message}
+		case 3, 4:
+			ch <- tui.StepCompleteMsg{ID: "archive", Status: tui.StepStatusSuccess, Detail: "Archived"}
+			activeStep = "cleanup"
+			ch <- tui.StepStartMsg{ID: "cleanup", Title: message}
+		}
+	}
+
+	res, err = runner(ctx, cand, strategy, backupPath, progress)
+	if err != nil {
+		if errors.Is(err, context.Canceled) || ctx.Err() != nil {
+			ch <- tui.StepCompleteMsg{ID: activeStep, Status: tui.StepStatusWarning, Detail: "Cancelled"}
+		} else {
+			cause := a.redactSecrets(packages.SanitizeError(err).Error())
+			ch <- tui.StepCompleteMsg{ID: activeStep, Status: tui.StepStatusFailed, Detail: cause}
+		}
+		return nil, err, false
+	}
+	ch <- tui.StepCompleteMsg{ID: finalStep, Status: tui.StepStatusSuccess, Detail: finalDetail}
+	return res, nil, false
+}
+
+func (a *App) resolveBackupEnv(ctx context.Context) (string, backup.PackageResolver, *wpcli.Client) {
 	client := wpcli.NewClientForConfig(a.config)
 	backupPath := strings.TrimSpace(a.config.BackupPath)
 	if backupPath == "" {
 		backupPath = filepath.Join(a.config.WebsitesPath, "backups")
 	}
-
-	// 1. Preflight
-	ch <- tui.StepStartMsg{ID: "preflight", Title: "Verifying WordPress directory and configuration..."}
-	if _, err := os.Stat(cand.Path); err != nil {
-		ch <- tui.StepCompleteMsg{ID: "preflight", Status: tui.StepStatusFailed, Detail: "Directory missing"}
-		ch <- tui.OperationCompleteMsg{
-			Title:   "Backup Failed",
-			Success: false,
-			Summary: fmt.Sprintf("Directory:    %s\nError:        Website directory not found", cand.Path),
-		}
-		return
-	}
-
-	wpConfigPath := filepath.Join(cand.Path, "wp-config.php")
-	if _, err := os.Stat(wpConfigPath); err != nil {
-		ch <- tui.StepCompleteMsg{ID: "preflight", Status: tui.StepStatusFailed, Detail: "wp-config.php missing"}
-		ch <- tui.OperationCompleteMsg{
-			Title:   "Backup Failed",
-			Success: false,
-			Summary: fmt.Sprintf("Directory:    %s\nError:        wp-config.php not found", cand.Path),
-		}
-		return
-	}
-	ch <- tui.StepCompleteMsg{ID: "preflight", Status: tui.StepStatusSuccess, Detail: "Validated"}
-
 	var pkgResolver backup.PackageResolver
 	if strings.TrimSpace(a.config.PackagesAPIURL) != "" {
-		pkgCache, err := packages.NewCacheWithContext(ctx)
-		if err == nil {
+		if pkgCache, err := packages.NewCacheWithContext(ctx); err == nil {
 			pkgResolver = packages.NewResolver(a.config, pkgCache)
 		}
 	}
+	return backupPath, pkgResolver, client
+}
 
-	if strategy == backup.StrategyAI1WM {
-		ch <- tui.StepStartMsg{ID: "extension", Title: "Verifying AI1WM extension plugin..."}
-		progress := func(step, total int, message string) {
-			ch <- tui.LogLineMsg(message)
-			switch step {
-			case 1:
-				ch <- tui.StepStartMsg{ID: "extension", Title: message}
-			case 2:
-				ch <- tui.StepCompleteMsg{ID: "extension", Status: tui.StepStatusSuccess, Detail: "Verified"}
-				ch <- tui.StepStartMsg{ID: "ai1wm_backup", Title: message}
-			case 3:
-				ch <- tui.StepCompleteMsg{ID: "ai1wm_backup", Status: tui.StepStatusSuccess, Detail: "Generated"}
-				ch <- tui.StepStartMsg{ID: "relocate", Title: message}
-			}
-		}
+func (a *App) runBackupExecution(ctx context.Context, cand deprovision.Candidate, strategy backup.BackupStrategy, ch chan<- tea.Msg) {
+	defer close(ch)
 
-		res, err := backup.RunAI1WMBackup(ctx, cand.Path, cand.Slug, backupPath, a.config.BackupExcludes, pkgResolver, client, progress)
-		if err != nil {
-			ch <- tui.StepCompleteMsg{ID: "ai1wm_backup", Status: tui.StepStatusFailed, Detail: err.Error()}
+	backupPath, pkgResolver, client := a.resolveBackupEnv(ctx)
+	res, err, preflightFailed := a.executeWebsiteBackup(ctx, cand, strategy, backupPath, pkgResolver, client, ch)
+	if err != nil {
+		if errors.Is(err, context.Canceled) || ctx.Err() != nil {
 			ch <- tui.OperationCompleteMsg{
-				Title:   "AI1WM Backup Failed",
+				Title:   "Backup Cancelled",
 				Success: false,
-				Summary: err.Error(),
+				Warning: true,
+				Summary: a.formatSingleBackupFailureSummary(cand, err),
 			}
 			return
 		}
-
-		ch <- tui.StepCompleteMsg{ID: "relocate", Status: tui.StepStatusSuccess, Detail: "Relocated"}
-		summaryLines := []string{
-			fmt.Sprintf("URL:          %s", a.siteURL(cand.Slug)),
-			fmt.Sprintf("Directory:    %s", cand.Path),
-			"Format:       All-in-One WP Migration (.wpress)",
-			fmt.Sprintf("Archive:      %s", res.FilePath),
-			fmt.Sprintf("Size:         %s (%d bytes)", tui.FormatBytes(res.FileSize), res.FileSize),
+		failTitle := "Full Backup Failed"
+		if preflightFailed {
+			failTitle = "Backup Failed"
+		} else if strategy == backup.StrategyAI1WM {
+			failTitle = "AI1WM Backup Failed"
 		}
 		ch <- tui.OperationCompleteMsg{
-			Title:   "AI1WM Backup Created Successfully",
-			Success: true,
-			Summary: strings.Join(summaryLines, "\n"),
-		}
-		return
-	}
-
-	// StrategyFull
-	ch <- tui.StepStartMsg{ID: "db_export", Title: "Exporting database..."}
-	progress := func(step, total int, message string) {
-		ch <- tui.LogLineMsg(message)
-		switch step {
-		case 1:
-			ch <- tui.StepStartMsg{ID: "db_export", Title: message}
-		case 2:
-			ch <- tui.StepCompleteMsg{ID: "db_export", Status: tui.StepStatusSuccess, Detail: "Exported"}
-			ch <- tui.StepStartMsg{ID: "archive", Title: message}
-		case 3, 4:
-			ch <- tui.StepCompleteMsg{ID: "archive", Status: tui.StepStatusSuccess, Detail: "Archived"}
-			ch <- tui.StepStartMsg{ID: "cleanup", Title: message}
-		}
-	}
-
-	res, err := backup.RunFullBackup(ctx, cand.Path, cand.Slug, backupPath, a.config.BackupExcludes, client, progress)
-	if err != nil {
-		ch <- tui.StepCompleteMsg{ID: "archive", Status: tui.StepStatusFailed, Detail: err.Error()}
-		ch <- tui.OperationCompleteMsg{
-			Title:   "Full Backup Failed",
+			Title:   failTitle,
 			Success: false,
-			Summary: err.Error(),
+			Summary: a.formatSingleBackupFailureSummary(cand, err),
 		}
 		return
 	}
 
-	ch <- tui.StepCompleteMsg{ID: "cleanup", Status: tui.StepStatusSuccess, Detail: "Cleaned"}
+	successTitle := "Full Backup Created Successfully"
+	if strategy == backup.StrategyAI1WM {
+		successTitle = "AI1WM Backup Created Successfully"
+	}
 	summaryLines := []string{
 		fmt.Sprintf("URL:          %s", a.siteURL(cand.Slug)),
 		fmt.Sprintf("Directory:    %s", cand.Path),
-		"Format:       Full Source Code & Database (.zip)",
+		fmt.Sprintf("Format:       %s", backupFormatLabel(strategy)),
 		fmt.Sprintf("Archive:      %s", res.FilePath),
 		fmt.Sprintf("Size:         %s (%d bytes)", tui.FormatBytes(res.FileSize), res.FileSize),
 	}
 	ch <- tui.OperationCompleteMsg{
-		Title:   "Full Backup Created Successfully",
+		Title:   successTitle,
 		Success: true,
 		Summary: strings.Join(summaryLines, "\n"),
 	}
+}
+
+func (a *App) runBatchBackupExecution(ctx context.Context, cands []deprovision.Candidate, strategy backup.BackupStrategy, ch chan<- tea.Msg) {
+	defer close(ch)
+
+	backupPath, pkgResolver, client := a.resolveBackupEnv(ctx)
+	total := len(cands)
+	summaryLines := []string{
+		fmt.Sprintf("Format:       %s", backupFormatLabel(strategy)),
+	}
+
+	succeeded := 0
+	failed := 0
+	cancelled := false
+
+	for i, cand := range cands {
+		if ctx.Err() != nil {
+			cancelled = true
+			for j := i; j < total; j++ {
+				summaryLines = append(summaryLines, fmt.Sprintf("[-] %s — Skipped (batch cancelled)", cands[j].Slug))
+			}
+			break
+		}
+		if i > 0 {
+			ch <- tui.ProgressResetStepsMsg{
+				Title: batchBackupTitle(strategy, i+1, total, cand.Slug),
+				Steps: backupStepsForStrategy(strategy),
+			}
+		}
+		ch <- tui.LogLineMsg(fmt.Sprintf("=== (%d/%d) %s ===", i+1, total, cand.Slug))
+		res, err, _ := a.executeWebsiteBackup(ctx, cand, strategy, backupPath, pkgResolver, client, ch)
+		if err != nil {
+			if errors.Is(err, context.Canceled) || ctx.Err() != nil {
+				cancelled = true
+				summaryLines = append(summaryLines, fmt.Sprintf("[!] %s — Cancelled", cand.Slug))
+				summaryLines = a.appendBatchArtifactDetails(summaryLines, err)
+				ch <- tui.LogLineMsg(fmt.Sprintf("Cancelled %s; skipping %d queued website(s).", cand.Slug, total-i-1))
+				for j := i + 1; j < total; j++ {
+					summaryLines = append(summaryLines, fmt.Sprintf("[-] %s — Skipped (batch cancelled)", cands[j].Slug))
+				}
+				break
+			}
+			failed++
+			cause := a.redactSecrets(packages.SanitizeError(err).Error())
+			summaryLines = append(summaryLines, fmt.Sprintf("[✗] %s — %s", cand.Slug, cause))
+			summaryLines = a.appendBatchArtifactDetails(summaryLines, err)
+			continue
+		}
+		succeeded++
+		summaryLines = append(summaryLines, fmt.Sprintf("[✓] %s — %s (%s, %d bytes)", cand.Slug, res.FilePath, tui.FormatBytes(res.FileSize), res.FileSize))
+	}
+
+	if ctx.Err() != nil {
+		cancelled = true
+	}
+
+	var title string
+	var success, warning bool
+	switch {
+	case cancelled:
+		title = "Batch Backup Cancelled"
+		warning = true
+	case succeeded > 0 && failed == 0:
+		title = "Batch Backup Complete"
+		success = true
+	case succeeded > 0 && failed > 0:
+		title = "Batch Backup Completed with Warnings"
+		warning = true
+	default:
+		title = "Batch Backup Failed"
+	}
+
+	ch <- tui.OperationCompleteMsg{
+		Title:   title,
+		Success: success,
+		Warning: warning,
+		Summary: strings.Join(summaryLines, "\n"),
+	}
+}
+
+func (a *App) appendBatchArtifactDetails(lines []string, err error) []string {
+	artErr, ok := errors.AsType[*backup.ArtifactError](err)
+	if !ok {
+		return lines
+	}
+	if artErr.ConflictPath != "" {
+		lines = append(lines, fmt.Sprintf("  Conflict: %s", a.redactSecrets(artErr.ConflictPath)))
+	}
+	if artErr.Artifact.Path != "" {
+		lines = append(lines, fmt.Sprintf("  Retained: %s", a.redactSecrets(artErr.Artifact.Path)))
+	}
+	if artErr.Artifact.CleanupOutcome != "" {
+		lines = append(lines, fmt.Sprintf("  Cleanup: %s", a.redactSecrets(artErr.Artifact.CleanupOutcome)))
+	}
+	return lines
+}
+
+func (a *App) redactSecrets(text string) string {
+	if a.config == nil || text == "" {
+		return text
+	}
+	for _, secret := range []string{a.config.DBPassword, a.config.PackagesAPIKey, a.config.DefaultAdminPassword} {
+		if s := strings.TrimSpace(secret); s != "" {
+			text = strings.ReplaceAll(text, s, "REDACTED")
+		}
+	}
+	return text
+}
+
+func (a *App) formatSingleBackupFailureSummary(cand deprovision.Candidate, err error) string {
+	cause := a.redactSecrets(packages.SanitizeError(err).Error())
+	lines := []string{
+		fmt.Sprintf("Directory:    %s", a.redactSecrets(cand.Path)),
+		fmt.Sprintf("Error:        %s", cause),
+	}
+	if artErr, ok := errors.AsType[*backup.ArtifactError](err); ok {
+		if artErr.ConflictPath != "" {
+			lines = append(lines, fmt.Sprintf("Conflict:     %s", a.redactSecrets(artErr.ConflictPath)))
+		}
+		if artErr.Artifact.Path != "" {
+			lines = append(lines, fmt.Sprintf("Retained:     %s", a.redactSecrets(artErr.Artifact.Path)))
+		}
+		if artErr.Artifact.CleanupOutcome != "" {
+			lines = append(lines, fmt.Sprintf("Cleanup:      %s", a.redactSecrets(artErr.Artifact.CleanupOutcome)))
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (a *App) runDeleteExecution(ctx context.Context, cands []deprovision.Candidate, ch chan<- tea.Msg) {

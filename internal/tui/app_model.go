@@ -18,6 +18,7 @@ import (
 type CreateHandlerFunc func(inputs CreateInputs, packages []string) tea.Cmd
 type RestoreHandlerFunc func(strategy restore.Strategy, archivePath string, inputs CreateInputs) tea.Cmd
 type BackupHandlerFunc func(candidate deprovision.Candidate, strategy backup.BackupStrategy) tea.Cmd
+type BatchBackupHandlerFunc func(candidates []deprovision.Candidate, strategy backup.BackupStrategy) tea.Cmd
 type DeleteHandlerFunc func(candidates []deprovision.Candidate) tea.Cmd
 type ConfigHandlerFunc func(candidate deprovision.Candidate) tea.Cmd
 type ChangeAdminHandlerFunc func(cand deprovision.Candidate, username, password, email string) tea.Cmd
@@ -59,6 +60,10 @@ func (m *AppModel) contentWidth() int {
 	return w
 }
 
+func (m *AppModel) contentInnerHeight() int {
+	return max(6, max(10, m.height-4)-4)
+}
+
 type SidebarItem struct {
 	Section     Section
 	Title       string
@@ -92,10 +97,13 @@ type AppModel struct {
 	isExecuting       bool
 	catalog           []packages.CatalogItem
 	checker           SlugAvailabilityChecker
-	opEventChan       <-chan tea.Msg
-	onCreate          CreateHandlerFunc
-	onRestore         RestoreHandlerFunc
+	opEventChan            <-chan tea.Msg
+	cancelOp               context.CancelFunc
+	clearSelectionOnFinish bool
+	onCreate               CreateHandlerFunc
+	onRestore              RestoreHandlerFunc
 	onBackup          BackupHandlerFunc
+	onBatchBackup     BatchBackupHandlerFunc
 	onDelete          DeleteHandlerFunc
 	onConfig          ConfigHandlerFunc
 	onChangeAdmin     ChangeAdminHandlerFunc
@@ -160,6 +168,13 @@ func (m *AppModel) wireHubCallbacks() {
 	m.websitesHub.OnBackup = func(cand deprovision.Candidate, strategy backup.BackupStrategy) tea.Cmd {
 		if m.onBackup != nil {
 			return m.onBackup(cand, strategy)
+		}
+		return nil
+	}
+	m.websitesHub.OnBatchBackup = func(cands []deprovision.Candidate, strategy backup.BackupStrategy) tea.Cmd {
+		if m.onBatchBackup != nil {
+			m.clearSelectionOnFinish = true
+			return m.onBatchBackup(cands, strategy)
 		}
 		return nil
 	}
@@ -256,6 +271,10 @@ func (m *AppModel) SetBackupHandler(fn BackupHandlerFunc) {
 	m.onBackup = fn
 }
 
+func (m *AppModel) SetBatchBackupHandler(fn BatchBackupHandlerFunc) {
+	m.onBatchBackup = fn
+}
+
 func (m *AppModel) SetDeleteHandler(fn DeleteHandlerFunc) {
 	m.onDelete = fn
 	m.wireDeleteCallbacks()
@@ -274,8 +293,9 @@ func (m *AppModel) SetInstallPackagesHandler(fn InstallPackagesHandlerFunc) {
 }
 
 func (m *AppModel) StartProgress(title string, steps []ProgressStep) tea.Cmd {
+	m.cancelOp = nil
 	m.progressMonitor = NewProgressMonitorModel(title, steps)
-	m.progressMonitor.SetSize(m.contentWidth(), m.height-4)
+	m.progressMonitor.SetSize(m.contentWidth(), m.contentInnerHeight())
 	m.isExecuting = true
 	m.focus = FocusContent
 	return m.progressMonitor.Init()
@@ -285,6 +305,12 @@ func (m *AppModel) StartProgressWithChannel(title string, steps []ProgressStep, 
 	m.opEventChan = ch
 	cmd := m.StartProgress(title, steps)
 	return tea.Batch(cmd, waitForOpEvent(ch))
+}
+
+func (m *AppModel) StartProgressWithCancel(title string, steps []ProgressStep, ch <-chan tea.Msg, cancel context.CancelFunc) tea.Cmd {
+	cmd := m.StartProgressWithChannel(title, steps, ch)
+	m.cancelOp = cancel
+	return cmd
 }
 
 func waitForOpEvent(ch <-chan tea.Msg) tea.Cmd {
@@ -326,11 +352,11 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		if m.progressMonitor != nil {
-			m.progressMonitor.SetSize(m.contentWidth(), m.height-4)
+			m.progressMonitor.SetSize(m.contentWidth(), m.contentInnerHeight())
 		}
 		return m, nil
 
-	case StepStartMsg, StepCompleteMsg, LogLineMsg, OperationCompleteMsg:
+	case StepStartMsg, StepCompleteMsg, LogLineMsg, OperationCompleteMsg, ProgressResetStepsMsg:
 		if m.isExecuting && m.progressMonitor != nil {
 			newPM, _ := m.progressMonitor.Update(msg)
 			m.progressMonitor = newPM.(*ProgressMonitorModel)
@@ -349,20 +375,37 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.KeyPressMsg:
 		str := msg.String()
-		if str == "ctrl+c" {
-			return m, tea.Quit
-		}
-
 		if m.isExecuting && m.progressMonitor != nil {
+			if !m.progressMonitor.IsCompleted() {
+				if (str == "q" || str == "ctrl+c") && m.cancelOp != nil {
+					m.cancelOp()
+					return m, nil
+				}
+				if str == "ctrl+c" {
+					return m, tea.Quit
+				}
+				newPM, cmd := m.progressMonitor.Update(msg)
+				m.progressMonitor = newPM.(*ProgressMonitorModel)
+				return m, cmd
+			}
+
+			if str == "ctrl+c" {
+				return m, tea.Quit
+			}
 			newPM, cmd := m.progressMonitor.Update(msg)
 			m.progressMonitor = newPM.(*ProgressMonitorModel)
 			if m.progressMonitor.IsFinished() {
 				m.isExecuting = false
 				m.progressMonitor = nil
 				m.opEventChan = nil
+				m.cancelOp = nil
 				if m.websitesHub != nil {
 					m.websitesHub.Refresh()
+					if m.clearSelectionOnFinish {
+						m.websitesHub.ClearSelection()
+					}
 				}
+				m.clearSelectionOnFinish = false
 				if m.deleteModel != nil {
 					m.deleteModel.Refresh()
 					m.deleteModel.ResetSelection()
@@ -380,6 +423,10 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			return m, cmd
+		}
+
+		if str == "ctrl+c" {
+			return m, tea.Quit
 		}
 
 		switch m.focus {
@@ -587,7 +634,7 @@ func (m *AppModel) View() tea.View {
 
 	var contentBody string
 	if m.isExecuting && m.progressMonitor != nil {
-		contentBody = m.progressMonitor.Render(contentWidth, bodyHeight)
+		contentBody = m.progressMonitor.Render(contentWidth, m.contentInnerHeight())
 	} else if m.activeSec == SectionWebsites && m.websitesHub != nil {
 		contentBody = m.websitesHub.Render(contentWidth, bodyHeight)
 	} else if m.activeSec == SectionCreate && m.createWizard != nil {
@@ -611,6 +658,8 @@ func (m *AppModel) View() tea.View {
 	if m.isExecuting {
 		if m.progressMonitor != nil && m.progressMonitor.IsCompleted() {
 			footerHelp = "  Press [ Enter / Esc ] to return"
+		} else if m.cancelOp != nil {
+			footerHelp = "  Running... · Up/Down/PgUp/PgDown Scroll · q/Ctrl+C Cancel"
 		} else {
 			footerHelp = "  Operation running... · Viewport: Up/Down/PgUp/PgDown scroll"
 		}
@@ -620,9 +669,15 @@ func (m *AppModel) View() tea.View {
 		if m.activeSec == SectionWebsites && m.websitesHub != nil {
 			switch m.websitesHub.State() {
 			case WebsitesHubList:
-				footerHelp = "  Up/Down (j/k) Navigate · Space Select · a Toggle All · Enter Details/Delete · Esc Sidebar"
+				if m.websitesHub.SelectedCount() > 1 {
+					footerHelp = "  Up/Down Navigate · Space Select · a All · d Delete · Enter Actions · Esc Back"
+				} else {
+					footerHelp = "  Up/Down Navigate · Space Select · a All · d Delete · Enter Details · Esc Back"
+				}
 			case WebsitesHubActions:
 				footerHelp = "  Up/Down (j/k) Select Action · Enter Run · Esc Back to List"
+			case WebsitesHubBatchActions:
+				footerHelp = "  Up/Down (j/k) Navigate · Enter Select · Esc Back to List"
 			case WebsitesHubInstallPlugins, WebsitesHubInstallThemes:
 				footerHelp = "  Type to filter · Up/Down Navigate · Space Toggle · Enter Confirm · Esc Cancel"
 			case WebsitesHubThemeActivateConfirm:

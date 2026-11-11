@@ -2,8 +2,10 @@ package tui_test
 
 import (
 	"os"
+	"regexp"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"wptui/internal/config"
 	"wptui/internal/packages"
@@ -376,4 +378,143 @@ func contentLeadingSpaces(line string) int {
 	s := plain.String()
 	trimmed := strings.TrimLeft(s, " ")
 	return len(s) - len(trimmed)
+}
+
+func TestAppModel_ActiveOperationCancelAndFocusLock(t *testing.T) {
+	tempDir := t.TempDir()
+	cfg := config.DefaultConfig(tempDir)
+	m := tui.NewAppModel(cfg)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	ch := make(chan tea.Msg, 16)
+	cancelCalls := 0
+	steps := []tui.ProgressStep{
+		{ID: "step1", Title: "Export Database", Status: tui.StepStatusRunning},
+	}
+	m.StartProgressWithCancel("Full Backup (1/2): alpha", steps, ch, func() {
+		cancelCalls++
+	})
+
+	view := m.ViewString()
+	if !strings.Contains(view, "Cancel") {
+		t.Errorf("expected running footer to advertise cancellation at 80x24, got:\n%s", view)
+	}
+
+	// Esc and Tab must not break focus lock while running
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	if !m.IsExecuting() || m.Focus() != tui.FocusContent {
+		t.Fatalf("expected focus locked in content pane during execution")
+	}
+
+	// Pressing 'q' and 'ctrl+c' cancels the active operation without quitting TUI while cleanup runs
+	_, quitCmd := m.Update(tea.KeyPressMsg{Code: 'q', Text: "q"})
+	if quitCmd != nil {
+		t.Fatalf("expected 'q' during active operation not to return tea.Quit")
+	}
+	_, quitCmd = m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	if quitCmd != nil {
+		t.Fatalf("expected 'ctrl+c' during active operation not to return tea.Quit")
+	}
+	if cancelCalls != 2 {
+		t.Fatalf("expected cancel callback invoked for both q and ctrl+c, got %d", cancelCalls)
+	}
+	if !m.IsExecuting() {
+		t.Fatalf("expected model to stay in executing state until cleanup emits OperationCompleteMsg")
+	}
+
+	// Finish cleanup and verify dismissal re-enables normal state
+	m.Update(tui.OperationCompleteMsg{
+		Title:   "Batch Backup Cancelled",
+		Warning: true,
+		Summary: "[!] alpha — Cancelled",
+	})
+	if !m.ProgressMonitor().IsCompleted() {
+		t.Fatalf("expected progress monitor completed after OperationCompleteMsg")
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.IsExecuting() {
+		t.Fatalf("expected progress monitor dismissed after Enter")
+	}
+}
+
+func TestAppModel_ProgressMonitorFits80x24AndScrollsLongReport(t *testing.T) {
+	ansiRe := regexp.MustCompile(`\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07]*\x07`)
+	assertFits80x24 := func(label, raw string) string {
+		t.Helper()
+		clean := ansiRe.ReplaceAllString(raw, "")
+		lines := strings.Split(strings.TrimRight(clean, "\n"), "\n")
+		if len(lines) > 24 {
+			t.Fatalf("%s: expected <= 24 lines at 80x24, got %d:\n%s", label, len(lines), clean)
+		}
+		for i, line := range lines {
+			line = strings.TrimRight(line, "\r")
+			if w := utf8.RuneCountInString(line); w > 80 {
+				t.Fatalf("%s: line %d width %d > 80 cols: %q\n%s", label, i+1, w, line, clean)
+			}
+		}
+		return clean
+	}
+
+	cfg := config.DefaultConfig(t.TempDir())
+	m := tui.NewAppModel(cfg)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	ch := make(chan tea.Msg, 32)
+	steps := []tui.ProgressStep{
+		{ID: "preflight", Title: "Verifying WordPress directory and configuration...", Status: tui.StepStatusSuccess, Detail: "Validated"},
+		{ID: "extension", Title: "Verifying all-in-one-wp-migration-unlimited-extension...", Status: tui.StepStatusFailed, Detail: "package resolver is not configured (Packages API URL missing) and all-in-one-wp-migration-unlimited-extension is not installed"},
+		{ID: "backup", Title: "Generate AI1WM Backup", Status: tui.StepStatusPending},
+		{ID: "relocate", Title: "Relocate Archive", Status: tui.StepStatusPending},
+	}
+	m.StartProgressWithCancel("AI1WM Backup (3/6): charlie", steps, ch, func() {})
+	for _, line := range []string{
+		"[alpha] Generated archive alpha.wpress",
+		"[bravo-collide] Destination collision detected",
+		"[charlie] Verifying all-in-one-wp-migration-unlimited-extension...",
+	} {
+		m.Update(tui.LogLineMsg(line))
+	}
+
+	assertFits80x24("running-80x24", m.ViewString())
+
+	longSummary := strings.Join([]string{
+		"Format: All-in-One WP Migration (.wpress)",
+		"[✓] alpha — ai1wm_alpha_2026-11-11_10-00-00.wpress (12.4 MB, 1.2s)",
+		"[✗] bravo-collide — destination archive already exists",
+		`  Conflict: C:\Users\Hung\AppData\Local\Temp\wptui-very-long-directory-name\backups\ai1wm_bravo-collide_2026-11-11_10-00-00.wpress`,
+		`  Retained: C:\Users\Hung\AppData\Local\Temp\wptui-very-long-directory-name\Sites\bravo-collide\wp-content\ai1wm-backups\bravo-collide-20261111.wpress (.wpress archive)`,
+		"[✓] charlie — ai1wm_charlie_2026-11-11_10-00-05.wpress (8.1 MB, 0.9s)",
+		"[✓] delta — ai1wm_delta_2026-11-11_10-00-09.wpress (9.0 MB, 1.0s)",
+		"[✓] echo — ai1wm_echo_2026-11-11_10-00-12.wpress (7.5 MB, 0.8s)",
+		"[✓] foxtrot — ai1wm_foxtrot_2026-11-11_10-00-15.wpress (11.2 MB, 1.1s)",
+	}, "\n")
+	m.Update(tui.OperationCompleteMsg{
+		Title:   "Batch Backup Completed with Warnings",
+		Warning: true,
+		Summary: longSummary,
+	})
+
+	initialCompleted := assertFits80x24("completed-initial-80x24", m.ViewString())
+	if !strings.Contains(initialCompleted, "Batch Backup Completed with Warnings") {
+		t.Fatalf("expected completion heading visible initially at 80x24, got:\n%s", initialCompleted)
+	}
+
+	// Scroll down to reach tail items and return prompt while remaining strictly <= 80x24
+	for range 5 {
+		m.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
+	}
+	bottomCompleted := assertFits80x24("completed-bottom-80x24", m.ViewString())
+	if !strings.Contains(bottomCompleted, "foxtrot") {
+		t.Fatalf("expected scrolling down to reveal tail website 'foxtrot', got:\n%s", bottomCompleted)
+	}
+
+	// Scroll up to reach stepper/logs at top while remaining strictly <= 80x24
+	for range 8 {
+		m.Update(tea.KeyPressMsg{Code: tea.KeyPgUp})
+	}
+	topCompleted := assertFits80x24("completed-top-80x24", m.ViewString())
+	if !strings.Contains(topCompleted, "AI1WM Backup (3/6): charlie") {
+		t.Fatalf("expected scrolling up to reveal progress title at top, got:\n%s", topCompleted)
+	}
 }
