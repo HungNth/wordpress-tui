@@ -3,12 +3,16 @@ package wpcli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"wptui/internal/config"
+	"wptui/internal/localenv"
 )
 
 type DBConnection struct {
@@ -48,12 +52,12 @@ func (r *DefaultRunner) LookPath(file string) (string, error) {
 
 type Client struct {
 	runner Runner
+	env    localenv.Environment
+	envErr error
 }
 
 func NewClient() *Client {
-	return &Client{
-		runner: &DefaultRunner{},
-	}
+	return NewClientWithRunner(&DefaultRunner{})
 }
 
 func NewClientWithRunner(r Runner) *Client {
@@ -61,16 +65,40 @@ func NewClientWithRunner(r Runner) *Client {
 		runner: r,
 	}
 }
+
+func NewClientForConfig(cfg *config.Config) *Client {
+	return NewClientWithRunnerForConfig(&DefaultRunner{}, cfg)
+}
+
+func NewClientWithRunnerForConfig(r Runner, cfg *config.Config) *Client {
+	c := &Client{
+		runner: r,
+	}
+	if cfg == nil {
+		c.envErr = errors.New("config is nil")
+		return c
+	}
+	env, err := localenv.NewFromConfig(cfg)
+	if err != nil {
+		c.envErr = err
+		return c
+	}
+	c.env = env
+	return c
+}
+
 func (c *Client) Run(ctx context.Context, dir string, name string, args []string, stdin string) (string, string, error) {
 	return c.runner.Run(ctx, dir, name, args, stdin)
 }
 
-func (c *Client) CheckDependencies(usedHerd bool) error {
-	required := []string{"php", "wp", "mysql"}
-	if usedHerd {
-		required = append(required, "herd")
+func (c *Client) CheckDependencies() error {
+	if c.envErr != nil {
+		return c.envErr
 	}
-
+	if c.env != nil {
+		return c.env.CheckDependencies(context.Background(), c.runner)
+	}
+	required := []string{"php", "wp", "mysql"}
 	var missing []string
 	for _, bin := range required {
 		if _, err := c.runner.LookPath(bin); err != nil {
@@ -80,23 +108,6 @@ func (c *Client) CheckDependencies(usedHerd bool) error {
 
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required executable(s) in PATH: %s", strings.Join(missing, ", "))
-	}
-	return nil
-}
-
-// Deprecated: WordPress core is now acquired and extracted natively via internal/core.
-func (c *Client) CoreDownload(ctx context.Context, dir, locale string) error {
-	// Passing --skip-content instructs WP-CLI to download the core zip archive
-	// directly from WordPress.org without default bundled themes or plugins,
-	// extracting cleanly via ZipArchive across Windows and Herd while avoiding
-	// the unsupported combination of positional URL with --skip-content.
-	args := []string{"core", "download", "--skip-content"}
-	if locale != "" {
-		args = append(args, "--locale="+locale)
-	}
-	_, stderr, err := c.runner.Run(ctx, dir, "wp", args, "")
-	if err != nil {
-		return fmt.Errorf("wp core download failed: %w (output: %s)", err, strings.TrimSpace(stderr))
 	}
 	return nil
 }
@@ -194,43 +205,54 @@ func (c *Client) CoreInstall(ctx context.Context, dir, url, title, adminUser, ad
 	return nil
 }
 
-func (c *Client) HerdSecure(ctx context.Context, dir, slug string) error {
-	_, stderr, err := c.runner.Run(ctx, dir, "herd", []string{"secure", slug}, "")
-	if err != nil {
-		return fmt.Errorf("herd secure failed: %w (output: %s)", err, strings.TrimSpace(stderr))
+func (c *Client) EnvironmentRegister(ctx context.Context, dir, slug string) (bool, error) {
+	if c.envErr != nil {
+		return false, c.envErr
 	}
-	return nil
+	if c.env == nil {
+		return false, errors.New("environment is not configured")
+	}
+	return c.env.Register(ctx, c.runner, dir, slug)
 }
 
-func (c *Client) HerdUnsecure(ctx context.Context, dir, slug string) error {
-	_, stderr, err := c.runner.Run(ctx, dir, "herd", []string{"unsecure", slug}, "")
-	if err != nil {
-		return fmt.Errorf("herd unsecure failed: %w (output: %s)", err, strings.TrimSpace(stderr))
+func (c *Client) EnvironmentSecure(ctx context.Context, dir, slug string) error {
+	if c.envErr != nil {
+		return c.envErr
 	}
-	return nil
+	if c.env == nil {
+		return errors.New("environment is not configured")
+	}
+	return c.env.Secure(ctx, c.runner, dir, slug)
 }
+
+func (c *Client) EnvironmentUnsecure(ctx context.Context, dir, slug string) error {
+	if c.envErr != nil {
+		return c.envErr
+	}
+	if c.env == nil {
+		return errors.New("environment is not configured")
+	}
+	return c.env.Unsecure(ctx, c.runner, dir, slug)
+}
+
+func (c *Client) EnvironmentUnregister(ctx context.Context, dir, slug string) error {
+	if c.envErr != nil {
+		return c.envErr
+	}
+	if c.env == nil {
+		return errors.New("environment is not configured")
+	}
+	return c.env.Unregister(ctx, c.runner, dir, slug)
+}
+
 func (c *Client) IsSiteSecured(ctx context.Context, slug string) (bool, error) {
-	stdout, stderr, err := c.runner.Run(ctx, "", "herd", []string{"secured"}, "")
-	if err != nil {
-		return false, fmt.Errorf("failed to check herd secured sites: %w (output: %s)", err, strings.TrimSpace(stderr))
+	if c.envErr != nil {
+		return false, c.envErr
 	}
-	targetDomain := strings.ToLower(slug + ".test")
-	lines := strings.Split(stdout, "\n")
-	for _, l := range lines {
-		trimmed := strings.ToLower(strings.TrimSpace(l))
-		trimmed = strings.Trim(trimmed, "| \t\r")
-		trimmed = strings.TrimSpace(trimmed)
-		if strings.HasPrefix(trimmed, "+-") || strings.HasPrefix(trimmed, "site") {
-			continue
-		}
-		parts := strings.Fields(trimmed)
-		for _, part := range parts {
-			if part == targetDomain {
-				return true, nil
-			}
-		}
+	if c.env == nil {
+		return false, errors.New("environment is not configured")
 	}
-	return false, nil
+	return c.env.IsSiteSecured(ctx, c.runner, slug)
 }
 
 func sanitizeStderr(stderr string, secrets ...string) string {

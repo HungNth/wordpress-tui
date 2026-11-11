@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"wptui/internal/config"
 	"wptui/internal/wpcli"
 )
 
@@ -44,9 +45,6 @@ func TestWPCLIClient_Flow(t *testing.T) {
 	ctx := context.Background()
 	dir := "/var/www/test-site"
 
-	if err := client.CoreDownload(ctx, dir, "en_US"); err != nil {
-		t.Fatal(err)
-	}
 	conn := wpcli.DBConnection{
 		Host: "localhost",
 		Port: 3306,
@@ -65,7 +63,6 @@ func TestWPCLIClient_Flow(t *testing.T) {
 	}
 
 	expectedCalls := []string{
-		"wp core download --skip-content --locale=en_US",
 		"wp config create --dbname=test-db --dbuser=root --dbhost=localhost:3306 --prompt=dbpass --skip-check",
 		"wp db create",
 		"wp core install --url=http://test-site.test --title=Test Site --admin_user=admin --admin_email=admin@admin.com --skip-email --prompt=admin_password",
@@ -82,11 +79,11 @@ func TestWPCLIClient_Flow(t *testing.T) {
 	}
 
 	// Verify stdin contained passwords
-	if runner.stdin[1] != "secret\n" {
-		t.Errorf("expected stdin 'secret\\n', got %q", runner.stdin[1])
+	if runner.stdin[0] != "secret\n" {
+		t.Errorf("expected stdin 'secret\\n', got %q", runner.stdin[0])
 	}
-	if runner.stdin[3] != "adminpass\n" {
-		t.Errorf("expected stdin 'adminpass\\n', got %q", runner.stdin[3])
+	if runner.stdin[2] != "adminpass\n" {
+		t.Errorf("expected stdin 'adminpass\\n', got %q", runner.stdin[2])
 	}
 }
 
@@ -130,8 +127,15 @@ func TestWPCLIClient_CheckDatabaseExists(t *testing.T) {
 
 func TestWPCLIClient_IsSiteSecured(t *testing.T) {
 	runner := &mockRunner{}
-	client := wpcli.NewClientWithRunner(runner)
+	unconfigured := wpcli.NewClientWithRunner(runner)
 	ctx := context.Background()
+
+	if _, err := unconfigured.IsSiteSecured(ctx, "existing-secure"); err == nil {
+		t.Errorf("expected error on unconfigured client IsSiteSecured, got nil")
+	}
+
+	cfg := &config.Config{AppName: config.AppNameHerd, AppCommand: "herd"}
+	client := wpcli.NewClientWithRunnerForConfig(runner, cfg)
 
 	secured, err := client.IsSiteSecured(ctx, "existing-secure")
 	if err != nil || !secured {
@@ -141,6 +145,39 @@ func TestWPCLIClient_IsSiteSecured(t *testing.T) {
 	secured, err = client.IsSiteSecured(ctx, "unsecured-site")
 	if err != nil || secured {
 		t.Errorf("expected unsecured-site to NOT be secured, got %v", secured)
+	}
+}
+
+func TestWPCLIClient_UnconfiguredEnvironmentErrors(t *testing.T) {
+	runner := &mockRunner{}
+	client := wpcli.NewClientWithRunner(runner)
+	ctx := context.Background()
+
+	if _, err := client.EnvironmentRegister(ctx, "/dir", "slug"); err == nil {
+		t.Errorf("expected error from EnvironmentRegister on unconfigured client")
+	}
+	if err := client.EnvironmentSecure(ctx, "/dir", "slug"); err == nil {
+		t.Errorf("expected error from EnvironmentSecure on unconfigured client")
+	}
+	if err := client.EnvironmentUnsecure(ctx, "/dir", "slug"); err == nil {
+		t.Errorf("expected error from EnvironmentUnsecure on unconfigured client")
+	}
+	if err := client.EnvironmentUnregister(ctx, "/dir", "slug"); err == nil {
+		t.Errorf("expected error from EnvironmentUnregister on unconfigured client")
+	}
+}
+
+func TestWPCLIClient_CheckDependencies(t *testing.T) {
+	runner := &mockRunner{}
+	client := wpcli.NewClientWithRunner(runner)
+	if err := client.CheckDependencies(); err != nil {
+		t.Fatalf("unexpected dependency check failure: %v", err)
+	}
+
+	cfg := &config.Config{AppName: config.AppNameHerd, AppCommand: "herd"}
+	configured := wpcli.NewClientWithRunnerForConfig(runner, cfg)
+	if err := configured.CheckDependencies(); err != nil {
+		t.Fatalf("unexpected configured dependency check failure: %v", err)
 	}
 }
 
@@ -209,5 +246,31 @@ func TestWPCLIClient_RestoreOperations(t *testing.T) {
 	}
 	if !foundOptionGet {
 		t.Error("expected wp option get call")
+	}
+}
+func TestWPCLIClient_InvalidConfigStoredError(t *testing.T) {
+	runner := &mockRunner{}
+	cfg := &config.Config{AppName: config.AppNameHerd, AppCommand: ""}
+	client := wpcli.NewClientWithRunnerForConfig(runner, cfg)
+
+	if err := client.CheckDependencies(); err == nil {
+		t.Errorf("expected CheckDependencies to fail on invalid config")
+	}
+
+	ctx := context.Background()
+	if _, err := client.EnvironmentRegister(ctx, "/dir", "slug"); err == nil {
+		t.Errorf("expected EnvironmentRegister to return stored config error")
+	}
+	if err := client.EnvironmentSecure(ctx, "/dir", "slug"); err == nil {
+		t.Errorf("expected EnvironmentSecure to return stored config error")
+	}
+	if err := client.EnvironmentUnsecure(ctx, "/dir", "slug"); err == nil {
+		t.Errorf("expected EnvironmentUnsecure to return stored config error")
+	}
+	if err := client.EnvironmentUnregister(ctx, "/dir", "slug"); err == nil {
+		t.Errorf("expected EnvironmentUnregister to return stored config error")
+	}
+	if _, err := client.IsSiteSecured(ctx, "slug"); err == nil {
+		t.Errorf("expected IsSiteSecured to return stored config error")
 	}
 }
