@@ -100,6 +100,10 @@ _Avoid_: Package overwriter, package refresher
 The menu workflow that facilitates system-level maintenance tasks, including launching an external editor for the configuration file and opening the system cache directory.
 _Avoid_: Preferences, options, app config
 
+**Application Update Check**:
+A read-only comparison between the running WPTUI release and the remote application manifest that reports whether a newer release exists and links to it without downloading or installing anything.
+_Avoid_: Update, self-update, automatic update
+
 **External Launcher**:
 The platform-aware subsystem responsible for safely launching external tools such as code editors and file managers.
 _Avoid_: Shell runner, process spawner

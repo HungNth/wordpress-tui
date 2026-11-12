@@ -86,6 +86,15 @@ Run WPTUI directly from your terminal:
 wptui
 ```
 
+### Command-Line Flags
+
+Pass at most one action flag to run a non-interactive CLI action without launching the TUI or loading `config.json`:
+
+- `-v`, `--version`: Print the installed WPTUI release version.
+- `-u`, `--update`: Perform a read-only **Application Update Check** against the canonical `main` branch manifest and print the GitHub Release link when a newer version exists; it never downloads or installs a release.
+- `-c`, `--config`: Print the expected absolute path to `config.json` without creating directories or files.
+- `-h`, `--help`: Print command-line usage.
+
 ### First-Run Configuration
 
 When launched for the first time, WPTUI automatically starts an interactive configuration wizard to establish your local development paths, database credentials, and preferences. Configuration is saved locally to:
