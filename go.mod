@@ -3,6 +3,7 @@ module wptui
 go 1.27.0
 
 require (
+	golang.org/x/mod v0.43.0
 	charm.land/bubbles/v2 v2.0.0 // indirect
 	charm.land/bubbletea/v2 v2.0.2 // indirect
 	charm.land/huh/v2 v2.0.3 // indirect
