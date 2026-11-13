@@ -80,7 +80,7 @@ func DefaultConfig(homeDir string) *Config {
 		WPTweaks: []WPTweak{
 			{Type: TweakTypeConfigSet, Key: "WP_DEBUG", Value: "true", Raw: true},
 			{Type: TweakTypeConfigSet, Key: "WP_DEBUG_LOG", Value: "true", Raw: true},
-			{Type: TweakTypeConfigSet, Key: "WP_DEBUG_DISPLAY", Value: "true", Raw: true},
+			{Type: TweakTypeConfigSet, Key: "WP_DEBUG_DISPLAY", Value: "false", Raw: true},
 			{Type: TweakTypeConfigSet, Key: "WP_MEMORY_LIMIT", Value: "256M", Raw: false},
 			{Type: TweakTypeConfigSet, Key: "AUTOSAVE_INTERVAL", Value: "600", Raw: true},
 			{Type: TweakTypeConfigSet, Key: "WP_POST_REVISIONS", Value: "5", Raw: true},

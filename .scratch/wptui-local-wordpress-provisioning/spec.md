@@ -122,7 +122,7 @@ The Package Cache keeps one verified archive per Package type and slug in the op
 - Seed `default_theme_slug` as `flatsome`.
 - Seed theme choices for Flatsome (`flatsome`), Bricks (`bricks`), Etch Theme (`etch-theme`), Woodmart (`woodmart`), Avada (`Avada`), and Jannah (`jannah`).
 - Seed plugin choices for Advanced Custom Fields PRO (`advanced-custom-fields-pro`), All-in-One WP Migration Unlimited Extension (`all-in-one-wp-migration-unlimited-extension`), Rank Math SEO PRO (`seo-by-rank-math-pro`), UpdraftPlus (`updraftplus`), WP Mail SMTP Pro (`wp-mail-smtp-pro`), Admin and Site Enhancements Pro (`admin-site-enhancements-pro`), WP Rocket (`wp-rocket`), Perfmatters (`perfmatters`), Duplicator Pro (`duplicator-pro`), FluentCart Pro (`fluent-cart-pro`), Etch (`etch`), and Automatic.css (`automaticcss-plugin`).
-- Seed config tweaks for `WP_DEBUG=true`, `WP_DEBUG_LOG=true`, `WP_DEBUG_DISPLAY=true`, `WP_MEMORY_LIMIT='256M'`, `AUTOSAVE_INTERVAL=600`, `WP_POST_REVISIONS=5`, and `EMPTY_TRASH_DAYS=21`, preserving each configured raw/string mode.
+- Seed config tweaks for `WP_DEBUG=true`, `WP_DEBUG_LOG=true`, `WP_DEBUG_DISPLAY=false`, `WP_MEMORY_LIMIT='256M'`, `AUTOSAVE_INTERVAL=600`, `WP_POST_REVISIONS=5`, and `EMPTY_TRASH_DAYS=21`, preserving each configured raw/string mode.
 - Seed the permalink structure as `/%category%/%postname%/`.
 - Seed option updates for timezone `Asia/Ho_Chi_Minh`, time format `H:i`, date format `d/m/Y`, all configured image dimensions and crop values set to `0`, comment moderation enabled, pingback disabled, ping status closed, posts per page `30`, posts per RSS `210`, RSS excerpts enabled, and default avatar `identicon`.
 - Seed Vietnamese core language installation and activation as the final configured tweaks.

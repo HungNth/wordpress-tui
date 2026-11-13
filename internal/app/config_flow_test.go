@@ -4,7 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
+	"slices"
 	"testing"
 
 	"wptui/internal/app"
@@ -13,12 +13,20 @@ import (
 	"wptui/internal/tui"
 )
 
+type configSetCall struct {
+	key   string
+	value string
+	raw   bool
+}
+
 type mockSiteWPClient struct {
-	runs []string
+	runs       []string
+	configSets []configSetCall
 }
 
 func (m *mockSiteWPClient) ConfigSet(ctx context.Context, dir, key, value string, raw bool) error {
 	m.runs = append(m.runs, "config set "+key)
+	m.configSets = append(m.configSets, configSetCall{key: key, value: value, raw: raw})
 	return nil
 }
 func (m *mockSiteWPClient) RewriteStructure(ctx context.Context, dir, value string) error {
@@ -110,14 +118,10 @@ func TestApp_ConfigMenuRouting(t *testing.T) {
 
 func TestRunConfigFlowWithDeps_ApplyTweaks(t *testing.T) {
 	tempDir := t.TempDir()
-	siteDir := filepath.Join(tempDir, "mysite")
-	_ = os.MkdirAll(siteDir, 0755)
-
-	cfg := &config.Config{
-		WebsitesPath: tempDir,
-		WPTweaks: []config.WPTweak{
-			{Type: "config_set", Key: "WP_DEBUG", Value: "true"},
-		},
+	cfg := config.DefaultConfig(tempDir)
+	siteDir := filepath.Join(cfg.WebsitesPath, "mysite")
+	if err := os.MkdirAll(siteDir, 0755); err != nil {
+		t.Fatal(err)
 	}
 
 	mockCli := &mockSiteWPClient{}
@@ -141,19 +145,22 @@ func TestRunConfigFlowWithDeps_ApplyTweaks(t *testing.T) {
 			return tui.ActionBack, nil
 		},
 	}
-	err := app.RunConfigFlowWithDeps(context.Background(), cfg, deps)
-	if err != nil {
+	if err := app.RunConfigFlowWithDeps(t.Context(), cfg, deps); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	foundTweak := false
-	for _, run := range mockCli.runs {
-		if strings.Contains(run, "config set WP_DEBUG") {
-			foundTweak = true
-			break
-		}
+	expected := []configSetCall{
+		{key: "WP_DEBUG", value: "true", raw: true},
+		{key: "WP_DEBUG_LOG", value: "true", raw: true},
+		{key: "WP_DEBUG_DISPLAY", value: "false", raw: true},
+		{key: "WP_MEMORY_LIMIT", value: "256M", raw: false},
+		{key: "AUTOSAVE_INTERVAL", value: "600", raw: true},
+		{key: "WP_POST_REVISIONS", value: "5", raw: true},
+		{key: "EMPTY_TRASH_DAYS", value: "21", raw: true},
 	}
-	if !foundTweak {
-		t.Errorf("expected tweak to be executed, got: %v", mockCli.runs)
+	for _, want := range expected {
+		if !slices.Contains(mockCli.configSets, want) {
+			t.Errorf("expected config set %+v, got: %+v", want, mockCli.configSets)
+		}
 	}
 }
