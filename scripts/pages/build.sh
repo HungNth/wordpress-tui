@@ -92,6 +92,8 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 cp -R "$SITE_DIR"/. "$STAGE_DIR"/
+rm -f "$STAGE_DIR"/*.tape "$STAGE_DIR/.DS_Store" "$STAGE_DIR/Thumbs.db"
+: > "$STAGE_DIR/.nojekyll"
 
 awk -v ver="$MANIFEST_VERSION" '{ gsub(/__WPTUI_VERSION__/, ver); print }' \
     "$SITE_DIR/index.html" > "$STAGE_DIR/index.html.tmp"

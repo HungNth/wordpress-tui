@@ -7,7 +7,7 @@
   --text: #edf2f7;
   --muted: #9fb0c3;
   --wp-blue: #2271b1;
-  --wp-blue-hover: #2c86ce;
+  --wp-blue-hover: #1b5e96;
   --accent: #4aa8e8;
   --focus: #38d9f5;
   --ok: #34d399;
@@ -306,6 +306,7 @@ h1 {
 .section {
   padding-block: 3rem;
   border-bottom: 1px solid var(--border);
+  scroll-margin-top: 1.5rem;
 }
 
 .section-head {
@@ -328,6 +329,7 @@ h1 {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   overflow: hidden;
+  aspect-ratio: 1080 / 600;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
 }
 
@@ -584,6 +586,7 @@ body.js-enabled .panel-heading {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   overflow: hidden;
+  aspect-ratio: 1080 / 600;
 }
 
 .screenshot-frame img {

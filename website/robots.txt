@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://hungnth.github.io/wordpress-tui/sitemap.xml

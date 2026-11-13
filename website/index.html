@@ -3,9 +3,23 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0b1017">
   <title>WPTUI: Manage local WordPress without leaving your terminal</title>
   <meta name="description" content="WordPress TUI (WPTUI) manages local WordPress Websites through an interactive terminal interface on macOS and Windows.">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="canonical" href="https://hungnth.github.io/wordpress-tui/">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="WPTUI">
+  <meta property="og:title" content="WPTUI: Manage local WordPress without leaving your terminal">
+  <meta property="og:description" content="WordPress TUI (WPTUI) manages local WordPress Websites through an interactive terminal interface on macOS and Windows.">
+  <meta property="og:url" content="https://hungnth.github.io/wordpress-tui/">
+  <meta property="og:image" content="https://hungnth.github.io/wordpress-tui/wptui-demo-preview.png">
+  <meta property="og:image:width" content="1080">
+  <meta property="og:image:height" content="600">
+  <meta property="og:image:alt" content="WPTUI terminal interface preview showing Websites Hub with local WordPress installations">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="styles.css?v=__WPTUI_VERSION__">
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to main content</a>
@@ -32,7 +46,7 @@
         <div class="hero-copy">
           <h1>Manage local WordPress without leaving your terminal.</h1>
           <p class="hero-lead">
-            WordPress TUI (WPTUI) manages local WordPress <strong>Websites</strong> through an interactive terminal interface, guiding you through Provisioning, Website Configuration, Website Backup, and Website Restoration across Laravel Herd, Flock, and Laragon.
+            WordPress TUI (WPTUI) manages local WordPress <strong>Websites</strong> from your terminal: Provisioning, Website Configuration, Website Backup, and Website Restoration for Laravel Herd, Flock, and Laragon.
           </p>
           <div class="hero-actions">
             <a class="btn btn-primary" href="#install">Install WPTUI</a>
@@ -61,9 +75,9 @@
     <section class="section section-demo" aria-labelledby="demo-heading">
       <div class="container">
         <div class="section-head">
-          <h2 id="demo-heading">Interactive terminal walkthrough</h2>
+          <h2 id="demo-heading">Terminal walkthrough</h2>
           <p>
-            Experience the Master-Detail terminal interface for managing local WordPress Websites.
+            Switching between Sidebar Navigation and Websites Hub, and multi-selecting local Websites with <code>Space</code>.
           </p>
         </div>
         <div class="demo-viewport">
@@ -73,6 +87,7 @@
             muted
             playsinline
             poster="wptui-demo-preview.png"
+            preload="metadata"
             width="1080"
             height="600"
             aria-label="WPTUI Master-Detail terminal interface demonstration"
@@ -90,7 +105,7 @@
         <div class="section-head">
           <h2 id="install-heading">Install WPTUI</h2>
           <p>
-            Install the latest stable Application Release (<a href="https://github.com/HungNth/wordpress-tui/releases/tag/v__WPTUI_VERSION__"><code>v__WPTUI_VERSION__</code></a>) using the official installer script for your platform.
+            Install stable Application Release (<a href="https://github.com/HungNth/wordpress-tui/releases/tag/v__WPTUI_VERSION__"><code>v__WPTUI_VERSION__</code></a>) for macOS or Windows.
           </p>
         </div>
 
@@ -260,9 +275,9 @@ Remove-Item install.ps1</code></pre>
     <section id="features" class="section" aria-labelledby="features-heading">
       <div class="container">
         <div class="section-head">
-          <h2 id="features-heading">Built for local WordPress workflows</h2>
+          <h2 id="features-heading">Core workflows</h2>
           <p>
-            Guided terminal workflows keep directories, MySQL databases, and local hostnames synchronized.
+            Every operation keeps Website files, MySQL databases, and local hostnames in sync.
           </p>
         </div>
 
@@ -270,9 +285,9 @@ Remove-Item install.ps1</code></pre>
           <article class="feature-row">
             <div class="feature-copy">
               <span class="feature-kicker">Provisioning</span>
-              <h3>Create local Websites with guided validation</h3>
+              <h3>Create local Websites with validated inputs</h3>
               <p>
-                Provision fresh WordPress installations through a structured terminal wizard. WPTUI creates the MySQL database, installs WordPress core, configures local <code>.test</code> domains with Laravel Herd, Flock, or Laragon, applies WordPress tweaks, and installs API-driven Packages.
+                WPTUI creates the MySQL database, installs WordPress core, registers a local <code>.test</code> domain in Laravel Herd, Flock, or Laragon, applies WordPress tweaks, and installs API-driven Packages.
               </p>
             </div>
             <figure class="feature-media screenshot-frame">
@@ -293,9 +308,9 @@ Remove-Item install.ps1</code></pre>
           <article class="feature-row feature-row-reverse">
             <div class="feature-copy">
               <span class="feature-kicker">Websites Hub</span>
-              <h3>Inspect and batch-select Websites instantly</h3>
+              <h3>Browse and batch-select local Websites</h3>
               <p>
-                Browse every local WordPress Website from one central hub without waiting on synchronous database checks. View local <code>.test</code> URLs, select multiple Websites with <code>Space</code>, and launch per-Website actions or batch operations from the Content Pane.
+                List local WordPress Websites without blocking on database checks. Inspect <code>.test</code> URLs, mark multiple Websites with <code>Space</code>, and run single or batch actions from the Content Pane.
               </p>
             </div>
             <figure class="feature-media screenshot-frame">
@@ -316,9 +331,9 @@ Remove-Item install.ps1</code></pre>
           <article class="feature-row">
             <div class="feature-copy">
               <span class="feature-kicker">Website Configuration</span>
-              <h3>Track every task in the In-Pane Progress Monitor</h3>
+              <h3>Track tasks in the In-Pane Progress Monitor</h3>
               <p>
-                Update existing Websites in place by toggling Website Debug Mode, reconciling administrator credentials, applying tweaks, or upgrading plugins and themes. The In-Pane Progress Monitor pairs a Task Stepper with a scrollable Log Viewport and clear summary.
+                Toggle Website Debug Mode, reset administrator credentials, apply tweaks, or upgrade plugins and themes in place. The In-Pane Progress Monitor displays a Task Stepper above a scrollable Log Viewport and completion summary.
               </p>
             </div>
             <figure class="feature-media screenshot-frame">
@@ -339,9 +354,9 @@ Remove-Item install.ps1</code></pre>
           <article class="feature-row feature-row-reverse">
             <div class="feature-copy">
               <span class="feature-kicker">Website Backup &amp; Restoration</span>
-              <h3>Archive and restore across ZIP and .wpress</h3>
+              <h3>Back up and restore ZIP or .wpress archives</h3>
               <p>
-                Export immutable Backup Archives as consolidated ZIP files or All-in-One WP Migration (<code>.wpress</code>) packages. During Website Restoration, point to any discovered backup or custom Restore Archive path to spin up a fresh, non-colliding Website with updated Website Registration.
+                Export Backup Archives as full ZIP files (code and SQL dump) or All-in-One WP Migration (<code>.wpress</code>) packages. Restore any discovered backup or custom Restore Archive path into a separate Website with its own database and Website Registration.
               </p>
             </div>
             <figure class="feature-media screenshot-frame">
@@ -382,7 +397,7 @@ Remove-Item install.ps1</code></pre>
         <article class="info-panel">
           <h2>Prerequisites</h2>
           <p class="muted-note">
-            WPTUI orchestrates native tools already available on your <code>PATH</code>:
+            WPTUI runs native tools from your <code>PATH</code>:
           </p>
           <ul class="clean-list">
             <li><code>php</code>: PHP CLI</li>
@@ -411,6 +426,6 @@ Remove-Item install.ps1</code></pre>
     </div>
   </footer>
 
-  <script src="script.js" defer></script>
+  <script src="script.js?v=__WPTUI_VERSION__" defer></script>
 </body>
 </html>

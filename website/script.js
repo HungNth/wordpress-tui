@@ -116,5 +116,6 @@
   if (demoVideo && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
     demoVideo.removeAttribute("autoplay");
     demoVideo.pause();
+    demoVideo.controls = true;
   }
 })();
