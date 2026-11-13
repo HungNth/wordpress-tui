@@ -158,3 +158,31 @@ func PromptCreateInputs(cfg *config.Config, checker ...SlugAvailabilityChecker) 
 
 	return inputs, nil
 }
+
+// PromptActiveTheme asks the user which installed theme to activate, or None.
+func PromptActiveTheme(themeSlugs []string) (string, error) {
+	if len(themeSlugs) == 0 {
+		return "", nil
+	}
+	options := make([]huh.Option[string], 0, len(themeSlugs)+1)
+	options = append(options, huh.NewOption("None (do not activate any theme)", ""))
+	for _, slug := range themeSlugs {
+		options = append(options, huh.NewOption(slug, slug))
+	}
+
+	var choice string
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Select Active Theme").
+				Description("Optionally choose which installed theme to activate").
+				Options(options...).
+				Value(&choice),
+		),
+	).WithTheme(CustomTheme())
+
+	if err := form.Run(); err != nil {
+		return "", err
+	}
+	return choice, nil
+}

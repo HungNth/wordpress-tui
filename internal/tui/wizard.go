@@ -350,3 +350,12 @@ func RunConfigWizard(homeDir string) (*config.Config, error) {
 
 	return ConvertInputsToConfig(inputs, homeDir)
 }
+
+// PrintProgress prints a step-prefixed status line for non-Bubble-Tea flows.
+func PrintProgress(step, total int, message string) {
+	if total > 0 {
+		fmt.Printf("  %s %s\n", StyleHighlight.Render(fmt.Sprintf("[%d/%d]", step, total)), message)
+	} else {
+		fmt.Printf("  %s %s\n", StyleHighlight.Render("[-]"), message)
+	}
+}

@@ -9,8 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"wptui/internal/config"
 	"wptui/internal/backup"
+	"wptui/internal/config"
 	"wptui/internal/create"
 	"wptui/internal/deprovision"
 	"wptui/internal/packages"
@@ -21,15 +21,14 @@ import (
 var ErrUserCancelled = errors.New("user cancelled")
 
 type Options struct {
-	HomeDir    string
-	WizardFn   func(homeDir string) (*config.Config, error)
-	AppRunner  func(ctx context.Context, model tea.Model) error
-	MenuFn     func() (string, error)
-	CreateFn   func(ctx context.Context, cfg *config.Config) error
-	DeleteFn   func(ctx context.Context, cfg *config.Config) error
-	ConfigFn   func(ctx context.Context, cfg *config.Config) error
-	SettingsFn func(ctx context.Context, cfg *config.Config, onReload func(*config.Config)) error
-	BackupFn   func(ctx context.Context, cfg *config.Config) error
+	HomeDir        string
+	WizardFn       func(homeDir string) (*config.Config, error)
+	AppRunner      func(ctx context.Context, model tea.Model) error
+	MenuFn         func() (string, error)
+	CreateFn       func(ctx context.Context, cfg *config.Config) error
+	DeleteFn       func(ctx context.Context, cfg *config.Config) error
+	SettingsFn     func(ctx context.Context, cfg *config.Config, onReload func(*config.Config)) error
+	BackupFn       func(ctx context.Context, cfg *config.Config) error
 	RestoreFn      func(ctx context.Context, cfg *config.Config) error
 	BackupRunnerFn BackupRunnerFunc
 }
@@ -37,17 +36,16 @@ type Options struct {
 type BackupRunnerFunc func(ctx context.Context, cand deprovision.Candidate, strategy backup.BackupStrategy, backupPath string, onProgress backup.ProgressFunc) (*backup.BackupResult, error)
 
 type App struct {
-	homeDir    string
-	cfgPath    string
-	config     *config.Config
-	wizardFn   func(homeDir string) (*config.Config, error)
-	appRunner  func(ctx context.Context, model tea.Model) error
-	menuFn     func() (string, error)
-	createFn   func(ctx context.Context, cfg *config.Config) error
-	deleteFn   func(ctx context.Context, cfg *config.Config) error
-	configFn   func(ctx context.Context, cfg *config.Config) error
-	settingsFn func(ctx context.Context, cfg *config.Config, onReload func(*config.Config)) error
-	backupFn   func(ctx context.Context, cfg *config.Config) error
+	homeDir        string
+	cfgPath        string
+	config         *config.Config
+	wizardFn       func(homeDir string) (*config.Config, error)
+	appRunner      func(ctx context.Context, model tea.Model) error
+	menuFn         func() (string, error)
+	createFn       func(ctx context.Context, cfg *config.Config) error
+	deleteFn       func(ctx context.Context, cfg *config.Config) error
+	settingsFn     func(ctx context.Context, cfg *config.Config, onReload func(*config.Config)) error
+	backupFn       func(ctx context.Context, cfg *config.Config) error
 	restoreFn      func(ctx context.Context, cfg *config.Config) error
 	backupRunnerFn BackupRunnerFunc
 }
@@ -83,11 +81,6 @@ func New(opts Options) *App {
 		dFn = RunDefaultDeleteFlow
 	}
 
-	cfgFn := opts.ConfigFn
-	if cfgFn == nil {
-		cfgFn = RunDefaultConfigFlow
-	}
-
 	sFn := opts.SettingsFn
 	if sFn == nil {
 		sFn = RunDefaultSettingsFlow
@@ -104,16 +97,15 @@ func New(opts Options) *App {
 	}
 
 	return &App{
-		homeDir:    home,
-		cfgPath:    cfgPath,
-		wizardFn:   wFn,
-		appRunner:  runner,
-		menuFn:     opts.MenuFn,
-		createFn:   cFn,
-		deleteFn:   dFn,
-		configFn:   cfgFn,
-		settingsFn: sFn,
-		backupFn:   bFn,
+		homeDir:        home,
+		cfgPath:        cfgPath,
+		wizardFn:       wFn,
+		appRunner:      runner,
+		menuFn:         opts.MenuFn,
+		createFn:       cFn,
+		deleteFn:       dFn,
+		settingsFn:     sFn,
+		backupFn:       bFn,
 		restoreFn:      rFn,
 		backupRunnerFn: opts.BackupRunnerFn,
 	}
@@ -520,10 +512,6 @@ func (a *App) runLegacyMenuLoop(ctx context.Context) error {
 		case "delete":
 			if err := a.deleteFn(ctx, a.config); err != nil {
 				fmt.Printf("Error deleting website: %v\n", err)
-			}
-		case "config":
-			if err := a.configFn(ctx, a.config); err != nil {
-				fmt.Printf("Error configuring website: %v\n", err)
 			}
 		case "settings":
 			if err := a.settingsFn(ctx, a.config, func(newCfg *config.Config) { a.config = newCfg }); err != nil {

@@ -8,8 +8,8 @@ import (
 
 func TestMenuItems(t *testing.T) {
 	items := tui.GetMenuItems()
-	if len(items) != 7 {
-		t.Fatalf("expected 7 menu items (create, config, delete, backup, restore, settings, exit), got %d", len(items))
+	if len(items) != 6 {
+		t.Fatalf("expected 6 menu items (create, delete, backup, restore, settings, exit), got %d", len(items))
 	}
 
 	createFound := false
@@ -20,9 +20,7 @@ func TestMenuItems(t *testing.T) {
 				t.Errorf("create item must be enabled")
 			}
 		} else if item.Key == "config" {
-			if item.Disabled {
-				t.Errorf("config item must be enabled")
-			}
+			t.Errorf("retired config item must not be present in legacy menu")
 		} else if item.Key == "delete" {
 			if item.Disabled {
 				t.Errorf("delete item must be enabled")

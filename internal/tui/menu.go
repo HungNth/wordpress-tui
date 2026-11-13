@@ -17,7 +17,6 @@ type MenuItem struct {
 func GetMenuItems() []MenuItem {
 	return []MenuItem{
 		{Key: "create", Title: "Create", Description: "Provision a new local WordPress website", Disabled: false},
-		{Key: "config", Title: "Config", Description: "Configure an existing website (tweaks, admin, packages)", Disabled: false},
 		{Key: "delete", Title: "Delete", Description: "De-provision and delete local WordPress websites", Disabled: false},
 		{Key: "backup", Title: "Backup", Description: "Backup an existing WordPress website (Full or AI1WM)", Disabled: false},
 		{Key: "restore", Title: "Restore", Description: "Restore website from backup (Full ZIP or AI1WM)", Disabled: false},

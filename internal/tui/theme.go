@@ -48,6 +48,7 @@ func AppTheme() *huh.Styles {
 
 	return theme
 }
+
 // CustomTheme returns the huh.Theme value for WPTUI forms.
 func CustomTheme() huh.Theme {
 	return huh.ThemeFunc(func(isDark bool) *huh.Styles {
