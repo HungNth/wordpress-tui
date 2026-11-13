@@ -2,13 +2,13 @@
 set -eu
 
 MANIFEST_PATH="manifest.json"
-SITE_DIR="site"
+SITE_DIR="website"
 OUT_DIR="_site"
 EXPECTED_TAG=""
 
 usage() {
     cat <<'EOF' >&2
-Usage: build.sh [--out DIR] [--tag TAG] [--manifest PATH] [--site DIR]
+Usage: build.sh [--out DIR] [--tag TAG] [--manifest PATH] [--website DIR]
 EOF
 }
 
@@ -29,7 +29,7 @@ while [ $# -gt 0 ]; do
             MANIFEST_PATH="$2"
             shift 2
             ;;
-        --site)
+        --website|--site)
             [ $# -ge 2 ] || { usage; exit 1; }
             SITE_DIR="$2"
             shift 2
@@ -57,7 +57,7 @@ command -v jq >/dev/null 2>&1 || {
 }
 
 [ -f "$SITE_DIR/index.html" ] || {
-    echo "error: site entrypoint not found at '$SITE_DIR/index.html'" >&2
+    echo "error: website entrypoint not found at '$SITE_DIR/index.html'" >&2
     exit 1
 }
 

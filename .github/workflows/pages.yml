@@ -31,7 +31,7 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
-      - name: Validate release and build site artifact
+      - name: Validate release and build website artifact
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}

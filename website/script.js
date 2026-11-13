@@ -111,4 +111,10 @@
       }
     });
   });
+
+  const demoVideo = document.querySelector(".demo-viewport video");
+  if (demoVideo && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    demoVideo.removeAttribute("autoplay");
+    demoVideo.pause();
+  }
 })();

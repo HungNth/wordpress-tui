@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WPTUI — Manage local WordPress without leaving your terminal</title>
+  <title>WPTUI: Manage local WordPress without leaving your terminal</title>
   <meta name="description" content="WordPress TUI (WPTUI) manages local WordPress Websites through an interactive terminal interface on macOS and Windows.">
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -30,28 +30,23 @@
     <section id="top" class="hero">
       <div class="container hero-grid">
         <div class="hero-copy">
-          <div class="hero-meta">
-            <a class="release-badge" href="https://github.com/HungNth/wordpress-tui/releases/tag/v__WPTUI_VERSION__">
-              Application Release v__WPTUI_VERSION__
-            </a>
-            <span class="platform-pill">macOS &amp; Windows (x64)</span>
-          </div>
           <h1>Manage local WordPress without leaving your terminal.</h1>
           <p class="hero-lead">
-            WordPress TUI (WPTUI) manages local WordPress <strong>Websites</strong> through an interactive terminal interface—guiding you through Provisioning, Website Configuration, Website Backup, and Website Restoration across Laravel Herd, Flock, and Laragon.
+            WordPress TUI (WPTUI) manages local WordPress <strong>Websites</strong> through an interactive terminal interface, guiding you through Provisioning, Website Configuration, Website Backup, and Website Restoration across Laravel Herd, Flock, and Laragon.
           </p>
           <div class="hero-actions">
             <a class="btn btn-primary" href="#install">Install WPTUI</a>
             <a class="btn btn-secondary" href="https://github.com/HungNth/wordpress-tui">View on GitHub</a>
           </div>
+          <p class="hero-release-note">
+            Application Release <a href="https://github.com/HungNth/wordpress-tui/releases/tag/v__WPTUI_VERSION__"><code>v__WPTUI_VERSION__</code></a> for macOS and Windows (x64)
+          </p>
         </div>
 
         <aside class="terminal-card" aria-label="Install and launch WPTUI terminal example">
           <div class="terminal-bar" aria-hidden="true">
-            <span class="dot"></span>
-            <span class="dot"></span>
-            <span class="dot"></span>
-            <span class="terminal-title">wptui — quick start</span>
+            <span class="terminal-bar-prompt">&gt;_</span>
+            <span class="terminal-title">wptui quick start</span>
           </div>
           <pre class="terminal-body"><code><span class="t-prompt">$</span> curl -fsSL https://raw.githubusercontent.com/HungNth/wordpress-tui/main/scripts/install/install.sh | sh
 <span class="t-info">==&gt;</span> Fetching release checksums...
@@ -60,6 +55,33 @@
 <span class="t-ok">==&gt;</span> Installed wptui to ~/.local/bin/wptui
 <span class="t-prompt">$</span> wptui</code></pre>
         </aside>
+      </div>
+    </section>
+
+    <section class="section section-demo" aria-labelledby="demo-heading">
+      <div class="container">
+        <div class="section-head">
+          <h2 id="demo-heading">Interactive terminal walkthrough</h2>
+          <p>
+            Experience the Master-Detail terminal interface for managing local WordPress Websites.
+          </p>
+        </div>
+        <div class="demo-viewport">
+          <video
+            autoplay
+            loop
+            muted
+            playsinline
+            poster="wptui-demo-preview.png"
+            width="1080"
+            height="600"
+            aria-label="WPTUI Master-Detail terminal interface demonstration"
+          >
+            <source src="wptui-demo.webm" type="video/webm">
+            <source src="wptui-demo.mp4" type="video/mp4">
+            <img src="wptui-demo-preview.png" alt="WPTUI terminal interface preview showing Websites Hub with local WordPress installations" width="1080" height="600">
+          </video>
+        </div>
       </div>
     </section>
 
@@ -229,7 +251,7 @@ Remove-Item install.ps1</code></pre>
             <a href="https://github.com/HungNth/wordpress-tui/blob/main/scripts/install/install.ps1"><code>scripts/install/install.ps1</code></a>.
           </p>
           <p>
-            Published release archives are verified with SHA-256 checksums during installation. However, executables are not currently code-signed or notarized for Apple Gatekeeper or Windows SmartScreen.
+            Installers verify downloaded release archives with SHA-256 checksums. Executables are not currently code-signed or notarized for Apple Gatekeeper or Windows SmartScreen.
           </p>
         </aside>
       </div>
@@ -240,37 +262,101 @@ Remove-Item install.ps1</code></pre>
         <div class="section-head">
           <h2 id="features-heading">Built for local WordPress workflows</h2>
           <p>
-            Guided terminal operations keep directories, MySQL databases, and local hostnames synchronized without manual guesswork.
+            Guided terminal workflows keep directories, MySQL databases, and local hostnames synchronized.
           </p>
         </div>
 
-        <div class="card-grid">
-          <article class="card">
-            <h3>Provisioning</h3>
-            <p>
-              Create fresh local WordPress Websites with database creation, core installation, local <code>.test</code> domains, optional WordPress tweaks, and API-driven Package installations.
-            </p>
+        <div class="feature-showcase">
+          <article class="feature-row">
+            <div class="feature-copy">
+              <span class="feature-kicker">Provisioning</span>
+              <h3>Create local Websites with guided validation</h3>
+              <p>
+                Provision fresh WordPress installations through a structured terminal wizard. WPTUI creates the MySQL database, installs WordPress core, configures local <code>.test</code> domains with Laravel Herd, Flock, or Laragon, applies WordPress tweaks, and installs API-driven Packages.
+              </p>
+            </div>
+            <figure class="feature-media screenshot-frame">
+              <picture>
+                <source srcset="screenshot-provisioning.webp" type="image/webp">
+                <img
+                  src="screenshot-provisioning.png"
+                  alt="WPTUI Create Wizard screen inside the terminal showing Website Name Portfolio Shop, Website Slug portfolio-shop, Admin Username focus, and Apply Tweaks enabled"
+                  width="1080"
+                  height="600"
+                  loading="lazy"
+                  decoding="async"
+                >
+              </picture>
+            </figure>
           </article>
 
-          <article class="card">
-            <h3>Website Configuration</h3>
-            <p>
-              Update existing Websites in place: toggle Website Debug Mode, reconcile administrator credentials, apply WordPress tweaks, and install or upgrade plugins and themes from your Package Service.
-            </p>
+          <article class="feature-row feature-row-reverse">
+            <div class="feature-copy">
+              <span class="feature-kicker">Websites Hub</span>
+              <h3>Inspect and batch-select Websites instantly</h3>
+              <p>
+                Browse every local WordPress Website from one central hub without waiting on synchronous database checks. View local <code>.test</code> URLs, select multiple Websites with <code>Space</code>, and launch per-Website actions or batch operations from the Content Pane.
+              </p>
+            </div>
+            <figure class="feature-media screenshot-frame">
+              <picture>
+                <source srcset="screenshot-hub.webp" type="image/webp">
+                <img
+                  src="screenshot-hub.png"
+                  alt="WPTUI Websites Hub screen displaying three local WordPress Websites with .test URLs and green multi-select checkmarks on client-store and developer-blog"
+                  width="1080"
+                  height="600"
+                  loading="lazy"
+                  decoding="async"
+                >
+              </picture>
+            </figure>
           </article>
 
-          <article class="card">
-            <h3>Website Backup &amp; Restoration</h3>
-            <p>
-              Export immutable Backup Archives as consolidated ZIP files or All-in-One WP Migration (<code>.wpress</code>) archives, and restore from any discovered or custom Restore Archive path into a fresh Website.
-            </p>
+          <article class="feature-row">
+            <div class="feature-copy">
+              <span class="feature-kicker">Website Configuration</span>
+              <h3>Track every task in the In-Pane Progress Monitor</h3>
+              <p>
+                Update existing Websites in place by toggling Website Debug Mode, reconciling administrator credentials, applying tweaks, or upgrading plugins and themes. The In-Pane Progress Monitor pairs a Task Stepper with a scrollable Log Viewport and clear summary.
+              </p>
+            </div>
+            <figure class="feature-media screenshot-frame">
+              <picture>
+                <source srcset="screenshot-progress.webp" type="image/webp">
+                <img
+                  src="screenshot-progress.png"
+                  alt="WPTUI In-Pane Progress Monitor displaying completed green Task Stepper markers, log output for WP_DEBUG_DISPLAY, and a Website Debug Mode Enabled summary for client-store"
+                  width="1080"
+                  height="600"
+                  loading="lazy"
+                  decoding="async"
+                >
+              </picture>
+            </figure>
           </article>
 
-          <article class="card">
-            <h3>Local Development Environments</h3>
-            <p>
-              Integrates directly with <strong>Laravel Herd</strong> and <strong>Flock</strong> on macOS and Windows, and <strong>Laragon</strong> on Windows, handling linking, TLS setup, and safe De-provisioning cleanup.
-            </p>
+          <article class="feature-row feature-row-reverse">
+            <div class="feature-copy">
+              <span class="feature-kicker">Website Backup &amp; Restoration</span>
+              <h3>Archive and restore across ZIP and .wpress</h3>
+              <p>
+                Export immutable Backup Archives as consolidated ZIP files or All-in-One WP Migration (<code>.wpress</code>) packages. During Website Restoration, point to any discovered backup or custom Restore Archive path to spin up a fresh, non-colliding Website with updated Website Registration.
+              </p>
+            </div>
+            <figure class="feature-media screenshot-frame">
+              <picture>
+                <source srcset="screenshot-backup.webp" type="image/webp">
+                <img
+                  src="screenshot-backup.png"
+                  alt="WPTUI Backup Format selection screen for client-store showing Full source code and database (.zip) selected above All-in-One WP Migration (.wpress)"
+                  width="1080"
+                  height="600"
+                  loading="lazy"
+                  decoding="async"
+                >
+              </picture>
+            </figure>
           </article>
         </div>
       </div>
@@ -299,11 +385,11 @@ Remove-Item install.ps1</code></pre>
             WPTUI orchestrates native tools already available on your <code>PATH</code>:
           </p>
           <ul class="clean-list">
-            <li><code>php</code> — PHP CLI</li>
-            <li><code>wp</code> — WP-CLI</li>
-            <li><code>mysql</code> — MySQL Client / Server</li>
-            <li><code>herd</code>, <code>flock</code>, or <code>laragon.exe</code> — Local Development Environment</li>
-            <li><code>code</code> — Visual Studio Code <em>(optional, for editing configuration from Settings)</em></li>
+            <li><code>php</code>: PHP CLI</li>
+            <li><code>wp</code>: WP-CLI</li>
+            <li><code>mysql</code>: MySQL Client / Server</li>
+            <li><code>herd</code>, <code>flock</code>, or <code>laragon.exe</code>: Local Development Environment</li>
+            <li><code>code</code>: Visual Studio Code <em>(optional, for editing configuration from Settings)</em></li>
           </ul>
         </article>
       </div>
