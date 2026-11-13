@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WPTUI — Manage local WordPress without leaving your terminal</title>
+  <meta name="description" content="WordPress TUI (WPTUI) manages local WordPress Websites through an interactive terminal interface on macOS and Windows.">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to main content</a>
+
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="#top" aria-label="WPTUI home">
+        <span class="brand-prompt" aria-hidden="true">&gt;_</span>
+        <span class="brand-name">WPTUI</span>
+      </a>
+      <nav class="site-nav" aria-label="Primary">
+        <a href="#install">Install</a>
+        <a href="#features">Features</a>
+        <a href="#requirements">Requirements</a>
+        <a class="nav-version" href="https://github.com/HungNth/wordpress-tui/releases/tag/v__WPTUI_VERSION__">v__WPTUI_VERSION__</a>
+        <a href="https://github.com/HungNth/wordpress-tui">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section id="top" class="hero">
+      <div class="container hero-grid">
+        <div class="hero-copy">
+          <div class="hero-meta">
+            <a class="release-badge" href="https://github.com/HungNth/wordpress-tui/releases/tag/v__WPTUI_VERSION__">
+              Application Release v__WPTUI_VERSION__
+            </a>
+            <span class="platform-pill">macOS &amp; Windows (x64)</span>
+          </div>
+          <h1>Manage local WordPress without leaving your terminal.</h1>
+          <p class="hero-lead">
+            WordPress TUI (WPTUI) manages local WordPress <strong>Websites</strong> through an interactive terminal interface—guiding you through Provisioning, Website Configuration, Website Backup, and Website Restoration across Laravel Herd, Flock, and Laragon.
+          </p>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="#install">Install WPTUI</a>
+            <a class="btn btn-secondary" href="https://github.com/HungNth/wordpress-tui">View on GitHub</a>
+          </div>
+        </div>
+
+        <aside class="terminal-card" aria-label="Install and launch WPTUI terminal example">
+          <div class="terminal-bar" aria-hidden="true">
+            <span class="dot"></span>
+            <span class="dot"></span>
+            <span class="dot"></span>
+            <span class="terminal-title">wptui — quick start</span>
+          </div>
+          <pre class="terminal-body"><code><span class="t-prompt">$</span> curl -fsSL https://raw.githubusercontent.com/HungNth/wordpress-tui/main/scripts/install/install.sh | sh
+<span class="t-info">==&gt;</span> Fetching release checksums...
+<span class="t-info">==&gt;</span> Downloading wptui___WPTUI_VERSION___darwin_arm64.zip...
+<span class="t-info">==&gt;</span> Verifying SHA-256 checksum...
+<span class="t-ok">==&gt;</span> Installed wptui to ~/.local/bin/wptui
+<span class="t-prompt">$</span> wptui</code></pre>
+        </aside>
+      </div>
+    </section>
+
+    <section id="install" class="section section-install" aria-labelledby="install-heading">
+      <div class="container">
+        <div class="section-head">
+          <h2 id="install-heading">Install WPTUI</h2>
+          <p>
+            Install the latest stable Application Release (<a href="https://github.com/HungNth/wordpress-tui/releases/tag/v__WPTUI_VERSION__"><code>v__WPTUI_VERSION__</code></a>) using the official installer script for your platform.
+          </p>
+        </div>
+
+        <div class="install-shell">
+          <div class="tab-list" role="tablist" aria-label="Operating system">
+            <button
+              type="button"
+              id="tab-macos"
+              class="tab-btn"
+              role="tab"
+              aria-selected="true"
+              aria-controls="panel-macos"
+              tabindex="0"
+              data-platform="macos"
+            >
+              macOS
+            </button>
+            <button
+              type="button"
+              id="tab-windows"
+              class="tab-btn"
+              role="tab"
+              aria-selected="false"
+              aria-controls="panel-windows"
+              tabindex="-1"
+              data-platform="windows"
+            >
+              Windows
+            </button>
+          </div>
+
+          <div
+            id="panel-macos"
+            class="tab-panel"
+            role="tabpanel"
+            aria-labelledby="tab-macos"
+            tabindex="0"
+          >
+            <h3 class="panel-heading">macOS</h3>
+            <p class="panel-note">
+              Installs to <code>~/.local/bin/wptui</code> and updates your shell profile (<code>~/.zprofile</code> or <code>~/.profile</code>) if needed.
+            </p>
+            <div class="command-block">
+              <div class="command-bar">
+                <span class="command-lang">sh</span>
+                <button
+                  type="button"
+                  class="copy-btn"
+                  data-copy-target="cmd-macos-default"
+                  aria-label="Copy macOS default install command"
+                >
+                  Copy
+                </button>
+              </div>
+              <pre><code id="cmd-macos-default">curl -fsSL https://raw.githubusercontent.com/HungNth/wordpress-tui/main/scripts/install/install.sh | sh</code></pre>
+            </div>
+
+            <details class="custom-dir">
+              <summary>Custom install directory</summary>
+              <p class="panel-note">Set <code>WPTUI_INSTALL_DIR</code> to choose a different location:</p>
+              <div class="command-block">
+                <div class="command-bar">
+                  <span class="command-lang">sh</span>
+                  <button
+                    type="button"
+                    class="copy-btn"
+                    data-copy-target="cmd-macos-custom"
+                    aria-label="Copy macOS custom directory install command"
+                  >
+                    Copy
+                  </button>
+                </div>
+                <pre><code id="cmd-macos-custom">curl -fsSL https://raw.githubusercontent.com/HungNth/wordpress-tui/main/scripts/install/install.sh | WPTUI_INSTALL_DIR="$HOME/bin" sh</code></pre>
+              </div>
+            </details>
+          </div>
+
+          <div
+            id="panel-windows"
+            class="tab-panel"
+            role="tabpanel"
+            aria-labelledby="tab-windows"
+            tabindex="0"
+          >
+            <h3 class="panel-heading">Windows</h3>
+            <p class="panel-note">
+              Open PowerShell. Installs to <code>%LOCALAPPDATA%\Programs\wptui\wptui.exe</code> and updates your User <code>PATH</code>.
+            </p>
+            <div class="command-block">
+              <div class="command-bar">
+                <span class="command-lang">powershell</span>
+                <button
+                  type="button"
+                  class="copy-btn"
+                  data-copy-target="cmd-windows-default"
+                  aria-label="Copy Windows default install commands"
+                >
+                  Copy
+                </button>
+              </div>
+              <pre><code id="cmd-windows-default">irm https://raw.githubusercontent.com/HungNth/wordpress-tui/main/scripts/install/install.ps1 -OutFile install.ps1
+powershell -NoProfile -ExecutionPolicy RemoteSigned -File .\install.ps1
+Remove-Item install.ps1</code></pre>
+            </div>
+
+            <details class="custom-dir">
+              <summary>Custom install directory</summary>
+              <p class="panel-note">Download and run the installer with <code>-InstallDir</code>:</p>
+              <div class="command-block">
+                <div class="command-bar">
+                  <span class="command-lang">powershell</span>
+                  <button
+                    type="button"
+                    class="copy-btn"
+                    data-copy-target="cmd-windows-custom"
+                    aria-label="Copy Windows custom directory install commands"
+                  >
+                    Copy
+                  </button>
+                </div>
+                <pre><code id="cmd-windows-custom">irm https://raw.githubusercontent.com/HungNth/wordpress-tui/main/scripts/install/install.ps1 -OutFile install.ps1
+powershell -NoProfile -ExecutionPolicy RemoteSigned -File .\install.ps1 -InstallDir 'C:\Tools\wptui'
+Remove-Item install.ps1</code></pre>
+              </div>
+            </details>
+          </div>
+
+          <div class="launch-row">
+            <div class="launch-copy">
+              <strong>Then launch WPTUI</strong>
+              <span>First launch opens an interactive configuration wizard for your local paths and database settings.</span>
+            </div>
+            <div class="command-block">
+              <div class="command-bar">
+                <span class="command-lang">terminal</span>
+                <button
+                  type="button"
+                  class="copy-btn"
+                  data-copy-target="cmd-launch"
+                  aria-label="Copy wptui launch command"
+                >
+                  Copy
+                </button>
+              </div>
+              <pre><code id="cmd-launch">wptui</code></pre>
+            </div>
+          </div>
+
+          <div id="copy-status" class="sr-only" role="status" aria-live="polite"></div>
+        </div>
+
+        <aside class="security-box" aria-labelledby="security-heading">
+          <h3 id="security-heading">Review and verification</h3>
+          <p>
+            <strong>Warning:</strong> Always review remote scripts before executing them in your shell:
+            <a href="https://github.com/HungNth/wordpress-tui/blob/main/scripts/install/install.sh"><code>scripts/install/install.sh</code></a>
+            and
+            <a href="https://github.com/HungNth/wordpress-tui/blob/main/scripts/install/install.ps1"><code>scripts/install/install.ps1</code></a>.
+          </p>
+          <p>
+            Published release archives are verified with SHA-256 checksums during installation. However, executables are not currently code-signed or notarized for Apple Gatekeeper or Windows SmartScreen.
+          </p>
+        </aside>
+      </div>
+    </section>
+
+    <section id="features" class="section" aria-labelledby="features-heading">
+      <div class="container">
+        <div class="section-head">
+          <h2 id="features-heading">Built for local WordPress workflows</h2>
+          <p>
+            Guided terminal operations keep directories, MySQL databases, and local hostnames synchronized without manual guesswork.
+          </p>
+        </div>
+
+        <div class="card-grid">
+          <article class="card">
+            <h3>Provisioning</h3>
+            <p>
+              Create fresh local WordPress Websites with database creation, core installation, local <code>.test</code> domains, optional WordPress tweaks, and API-driven Package installations.
+            </p>
+          </article>
+
+          <article class="card">
+            <h3>Website Configuration</h3>
+            <p>
+              Update existing Websites in place: toggle Website Debug Mode, reconcile administrator credentials, apply WordPress tweaks, and install or upgrade plugins and themes from your Package Service.
+            </p>
+          </article>
+
+          <article class="card">
+            <h3>Website Backup &amp; Restoration</h3>
+            <p>
+              Export immutable Backup Archives as consolidated ZIP files or All-in-One WP Migration (<code>.wpress</code>) archives, and restore from any discovered or custom Restore Archive path into a fresh Website.
+            </p>
+          </article>
+
+          <article class="card">
+            <h3>Local Development Environments</h3>
+            <p>
+              Integrates directly with <strong>Laravel Herd</strong> and <strong>Flock</strong> on macOS and Windows, and <strong>Laragon</strong> on Windows, handling linking, TLS setup, and safe De-provisioning cleanup.
+            </p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="requirements" class="section" aria-labelledby="requirements-heading">
+      <div class="container two-col">
+        <article class="info-panel">
+          <h2 id="requirements-heading">Supported platforms</h2>
+          <ul class="clean-list">
+            <li>
+              <strong>macOS:</strong> Intel (<code>amd64</code>) and Apple Silicon (<code>arm64</code>) with Laravel Herd or Flock.
+            </li>
+            <li>
+              <strong>Windows:</strong> 64-bit (<code>amd64</code>) with Laravel Herd, Flock, or Laragon.
+            </li>
+          </ul>
+          <p class="muted-note">
+            Linux and Windows ARM64 are not currently supported. Laragon is available on Windows only.
+          </p>
+        </article>
+
+        <article class="info-panel">
+          <h2>Prerequisites</h2>
+          <p class="muted-note">
+            WPTUI orchestrates native tools already available on your <code>PATH</code>:
+          </p>
+          <ul class="clean-list">
+            <li><code>php</code> — PHP CLI</li>
+            <li><code>wp</code> — WP-CLI</li>
+            <li><code>mysql</code> — MySQL Client / Server</li>
+            <li><code>herd</code>, <code>flock</code>, or <code>laragon.exe</code> — Local Development Environment</li>
+            <li><code>code</code> — Visual Studio Code <em>(optional, for editing configuration from Settings)</em></li>
+          </ul>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <strong>WPTUI</strong>
+        <span>Application Release <a href="https://github.com/HungNth/wordpress-tui/releases/tag/v__WPTUI_VERSION__">v__WPTUI_VERSION__</a></span>
+      </div>
+      <nav class="footer-links" aria-label="Resources">
+        <a href="https://github.com/HungNth/wordpress-tui">Source on GitHub</a>
+        <a href="https://github.com/HungNth/wordpress-tui#readme">README</a>
+        <a href="https://github.com/HungNth/wordpress-tui/releases">Releases</a>
+        <a href="https://github.com/HungNth/wordpress-tui/blob/main/CHANGELOG.md">Changelog</a>
+      </nav>
+    </div>
+  </footer>
+
+  <script src="script.js" defer></script>
+</body>
+</html>

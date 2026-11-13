@@ -108,6 +108,10 @@ _Avoid_: Preferences, options, app config
 A read-only comparison between the running WPTUI release and the remote application manifest that reports whether a newer release exists and links to it without downloading or installing anything.
 _Avoid_: Update, self-update, automatic update
 
+**Application Release**:
+A stable, installable WPTUI version distributed with binaries for every supported platform and their verification checksums. Prereleases do not replace the current Application Release.
+_Avoid_: Latest version, build, deployment
+
 **External Launcher**:
 The platform-aware subsystem responsible for safely launching external tools such as code editors and file managers.
 _Avoid_: Shell runner, process spawner

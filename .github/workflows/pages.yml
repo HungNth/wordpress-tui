@@ -1,0 +1,75 @@
+name: Deploy Landing Page
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build and Deploy to GitHub Pages
+    runs-on: ubuntu-latest
+    if: github.event_name != 'release' || (github.event.release.prerelease != true && github.event.release.draft != true)
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Validate release and build site artifact
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+
+          if [[ "${EVENT_NAME}" == "release" ]]; then
+            EXPECTED_TAG="${RELEASE_TAG}"
+          else
+            MANIFEST_VERSION="$(jq -r '.version // empty' manifest.json)"
+            if [[ -z "${MANIFEST_VERSION}" ]]; then
+              echo "::error::manifest.json version is missing or empty"
+              exit 1
+            fi
+            EXPECTED_TAG="v${MANIFEST_VERSION}"
+
+            RELEASE_JSON="$(curl -fsSL \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/releases/tags/${EXPECTED_TAG}")"
+
+            if ! echo "${RELEASE_JSON}" | jq -e --arg tag "${EXPECTED_TAG}" \
+              '.tag_name == $tag and .draft == false and .prerelease == false' >/dev/null; then
+              echo "::error::${EXPECTED_TAG} is not a published stable GitHub Release"
+              exit 1
+            fi
+          fi
+
+          sh scripts/pages/build.sh --tag "${EXPECTED_TAG}" --out ./_site
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: ./_site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -2,6 +2,8 @@
 
 WordPress TUI manages local WordPress **Websites** through an interactive terminal interface. It provides guided workflows to provision fresh Websites, configure existing installations, manage backups, restore archives, and maintain local development settings.
 
+Quick install & overview: **[hungnth.github.io/wordpress-tui](https://hungnth.github.io/wordpress-tui/)**
+
 ## Supported Platforms and Environments
 
 - **macOS:** Intel (`amd64`) and Apple Silicon (`arm64`)
