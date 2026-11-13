@@ -84,6 +84,10 @@ _Avoid_: Skin, custom CSS
 The post-provisioning management workflow that modifies an existing Website by applying system tweaks, updating administrative credentials, or installing packages.
 _Avoid_: Site edit, site modification, site settings
 
+**Website Debug Mode**:
+The per-Website diagnostic state that captures WordPress errors in the debug log without displaying them in rendered output. It is managed independently from the global WordPress tweak defaults.
+_Avoid_: Quick Debug, Site Debug Mode
+
 **Administrative Credential Reconciler**:
 The mechanism that synchronizes administrative username, password, and email for an existing Website, updating the user login directly via MySQL prepared statements and updating password and email via WP-CLI.
 _Avoid_: User updater, account changer

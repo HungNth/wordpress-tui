@@ -38,6 +38,7 @@ const (
 	WebsiteActionInstallPlugins WebsiteAction = "Install Plugins"
 	WebsiteActionInstallThemes  WebsiteAction = "Install Theme"
 	WebsiteActionChangeAdmin    WebsiteAction = "Change admin credentials"
+	WebsiteActionToggleDebug    WebsiteAction = "Toggle Debug Mode"
 	WebsiteActionBackup         WebsiteAction = "Backup"
 	WebsiteActionBrowser        WebsiteAction = "Open in Browser"
 	WebsiteActionEditor         WebsiteAction = "Open in Editor"
@@ -50,6 +51,7 @@ var DefaultWebsiteActions = []WebsiteAction{
 	WebsiteActionInstallPlugins,
 	WebsiteActionInstallThemes,
 	WebsiteActionChangeAdmin,
+	WebsiteActionToggleDebug,
 	WebsiteActionBackup,
 	WebsiteActionBrowser,
 	WebsiteActionEditor,
@@ -116,6 +118,7 @@ func (m *WebsitesHubModel) updateActions() {
 	}
 	acts = append(acts,
 		WebsiteActionChangeAdmin,
+		WebsiteActionToggleDebug,
 		WebsiteActionBackup,
 		WebsiteActionBrowser,
 		WebsiteActionEditor,
@@ -313,7 +316,6 @@ func (m *WebsitesHubModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			}
-
 
 		case WebsitesHubBatchActions:
 			switch str {

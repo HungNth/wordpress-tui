@@ -81,33 +81,34 @@ var DefaultSidebarItems = []SidebarItem{
 
 // AppModel is the root Bubble Tea application model for WPTUI.
 type AppModel struct {
-	cfg               *config.Config
-	width             int
-	height            int
-	focus             FocusMode
-	activeSec         Section
-	sidebarIndex      int
-	sidebarItems      []SidebarItem
-	websitesHub       *WebsitesHubModel
-	deleteModel       *DeleteModel
-	createWizard      *CreateWizardModel
-	restoreWizard     *RestoreWizardModel
-	settingsModel     *SettingsModel
-	progressMonitor   *ProgressMonitorModel
-	isExecuting       bool
-	catalog           []packages.CatalogItem
-	checker           SlugAvailabilityChecker
+	cfg                    *config.Config
+	width                  int
+	height                 int
+	focus                  FocusMode
+	activeSec              Section
+	sidebarIndex           int
+	sidebarItems           []SidebarItem
+	websitesHub            *WebsitesHubModel
+	deleteModel            *DeleteModel
+	createWizard           *CreateWizardModel
+	restoreWizard          *RestoreWizardModel
+	settingsModel          *SettingsModel
+	progressMonitor        *ProgressMonitorModel
+	isExecuting            bool
+	catalog                []packages.CatalogItem
+	checker                SlugAvailabilityChecker
 	opEventChan            <-chan tea.Msg
 	cancelOp               context.CancelFunc
 	clearSelectionOnFinish bool
 	onCreate               CreateHandlerFunc
 	onRestore              RestoreHandlerFunc
-	onBackup          BackupHandlerFunc
-	onBatchBackup     BatchBackupHandlerFunc
-	onDelete          DeleteHandlerFunc
-	onConfig          ConfigHandlerFunc
-	onChangeAdmin     ChangeAdminHandlerFunc
-	onInstallPackages InstallPackagesHandlerFunc
+	onBackup               BackupHandlerFunc
+	onBatchBackup          BatchBackupHandlerFunc
+	onDelete               DeleteHandlerFunc
+	onConfig               ConfigHandlerFunc
+	onToggleDebug          ConfigHandlerFunc
+	onChangeAdmin          ChangeAdminHandlerFunc
+	onInstallPackages      InstallPackagesHandlerFunc
 }
 
 func NewAppModel(cfg *config.Config) *AppModel {
@@ -162,6 +163,10 @@ func (m *AppModel) wireHubCallbacks() {
 		case WebsiteActionConfig:
 			if m.onConfig != nil {
 				return m.onConfig(cand)
+			}
+		case WebsiteActionToggleDebug:
+			if m.onToggleDebug != nil {
+				return m.onToggleDebug(cand)
 			}
 		}
 		return nil
@@ -284,6 +289,10 @@ func (m *AppModel) SetDeleteHandler(fn DeleteHandlerFunc) {
 
 func (m *AppModel) SetConfigHandler(fn ConfigHandlerFunc) {
 	m.onConfig = fn
+}
+
+func (m *AppModel) SetToggleDebugHandler(fn ConfigHandlerFunc) {
+	m.onToggleDebug = fn
 }
 
 func (m *AppModel) SetChangeAdminHandler(fn ChangeAdminHandlerFunc) {

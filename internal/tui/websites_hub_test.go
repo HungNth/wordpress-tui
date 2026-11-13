@@ -563,7 +563,7 @@ func TestWebsitesHub_SelectAllAndBatchActionChooser(t *testing.T) {
 		batchStrategy = strategy
 		return nil
 	}
-	hub.Update(tea.KeyPressMsg{Code: tea.KeyEnter}) // Strategy
+	hub.Update(tea.KeyPressMsg{Code: tea.KeyEnter})   // Strategy
 	hub.Update(tea.KeyPressMsg{Code: 'j', Text: "j"}) // AI1WM
 	hub.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if len(batchBackedUp) != 2 || batchBackedUp[0].Slug != slugs[0] || batchBackedUp[1].Slug != slugs[1] {
@@ -628,5 +628,36 @@ func TestWebsitesHub_ScrollingAndCompactLayout(t *testing.T) {
 	appView := app.ViewString()
 	if !strings.Contains(appView, "site19") {
 		t.Logf("CONFIRMED BUG: in AppModel view (height 30/24), site19 is clipped and invisible!")
+	}
+}
+
+func TestWebsitesHub_ToggleDebugModeAction(t *testing.T) {
+	sitesDir, slugs := createTestWebsites(t, 1)
+	cfg := config.DefaultConfig(sitesDir)
+	cfg.AppName = config.AppNameHerd
+	cfg.AppCommand = "herd"
+	cfg.WebsitesPath = sitesDir
+
+	hub := tui.NewWebsitesHubModel(cfg)
+
+	var gotAction tui.WebsiteAction
+	var gotCand deprovision.Candidate
+	hub.OnAction = func(action tui.WebsiteAction, cand deprovision.Candidate) tea.Cmd {
+		gotAction = action
+		gotCand = cand
+		return nil
+	}
+
+	hub.Update(tea.KeyPressMsg{Code: tea.KeyEnter}) // open single-Website action menu
+	for i := 0; i < len(tui.DefaultWebsiteActions) && hub.SelectedAction() != tui.WebsiteActionToggleDebug; i++ {
+		hub.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	}
+	if hub.SelectedAction() != tui.WebsiteActionToggleDebug {
+		t.Fatalf("expected %q in single-Website action menu, got %q", tui.WebsiteActionToggleDebug, hub.SelectedAction())
+	}
+
+	hub.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if gotAction != tui.WebsiteActionToggleDebug || gotCand.Slug != slugs[0] {
+		t.Fatalf("expected OnAction(%q, %q), got (%q, %q)", tui.WebsiteActionToggleDebug, slugs[0], gotAction, gotCand.Slug)
 	}
 }

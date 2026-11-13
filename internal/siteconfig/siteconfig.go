@@ -392,3 +392,112 @@ func InstallPackages(ctx context.Context, siteDir string, pkgType packages.Packa
 	}
 	return results
 }
+
+type DebugConfigClient interface {
+	ConfigSet(ctx context.Context, dir, key, value string, raw bool) error
+	Run(ctx context.Context, dir, name string, args []string, stdin string) (stdout, stderr string, err error)
+}
+
+type DebugWriteStatus struct {
+	Key     string
+	Value   string
+	Success bool
+	Err     error
+}
+
+type DebugToggleResult struct {
+	TargetKnown   bool
+	TargetEnabled bool
+	Cancelled     bool
+	Writes        []DebugWriteStatus
+}
+
+func isMissingWPConfigConstant(stderr string, err error) bool {
+	if strings.Contains(strings.ToLower(stderr), "not defined") {
+		return true
+	}
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "not defined")
+}
+
+func normalizeDebugState(raw string) (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "true", "1":
+		return true, nil
+	case "false", "0":
+		return false, nil
+	default:
+		return false, fmt.Errorf("WP_DEBUG has non-boolean value %q", strings.TrimSpace(raw))
+	}
+}
+
+// ToggleDebugMode inspects WP_DEBUG on the selected Website and writes the canonical enabled or disabled debug bundle.
+func ToggleDebugMode(ctx context.Context, siteDir string, client DebugConfigClient, onProgress ProgressFunc) (DebugToggleResult, error) {
+	if err := ctx.Err(); err != nil {
+		return DebugToggleResult{Cancelled: true}, err
+	}
+	if onProgress != nil {
+		onProgress(0, 3, "Reading current WP_DEBUG state...")
+	}
+
+	stdout, stderr, err := client.Run(ctx, siteDir, "wp", []string{"config", "get", "WP_DEBUG", "--format=json"}, "")
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return DebugToggleResult{Cancelled: true}, ctxErr
+	}
+
+	var currentEnabled bool
+	if err != nil {
+		if !isMissingWPConfigConstant(stderr, err) {
+			return DebugToggleResult{}, fmt.Errorf("failed to read WP_DEBUG: %w (%s)", err, strings.TrimSpace(stderr))
+		}
+		currentEnabled = false
+	} else {
+		currentEnabled, err = normalizeDebugState(stdout)
+		if err != nil {
+			return DebugToggleResult{}, err
+		}
+	}
+
+	targetEnabled := !currentEnabled
+	targets := []struct {
+		key   string
+		value string
+	}{
+		{key: "WP_DEBUG", value: "false"},
+		{key: "WP_DEBUG_LOG", value: "false"},
+		{key: "WP_DEBUG_DISPLAY", value: "false"},
+	}
+	if targetEnabled {
+		targets[0].value = "true"
+		targets[1].value = "true"
+	}
+
+	res := DebugToggleResult{
+		TargetKnown:   true,
+		TargetEnabled: targetEnabled,
+		Writes:        make([]DebugWriteStatus, 0, len(targets)),
+	}
+	for i, target := range targets {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			res.Cancelled = true
+			return res, ctxErr
+		}
+		if onProgress != nil {
+			onProgress(i+1, len(targets), fmt.Sprintf("Setting %s=%s", target.key, target.value))
+		}
+		writeErr := client.ConfigSet(ctx, siteDir, target.key, target.value, true)
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			if writeErr == nil {
+				res.Writes = append(res.Writes, DebugWriteStatus{Key: target.key, Value: target.value, Success: true})
+			}
+			res.Cancelled = true
+			return res, ctxErr
+		}
+		res.Writes = append(res.Writes, DebugWriteStatus{
+			Key:     target.key,
+			Value:   target.value,
+			Success: writeErr == nil,
+			Err:     writeErr,
+		})
+	}
+	return res, nil
+}

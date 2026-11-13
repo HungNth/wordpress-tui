@@ -2,8 +2,8 @@ package app
 
 import (
 	"context"
-	"fmt"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -177,6 +177,21 @@ func (a *App) BuildAppModel(ctx context.Context) *tui.AppModel {
 		}
 		cmd := m.StartProgressWithChannel(fmt.Sprintf("Configuring %s", cand.Slug), steps, ch)
 		go a.runConfigExecution(ctx, cand, ch)
+		return cmd
+	})
+
+	m.SetToggleDebugHandler(func(cand deprovision.Candidate) tea.Cmd {
+		ch := make(chan tea.Msg, 128)
+		steps := []tui.ProgressStep{
+			{ID: "preflight", Title: "Verify WordPress Website", Status: tui.StepStatusPending},
+			{ID: "debug", Title: "Toggle Website Debug Mode", Status: tui.StepStatusPending},
+		}
+		opCtx, cancel := context.WithCancel(ctx)
+		cmd := m.StartProgressWithCancel(fmt.Sprintf("Toggling Debug Mode for %s", cand.Slug), steps, ch, cancel)
+		go func() {
+			defer cancel()
+			a.runToggleDebugExecution(opCtx, cand, ch)
+		}()
 		return cmd
 	})
 
@@ -886,6 +901,128 @@ func (a *App) runConfigExecution(ctx context.Context, cand deprovision.Candidate
 			Success: true,
 			Summary: strings.Join(summaryLines, "\n"),
 		}
+	}
+}
+
+func (a *App) runToggleDebugExecution(ctx context.Context, cand deprovision.Candidate, ch chan<- tea.Msg) {
+	defer close(ch)
+
+	ch <- tui.StepStartMsg{ID: "preflight", Title: "Verifying Website directory and wp-config.php..."}
+
+	if fi, err := os.Stat(cand.Path); err != nil || !fi.IsDir() {
+		ch <- tui.StepCompleteMsg{ID: "preflight", Status: tui.StepStatusFailed, Detail: "Directory missing"}
+		ch <- tui.OperationCompleteMsg{
+			Title:   "Debug Mode Toggle Failed",
+			Success: false,
+			Summary: fmt.Sprintf("Website:   %s\nDirectory: %s\nError:     Website directory not found", cand.Slug, cand.Path),
+		}
+		return
+	}
+
+	wpConfigPath := filepath.Join(cand.Path, "wp-config.php")
+	if _, err := os.Stat(wpConfigPath); err != nil {
+		ch <- tui.StepCompleteMsg{ID: "preflight", Status: tui.StepStatusFailed, Detail: "wp-config.php missing"}
+		ch <- tui.OperationCompleteMsg{
+			Title:   "Debug Mode Toggle Failed",
+			Success: false,
+			Summary: fmt.Sprintf("Website:   %s\nDirectory: %s\nError:     wp-config.php not found", cand.Slug, cand.Path),
+		}
+		return
+	}
+	ch <- tui.StepCompleteMsg{ID: "preflight", Status: tui.StepStatusSuccess, Detail: "Validated"}
+
+	ch <- tui.StepStartMsg{ID: "debug", Title: "Inspecting and updating debug constants..."}
+	client := wpcli.NewClientForConfig(a.config)
+	onProgress := func(step, total int, message string) {
+		ch <- tui.LogLineMsg(message)
+		if step > 0 {
+			ch <- tui.StepStartMsg{ID: "debug", Title: fmt.Sprintf("Updating debug constant %d of %d: %s", step, total, message)}
+		}
+	}
+
+	res, err := siteconfig.ToggleDebugMode(ctx, cand.Path, client, onProgress)
+
+	var failed []string
+	appliedCount := 0
+	for _, w := range res.Writes {
+		if w.Success {
+			appliedCount++
+			ch <- tui.LogLineMsg(fmt.Sprintf("[✓] Set %s=%s", w.Key, w.Value))
+		} else {
+			failed = append(failed, fmt.Sprintf("[✗] Failed: %s=%s (%v)", w.Key, w.Value, w.Err))
+			ch <- tui.LogLineMsg(fmt.Sprintf("[✗] Failed %s=%s: %v", w.Key, w.Value, w.Err))
+		}
+	}
+
+	targetLabel := "Unknown"
+	if res.TargetKnown {
+		if res.TargetEnabled {
+			targetLabel = "Enabled"
+		} else {
+			targetLabel = "Disabled"
+		}
+	}
+
+	if res.Cancelled || errors.Is(err, context.Canceled) {
+		ch <- tui.StepCompleteMsg{ID: "debug", Status: tui.StepStatusWarning, Detail: "Cancelled"}
+		summaryLines := []string{
+			fmt.Sprintf("Website:   %s", cand.Slug),
+			fmt.Sprintf("Directory: %s", cand.Path),
+			fmt.Sprintf("Target:    %s", targetLabel),
+			fmt.Sprintf("Updated:   %d constant(s)", appliedCount),
+		}
+		summaryLines = append(summaryLines, failed...)
+		ch <- tui.OperationCompleteMsg{
+			Title:   "Website Debug Mode Cancelled",
+			Success: false,
+			Warning: true,
+			Summary: strings.Join(summaryLines, "\n"),
+		}
+		return
+	}
+
+	if err != nil {
+		ch <- tui.StepCompleteMsg{ID: "debug", Status: tui.StepStatusFailed, Detail: err.Error()}
+		ch <- tui.OperationCompleteMsg{
+			Title:   "Debug Mode Toggle Failed",
+			Success: false,
+			Summary: fmt.Sprintf("Website:   %s\nDirectory: %s\nError:     %v", cand.Slug, cand.Path, err),
+		}
+		return
+	}
+
+	if len(failed) > 0 {
+		ch <- tui.StepCompleteMsg{ID: "debug", Status: tui.StepStatusWarning, Detail: fmt.Sprintf("%d updated, %d failed", appliedCount, len(failed))}
+		summaryLines := []string{
+			fmt.Sprintf("Website:   %s", cand.Slug),
+			fmt.Sprintf("Directory: %s", cand.Path),
+			fmt.Sprintf("Target:    %s", targetLabel),
+			fmt.Sprintf("Updated:   %d constant(s)", appliedCount),
+		}
+		summaryLines = append(summaryLines, failed...)
+		ch <- tui.OperationCompleteMsg{
+			Title:   "Website Debug Mode Completed with Warnings",
+			Success: false,
+			Warning: true,
+			Summary: strings.Join(summaryLines, "\n"),
+		}
+		return
+	}
+
+	stateDetail := "Disabled (WP_DEBUG=false, WP_DEBUG_LOG=false, WP_DEBUG_DISPLAY=false)"
+	if res.TargetEnabled {
+		stateDetail = "Enabled (WP_DEBUG=true, WP_DEBUG_LOG=true, WP_DEBUG_DISPLAY=false)"
+	}
+	ch <- tui.StepCompleteMsg{ID: "debug", Status: tui.StepStatusSuccess, Detail: targetLabel}
+	ch <- tui.OperationCompleteMsg{
+		Title:   "Website Debug Mode " + targetLabel,
+		Success: true,
+		Summary: strings.Join([]string{
+			fmt.Sprintf("Website:   %s", cand.Slug),
+			fmt.Sprintf("URL:       %s", a.siteURL(cand.Slug)),
+			fmt.Sprintf("Directory: %s", cand.Path),
+			fmt.Sprintf("State:     %s", stateDetail),
+		}, "\n"),
 	}
 }
 

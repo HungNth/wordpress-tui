@@ -6,6 +6,7 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -320,6 +321,33 @@ func TestApplyTweaks(t *testing.T) {
 	}
 }
 
+func TestApplyTweaks_DefaultConfig(t *testing.T) {
+	mock := &mockWPClient{}
+	cfg := config.DefaultConfig(t.TempDir())
+
+	results := siteconfig.ApplyTweaks(t.Context(), "/path/to/site", cfg.WPTweaks, mock, nil)
+	for i, r := range results {
+		if !r.Success {
+			t.Errorf("tweak %d failed: %v", i, r.Err)
+		}
+	}
+
+	expectedCalls := []string{
+		"config set WP_DEBUG true raw:true",
+		"config set WP_DEBUG_LOG true raw:true",
+		"config set WP_DEBUG_DISPLAY false raw:true",
+		"config set WP_MEMORY_LIMIT 256M raw:false",
+		"config set AUTOSAVE_INTERVAL 600 raw:true",
+		"config set WP_POST_REVISIONS 5 raw:true",
+		"config set EMPTY_TRASH_DAYS 21 raw:true",
+	}
+	for _, want := range expectedCalls {
+		if !slices.Contains(mock.calls, want) {
+			t.Errorf("expected call %q, got: %v", want, mock.calls)
+		}
+	}
+}
+
 func TestInstallPackages(t *testing.T) {
 	ctx := context.Background()
 	mock := &mockWPClient{}
@@ -426,5 +454,192 @@ func TestInstallPackages_VersionAware(t *testing.T) {
 	}
 	if !foundForce {
 		t.Errorf("expected --force flag on outdated plugin install, calls: %v", mock.calls)
+	}
+}
+
+type fakeDebugClient struct {
+	runFn       func(ctx context.Context, dir, name string, args []string, stdin string) (string, string, error)
+	configSetFn func(ctx context.Context, dir, key, value string, raw bool) error
+	calls       []string
+}
+
+func (f *fakeDebugClient) Run(ctx context.Context, dir, name string, args []string, stdin string) (string, string, error) {
+	f.calls = append(f.calls, fmt.Sprintf("%s %s", name, strings.Join(args, " ")))
+	if f.runFn != nil {
+		return f.runFn(ctx, dir, name, args, stdin)
+	}
+	return "", "", nil
+}
+
+func (f *fakeDebugClient) ConfigSet(ctx context.Context, dir, key, value string, raw bool) error {
+	f.calls = append(f.calls, fmt.Sprintf("config set %s %s raw:%v", key, value, raw))
+	if f.configSetFn != nil {
+		return f.configSetFn(ctx, dir, key, value, raw)
+	}
+	return nil
+}
+
+func TestToggleDebugMode_NormalizationAndCanonicalWrites(t *testing.T) {
+	tests := []struct {
+		name       string
+		stdout     string
+		stderr     string
+		runErr     error
+		wantEnable bool
+		wantCalls  []string
+	}{
+		{
+			name:       "false enables canonical bundle",
+			stdout:     "false\n",
+			wantEnable: true,
+			wantCalls: []string{
+				"config set WP_DEBUG true raw:true",
+				"config set WP_DEBUG_LOG true raw:true",
+				"config set WP_DEBUG_DISPLAY false raw:true",
+			},
+		},
+		{
+			name:       "zero enables canonical bundle",
+			stdout:     "0",
+			wantEnable: true,
+			wantCalls: []string{
+				"config set WP_DEBUG true raw:true",
+				"config set WP_DEBUG_LOG true raw:true",
+				"config set WP_DEBUG_DISPLAY false raw:true",
+			},
+		},
+		{
+			name:       "missing constant enables canonical bundle",
+			stderr:     "Error: The constant 'WP_DEBUG' is not defined.",
+			runErr:     errors.New("exit status 1"),
+			wantEnable: true,
+			wantCalls: []string{
+				"config set WP_DEBUG true raw:true",
+				"config set WP_DEBUG_LOG true raw:true",
+				"config set WP_DEBUG_DISPLAY false raw:true",
+			},
+		},
+		{
+			name:       "true disables canonical bundle",
+			stdout:     "true",
+			wantEnable: false,
+			wantCalls: []string{
+				"config set WP_DEBUG false raw:true",
+				"config set WP_DEBUG_LOG false raw:true",
+				"config set WP_DEBUG_DISPLAY false raw:true",
+			},
+		},
+		{
+			name:       "one disables canonical bundle",
+			stdout:     "1",
+			wantEnable: false,
+			wantCalls: []string{
+				"config set WP_DEBUG false raw:true",
+				"config set WP_DEBUG_LOG false raw:true",
+				"config set WP_DEBUG_DISPLAY false raw:true",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &fakeDebugClient{
+				runFn: func(ctx context.Context, dir, name string, args []string, stdin string) (string, string, error) {
+					return tc.stdout, tc.stderr, tc.runErr
+				},
+			}
+
+			res, err := siteconfig.ToggleDebugMode(t.Context(), "/path/to/site", client, nil)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if res.TargetEnabled != tc.wantEnable {
+				t.Fatalf("TargetEnabled = %v, want %v", res.TargetEnabled, tc.wantEnable)
+			}
+			if len(res.Writes) != 3 {
+				t.Fatalf("expected 3 writes, got %d", len(res.Writes))
+			}
+			if !slices.Equal(client.calls[1:], tc.wantCalls) {
+				t.Errorf("write calls = %v, want %v", client.calls[1:], tc.wantCalls)
+			}
+		})
+	}
+}
+
+func TestToggleDebugMode_RejectsNonBooleanOrReadErrorBeforeWrites(t *testing.T) {
+	tests := []struct {
+		name   string
+		stdout string
+		stderr string
+		runErr error
+	}{
+		{name: "non-boolean string", stdout: "\"staging\""},
+		{name: "empty stdout", stdout: ""},
+		{name: "wp-cli failure", stderr: "Error: wp-config.php unreadable", runErr: errors.New("exit status 1")},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &fakeDebugClient{
+				runFn: func(ctx context.Context, dir, name string, args []string, stdin string) (string, string, error) {
+					return tc.stdout, tc.stderr, tc.runErr
+				},
+			}
+			_, err := siteconfig.ToggleDebugMode(t.Context(), "/path/to/site", client, nil)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if len(client.calls) != 1 {
+				t.Errorf("expected no writes after failed read, got calls: %v", client.calls)
+			}
+		})
+	}
+}
+
+func TestToggleDebugMode_BestEffortPartialFailure(t *testing.T) {
+	client := &fakeDebugClient{
+		runFn: func(ctx context.Context, dir, name string, args []string, stdin string) (string, string, error) {
+			return "false", "", nil
+		},
+		configSetFn: func(ctx context.Context, dir, key, value string, raw bool) error {
+			if key == "WP_DEBUG_LOG" {
+				return errors.New("write failed")
+			}
+			return nil
+		},
+	}
+
+	res, err := siteconfig.ToggleDebugMode(t.Context(), "/path/to/site", client, nil)
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	if len(res.Writes) != 3 {
+		t.Fatalf("expected all 3 writes attempted, got %d", len(res.Writes))
+	}
+	if !res.Writes[0].Success || res.Writes[1].Success || !res.Writes[2].Success {
+		t.Errorf("expected [true, false, true] write outcomes, got: %+v", res.Writes)
+	}
+}
+
+func TestToggleDebugMode_CancellationStopsBeforeNextCommand(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	client := &fakeDebugClient{
+		runFn: func(ctx context.Context, dir, name string, args []string, stdin string) (string, string, error) {
+			return "false", "", nil
+		},
+		configSetFn: func(ctx context.Context, dir, key, value string, raw bool) error {
+			if key == "WP_DEBUG" {
+				cancel()
+			}
+			return nil
+		},
+	}
+
+	res, err := siteconfig.ToggleDebugMode(ctx, "/path/to/site", client, nil)
+	if !errors.Is(err, context.Canceled) || !res.Cancelled {
+		t.Fatalf("expected cancelled result with context.Canceled, got res=%+v err=%v", res, err)
+	}
+	if len(res.Writes) != 1 || res.Writes[0].Key != "WP_DEBUG" || !res.Writes[0].Success {
+		t.Errorf("expected first completed write retained without rollback, got: %+v", res.Writes)
 	}
 }
