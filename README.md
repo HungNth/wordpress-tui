@@ -1,53 +1,45 @@
 # WordPress TUI (WPTUI)
 
-WordPress TUI manages local WordPress **Websites** through an interactive terminal interface. It provides guided workflows to provision fresh Websites, configure existing installations, manage backups, restore archives, and maintain local development settings.
+Interactive terminal interface for managing local WordPress sites: create sites, tweak settings, install plugins and themes, back up, and restore.
 
-Quick install & overview: **[hungnth.github.io/wordpress-tui](https://hungnth.github.io/wordpress-tui/)**
+Quick install and overview: [hungnth.github.io/wordpress-tui](https://hungnth.github.io/wordpress-tui/)
 
-## Supported Platforms and Environments
+## Supported platforms
 
-- **macOS:** Intel (`amd64`) and Apple Silicon (`arm64`)
-  - Supported environments: **Laravel Herd**, **Flock**
-- **Windows:** 64-bit (`amd64`)
-  - Supported environments: **Laravel Herd**, **Flock**, **Laragon**
+- macOS: Intel (`amd64`) and Apple Silicon (`arm64`), using Laravel Herd or Flock
+- Windows: 64-bit (`amd64`), using Laravel Herd, Flock, or Laragon
 
 > [!NOTE]
-> Linux and Windows ARM64 are not currently supported. Laragon is available on Windows only.
+> Linux and Windows ARM64 are not supported. Laragon is Windows-only.
+
 ## Features
 
-- **Provisioning:** Create new local WordPress Websites with database creation, WordPress installation, local `.test` domain configuration (via Laravel Herd, Flock, or Laragon), and optional WordPress tweaks and API-driven Package installations.
-- **Website Configuration:** Apply tweaks to existing Websites, update administrator credentials, and install or upgrade plugins and themes from the configured Package Service.
-- **De-provisioning:** Safely remove Websites with database preview and verification, directory removal, and environment cleanup (Herd unsecure, Flock unsecure/unlink, or Laragon reload).
-- **Website Backup:** Export immutable **Backup Archives** to `backup_path` as full consolidated ZIP archives (database SQL dump and files) or All-in-One WP Migration (`.wpress`) archives.
-- **Website Restoration:** Reconstitute Websites into fresh, non-colliding local Websites from any compatible **Restore Archive** (`.zip` or `.wpress`), either discovered in `backup_path` or specified via a custom absolute filesystem path.
-- **Application Settings:** Open the application configuration in VS Code (`code --wait`) or view the local user cache directory in the native file manager.
+- Create local WordPress sites with database setup, `.test` domain config, optional tweaks, and plugin/theme installs from your Package Service
+- Update existing site tweaks, admin credentials, and plugins or themes
+- Remove sites safely with a database preview and verification step, directory deletion, and environment cleanup
+- Export backups to `backup_path` as full consolidated ZIP archives (`.zip`, SQL dump and files) or All-in-One WP Migration (`.wpress`) files
+- Restore `.zip` or `.wpress` archives into fresh, non-colliding local sites from `backup_path` or a custom filesystem path
+- Open `config.json` in VS Code (`code --wait`) or open the local cache directory in your file manager
 
 ## Prerequisites
 
-WPTUI orchestrates native tools on your machine. Ensure the following runtime dependencies are installed and available in your `PATH`:
+WPTUI calls your local tools directly, so make sure these are installed and available on your `PATH`:
 
-- **PHP** (`php`)
-- **WP-CLI** (`wp`)
-- **MySQL Client / Server** (`mysql`)
-- **Local Development Environment executable:**
-  - **Laravel Herd** (`herd`)
-  - **Flock** (`flock`)
-  - **Laragon** (`laragon.exe` on Windows)
-  Configured via `app_name` and `app_command`. The executable must be installed and accessible in your `PATH` or specified via an editable path.
-- **Visual Studio Code** (`code`) _(optional, required only for editing configuration from Settings)_
+- PHP (`php`)
+- WP-CLI (`wp`)
+- MySQL client/server (`mysql`)
+- One local environment (`herd`, `flock`, or `laragon.exe` on Windows), configured via `app_name` and `app_command`, either in `PATH` or given as a full path
+- Visual Studio Code (`code`), optional, only needed to edit config from Settings
+
 ## Installation
 
-Install WPTUI for the current user using the official installation scripts:
-
 ### macOS
-
-Open your terminal and run:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/HungNth/wordpress-tui/main/scripts/install/install.sh | sh
 ```
 
-By default, WPTUI installs to `~/.local/bin/wptui` and updates your shell profile (`~/.zprofile` or `~/.profile`) if needed. To customize the install location:
+Installs to `~/.local/bin/wptui` and updates `~/.zprofile` or `~/.profile` if needed. To change the install location:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/HungNth/wordpress-tui/main/scripts/install/install.sh | WPTUI_INSTALL_DIR="$HOME/bin" sh
@@ -55,7 +47,7 @@ curl -fsSL https://raw.githubusercontent.com/HungNth/wordpress-tui/main/scripts/
 
 ### Windows
 
-Open PowerShell and run:
+Run in PowerShell:
 
 ```powershell
 irm https://raw.githubusercontent.com/HungNth/wordpress-tui/main/scripts/install/install.ps1 -OutFile install.ps1
@@ -63,7 +55,7 @@ powershell -NoProfile -ExecutionPolicy RemoteSigned -File .\install.ps1
 Remove-Item install.ps1
 ```
 
-By default, WPTUI installs to `%LOCALAPPDATA%\Programs\wptui\wptui.exe` and updates your User `PATH`. To customize the install location, download and run the script with `-InstallDir`:
+Installs to `%LOCALAPPDATA%\Programs\wptui\wptui.exe` and updates your User `PATH`. To change the install location:
 
 ```powershell
 irm https://raw.githubusercontent.com/HungNth/wordpress-tui/main/scripts/install/install.ps1 -OutFile install.ps1
@@ -72,82 +64,63 @@ Remove-Item install.ps1
 ```
 
 > [!WARNING]
-> Always review remote scripts before executing them in your shell:
+> Review remote scripts before running them in your shell:
 >
 > - [`scripts/install/install.sh`](scripts/install/install.sh)
 > - [`scripts/install/install.ps1`](scripts/install/install.ps1)
 
 > [!NOTE]
-> Published release archives are verified with SHA-256 checksums during installation. However, executables are not currently code-signed or notarized for Apple Gatekeeper or Windows SmartScreen.
+> Release archives are verified with SHA-256 checksums during install, though the binaries are not code-signed or notarized for Apple Gatekeeper or Windows SmartScreen.
 
-## Getting Started
+## Getting started
 
-Run WPTUI directly from your terminal:
+Launch the TUI:
 
 ```sh
 wptui
 ```
 
-### Command-Line Flags
+### Command-line flags
 
-Pass at most one action flag to run a non-interactive CLI action without launching the TUI or loading `config.json`:
+Pass one flag to run a CLI command without launching the TUI or loading `config.json`:
 
-- `-v`, `--version`: Print the installed WPTUI release version.
-- `-u`, `--update`: Perform a read-only **Application Update Check** against the canonical `main` branch manifest and print the GitHub Release link when a newer version exists; it never downloads or installs a release.
-- `-c`, `--config`: Print the expected absolute path to `config.json` without creating directories or files.
-- `-h`, `--help`: Print command-line usage.
+- `-v`, `--version`: print the installed WPTUI release version
+- `-u`, `--update`: check the `main` branch manifest and print the GitHub Release link when a newer version exists (read-only; never downloads or installs)
+- `-c`, `--config`: print the expected `config.json` path without creating directories or files
+- `-h`, `--help`: print usage
 
-### First-Run Configuration
+### First-run setup
 
-When launched for the first time, WPTUI automatically starts an interactive configuration wizard to establish your local development paths, database credentials, and preferences. Configuration is saved locally to:
+First launch opens a setup wizard for your local paths, database credentials, and preferences, saving to:
 
-- **macOS:** `~/.config/wptui/config.json`
-- **Windows:** `%USERPROFILE%\.config\wptui\config.json`
+- macOS: `~/.config/wptui/config.json`
+- Windows: `%USERPROFILE%\.config\wptui\config.json`
 
-You can modify these settings anytime directly, through the first-run wizard, or via **Settings** in the main menu.
+You can change these later by editing `config.json`, re-running the wizard, or opening **Settings** in the main menu.
 
+### Local environments
 
-### Local Development Environments
+You must choose one local development environment during setup:
 
-WPTUI requires an explicit Local Development Environment selection:
+- `herd` (Laravel Herd) uses your parked sites directory (default `$HOME/Herd`), manages `.test` domains, runs `herd secure <slug>` for TLS certificates on create, and runs `herd unsecure <slug>` (best-effort) on delete.
+- `flock` (Flock) defaults to `$HOME/Sites`, checks `flock sites` before running `flock link <slug>` and `flock secure <slug>` (TLS) so it won't overwrite existing registrations, and only runs `flock unsecure <slug>` and `flock unlink <slug>` on sites WPTUI created. Browser launching uses your OS default URL opener.
+- `laragon` (Laragon, Windows only) expects sites inside Laragon's Document Root (default `C:\laragon\www`), reloads virtual hosts via `app_command` (`laragon.exe reload`) after create, restore, and delete, and uses `https://<slug>.test` URLs. For HTTPS, enable Auto SSL in Laragon and set its Document Root hostname pattern to `{name}.test`; WPTUI does not generate vhost templates or configure Auto SSL.
 
-- **Laravel Herd (`herd`)**:
-  - Trusts the configured Websites directory being parked (default suggestion: `$HOME/Herd`).
-  - Automatically manages `.test` domains.
-  - Executes `herd secure <slug>` during provisioning to issue TLS certificates, and best-effort `herd unsecure <slug>` during de-provisioning.
+### Packages and themes
 
-- **Flock (`flock`)**:
-  - Websites directory defaults to `$HOME/Sites`.
-  - Registers sites via `flock link <slug>` and secures TLS via `flock secure <slug>`.
-  - Source integration inspects `flock sites` status prior to linking to prevent replacing pre-existing site registrations.
-  - Rollback and de-provisioning reverse only resources created and owned by WPTUI (`flock unsecure <slug>` and `flock unlink <slug>`), protecting pre-existing registrations.
-  - Browser launching uses the native operating system URL launcher rather than an emulated CLI command.
+Plugins and themes come strictly from `package_service_url`. If a package fails to resolve, WPTUI reports an error and never falls back to arbitrary WordPress.org slugs.
 
-- **Laragon (`laragon`)** _(Windows only)_:
-  - Websites must be created within Laragon's Document Root (default suggestion: `C:\laragon\www`).
-  - Reloads virtual hosts via `app_command` (`laragon.exe reload`) following site creation, restoration, and deletion.
-  - Emits canonical `https://<slug>.test` URLs.
-  - **HTTPS Prerequisite:** Laragon HTTPS strictly requires that **Auto SSL** is externally enabled in Laragon's settings and the Document Root is configured with the `{name}.test` hostname pattern. WPTUI does not generate virtual-host templates or configure Auto SSL.
+If `package_service_url` is unset, fails to fetch, or returns an empty catalog, WPTUI hides package steps during site creation and package actions in site configuration. When a catalog only contains plugins, theme selection is omitted (and vice versa). Searchable pickers keep your selections across query changes, and picking an active theme is optional: the admin interface stays accessible even when the frontend has no active theme assigned.
 
-### Packages & Themes
+### Backup and restore
 
-- **API-Only Source**: All selectable plugins and themes originate strictly from the configured Package Service API (`package_service_url`). Static package lists in `config.json` and the built-in default theme have been removed.
-- **Conditional Visibility**: If no Package Service URL is configured, or if catalog fetching fails or returns an empty catalog, package selection steps in Provisioning and package actions in Website Configuration are hidden entirely. Provisioning proceeds cleanly without packages or an active theme.
-- **Independent Category Controls**: If the catalog contains only plugins, theme selection is omitted; if only themes, plugin selection is omitted.
-- **Search & Selection Accumulation**: Separate searchable pickers for plugins and themes preserve selected items across query modifications.
-- **Optional Active Theme**: When one or more themes are selected, users can optionally choose at most one as the Active Theme (or choose none). Provisioning without an active theme is fully supported; the administration interface is accessible while the frontend indicates no active theme is assigned.
-- **Deterministic Provenance**: Failed package resolutions are reported as errors; WPTUI never falls back to arbitrary WordPress.org slugs.
+Backups export to `backup_path` as immutable Full ZIP (`.zip`, SQL dump and files) or All-in-One WP Migration (`.wpress`) archives.
 
-### Website Backup & Restoration
+During restore, `[Enter custom path...]` appears first so you can enter or paste any `.zip` or `.wpress` path on disk, even when `backup_path` is empty, missing, or unreadable. Outer whitespace and one balanced pair of double quotes (such as Windows Explorer "Copy as path" values like `"D:\Downloads\client-site.zip"`) are trimmed on confirmation. External archives are validated and read in place without copying, moving, renaming, or modifying them.
 
-- **Backup Archives vs. Restore Archives**: WPTUI exports immutable **Backup Archives** to the configured `backup_path`. During Website Restoration, any compatible `.zip` (Full ZIP) or `.wpress` (All-in-One WP Migration) file can be selected as a **Restore Archive**.
-- **Custom Restore Archive Paths**: The Restore Wizard always lists `[Enter custom path...]` first, allowing you to enter or paste an absolute path to a Restore Archive stored anywhere on disk (even when `backup_path` is empty, missing, or unreadable).
-- **Quoted Clipboard Paths**: Surrounding whitespace and one balanced pair of outer double quotes (such as Windows Explorer **Copy as path** values like `"D:\Downloads\client-site.zip"`) are normalized automatically on confirmation.
-- **Source Preservation**: External Restore Archives are validated before restoration starts and read directly in place without being copied, moved, renamed, or modified.
+### Config schema
 
-### Configuration Schema & Strict Validation
-
-`config.json` stores your environment choice under `app_name` and the executable under `app_command`:
+`config.json` stores your environment under `app_name` and its executable under `app_command`:
 
 ```json
 {
@@ -162,10 +135,11 @@ WPTUI requires an explicit Local Development Environment selection:
 ```
 
 > [!IMPORTANT]
-> Configuration validation strictly rejects missing/invalid environment names and legacy schema (`used_herd`, `themes`, `plugins`, `default_theme_slug`). WPTUI provides no automatic migration, aliases, or backward-compatibility fallbacks. If upgrading from an older version, run first-run setup or update your configuration file directly.
+> Config validation rejects missing/invalid environment names and legacy keys (`used_herd`, `themes`, `plugins`, `default_theme_slug`). WPTUI has no automatic migration, aliases, or backward-compatibility fallbacks; if upgrading from an older version, re-run first-run setup or update `config.json` directly.
+
 ## Development
 
-To build and test WPTUI from source, ensure you have **Go 1.27.0** or later installed:
+Requires **Go 1.27.0** or later:
 
 ```sh
 # Clone the repository
